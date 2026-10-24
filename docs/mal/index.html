@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Return to Syclop</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="relay.mjs"></script>
+</head>
+<body>
+  <main>
+    <p class="wordmark">SYCLOP</p>
+    <h1 id="title">Return to your TV</h1>
+    <p id="message" role="status">Checking the MyAnimeList authorization response…</p>
+    <button id="return" disabled>Return to Syclop</button>
+    <button id="copy" class="secondary" hidden>Copy authorization link</button>
+    <p class="note">Use a phone on the same home network as your TV. Syclop on the TV checks the connection state and exchanges the code directly with MyAnimeList.</p>
+    <p class="note">This page has no analytics and sends no requests. The HTTPS host receives the temporary authorization URL; access tokens and the PKCE verifier stay on your TV. A connection expires after five minutes.</p>
+    <a href="https://github.com/dintalframe/Syclop">Source and privacy details</a>
+  </main>
+</body>
+</html>
