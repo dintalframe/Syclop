@@ -22,12 +22,16 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Check out the return page
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: false
-          persist-credentials: false
-          sparse-checkout: docs
+      - name: Fetch the public return-page files at this exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/mal
+          for filename in index.html style.css relay.mjs relay-core.mjs relay-core.test.mjs README.md; do
+            curl --fail --location --silent --show-error --retry 3 --proto '=https' --tlsv1.2 \
+              "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/docs/mal/${filename}" \
+              --output "docs/mal/${filename}"
+          done
       - name: Check return routing
         run: node --test docs/mal/relay-core.test.mjs
       - name: Configure Pages
