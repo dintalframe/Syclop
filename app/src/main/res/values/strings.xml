@@ -772,7 +772,7 @@
     <string name="playback_player_external">External</string>
     <string name="playback_player_ask">Ask every time</string>
     <string name="playback_internal_player_engine">Internal Engine</string>
-    <string name="playback_engine_exoplayer">ExoPlayer</string>
+    <string name="playback_engine_exoplayer">ExoPlayer (recommended)</string>
     <string name="playback_engine_mvplayer">Libmpv (Beta)</string>
     <string name="playback_auto_switch_internal_player_on_error">Auto-switch engine on startup error</string>
     <string name="playback_auto_switch_internal_player_on_error_sub">If stream startup fails, switch between ExoPlayer and libmpv automatically.</string>
@@ -798,11 +798,11 @@
     <string name="playback_afr_capability_disable_button">Disable AFR</string>
     <string name="playback_afr_capability_disable_resolution_button">Disable resolution matching</string>
     <string name="playback_afr_capability_disable_both_button">Disable both</string>
-    <string name="playback_player_external_desc">Always open streams in an external app</string>
+    <string name="playback_player_external_desc">Open resolved files in the selected installed video app</string>
     <string name="playback_player_ask_desc">Choose the player each time</string>
     <string name="playback_player_auto">Auto (Best for Content)</string>
     <string name="playback_player_auto_desc">ExoPlayer for Movies &amp; TV Shows · MPV for Anime</string>
-    <string name="playback_engine_exoplayer_desc">Best compatibility with current Nuvio features.</string>
+    <string name="playback_engine_exoplayer_desc">Recommended built-in player for Syclop.</string>
     <string name="playback_engine_mvplayer_desc">Uses libmpv with Nuvio OSD controls. Experimental.</string>
 
     <string name="video_section">Video</string>
@@ -3435,4 +3435,13 @@
     <string name="trakt_actions_item_not_found">Trakt could not identify this exact item. No success was confirmed.</string>
     <string name="trakt_actions_failed">Trakt could not confirm this action. Please refresh and try again.</string>
     <string name="debrid_stream_sort_bitrate_first">Bitrate first (estimated average)</string>
+    <string name="playback_external_app">External player app</string>
+    <string name="playback_external_app_sub">Used when External is selected. Internal ExoPlayer remains recommended.</string>
+    <string name="playback_external_system">System default</string>
+    <string name="playback_external_system_sub">Use Android\'s default video app. Select an app here if no default is set.</string>
+    <string name="playback_external_unavailable">%1$s · Not installed</string>
+    <string name="playback_external_missing_note">The saved app is unavailable. Choose an installed app below; your saved choice is kept until you select another.</string>
+    <string name="playback_external_installed_note">Installed video players are listed below. Just Player and VLC appear when installed.</string>
+    <string name="playback_external_progress_note">Resume, subtitles and returned progress depend on the player.</string>
+    <string name="player_error_initial_buffering_timeout">This stream did not start within 60 seconds. Go back to retry or choose another source.</string>
 </resources>

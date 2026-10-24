@@ -17,7 +17,7 @@ data class AllDebridFile(val path: String, val size: Long?, val link: String) {
 }
 
 /** API error text is deliberately not surfaced: servers can echo input links and credentials. */
-class AllDebridApiException(message: String) : IOException(message)
+class AllDebridApiException(message: String, val httpStatus: Int? = null) : IOException(message)
 
 @Singleton
 class AllDebridService @Inject constructor(private val api: AllDebridApi) {
@@ -90,7 +90,7 @@ internal fun <T> Response<AllDebridEnvelope<T>>.dataOrThrow(): T {
         envelope?.error?.code in setOf("MUST_BE_PREMIUM", "MAGNET_MUST_BE_PREMIUM") -> "An active AllDebrid subscription is required."
         else -> "AllDebrid request failed. Check the service and network connection."
     }
-    throw AllDebridApiException(message)
+    throw AllDebridApiException(message, code().takeIf { it in 100..599 })
 }
 
 internal fun String?.isHttpUrl(): Boolean =

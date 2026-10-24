@@ -126,6 +126,14 @@ internal fun PlaybackSettingsDialogs(
             },
             onDismiss = onDismiss
         )
+        PlaybackDialog.EXTERNAL_APP -> ExternalPlayerSelectionDialog(
+            selectedPackage = settings.externalPlayerPackage,
+            onSelected = { packageName ->
+                onUpdate { setExternalPlayerPackage(packageName) }
+                onDismiss()
+            },
+            onDismiss = onDismiss
+        )
         PlaybackDialog.INTERNAL_ENGINE -> InternalPlayerEngineDialog(
             currentEngine = settings.internalPlayerEngine,
             onEngineSelected = { engine ->

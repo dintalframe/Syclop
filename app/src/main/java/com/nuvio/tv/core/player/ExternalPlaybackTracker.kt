@@ -392,8 +392,8 @@ class ExternalPlaybackTracker @Inject constructor(
             Log.d(AUTO_NEXT_TAG, "auto launch cancelled before tracker setup")
             return false
         }
-        val autoNextEnabled = playerSettingsDataStore.playerSettings.first()
-            .streamAutoPlayNextEpisodeEnabled
+        val launchSettings = playerSettingsDataStore.playerSettings.first()
+        val autoNextEnabled = launchSettings.streamAutoPlayNextEpisodeEnabled
         if (shouldCancelPendingAutoLaunch(autoLaunch)) {
             Log.d(AUTO_NEXT_TAG, "auto launch cancelled while reading player settings")
             return false
@@ -436,6 +436,7 @@ class ExternalPlaybackTracker @Inject constructor(
                         startFromBeginning = startFromBeginning,
                         subtitles = subtitles,
                         skipSegmentsJson = skipSegmentsJson,
+                        playerPackage = launchSettings.externalPlayerPackage,
                         context = context
                     )
                 }
@@ -519,8 +520,10 @@ class ExternalPlaybackTracker @Inject constructor(
         startFromBeginning: Boolean,
         subtitles: List<SubtitleInput>?,
         skipSegmentsJson: String?,
+        playerPackage: String?,
         context: Context
     ): Boolean {
+        if (!com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(url)) return false
 
         val input = ExternalPlayerInput(
             url = url,
@@ -529,7 +532,8 @@ class ExternalPlaybackTracker @Inject constructor(
             resumePositionMs = resumePositionMs,
             startFromBeginning = startFromBeginning,
             subtitles = subtitles,
-            skipSegmentsJson = skipSegmentsJson
+            skipSegmentsJson = skipSegmentsJson,
+            playerPackage = playerPackage
         )
 
         // Always prefer ActivityResult, including on Zidoo hardware. A Zidoo may launch Vimu,
@@ -542,7 +546,7 @@ class ExternalPlaybackTracker @Inject constructor(
                 true
             } catch (e: Exception) {
                 awaitingExternalPlayerResult = false
-                Log.w(TAG, "ActivityResultLauncher failed, falling back to fire-and-forget", e)
+                Log.w(TAG, "External player launch failed (${e.javaClass.simpleName}); checking fallback.")
                 ExternalPlayerLauncher.launch(
                     context = context,
                     url = url,
@@ -551,7 +555,8 @@ class ExternalPlaybackTracker @Inject constructor(
                     resumePositionMs = resumePositionMs,
                     startFromBeginning = startFromBeginning,
                     subtitles = subtitles,
-                    skipSegmentsJson = skipSegmentsJson
+                    skipSegmentsJson = skipSegmentsJson,
+                    playerPackage = playerPackage
                 )
             }
         }
@@ -566,7 +571,8 @@ class ExternalPlaybackTracker @Inject constructor(
             resumePositionMs = resumePositionMs,
             startFromBeginning = startFromBeginning,
             subtitles = subtitles,
-            skipSegmentsJson = skipSegmentsJson
+            skipSegmentsJson = skipSegmentsJson,
+            playerPackage = playerPackage
         )
     }
 

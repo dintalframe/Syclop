@@ -108,6 +108,10 @@ if [ "$run_tests" -eq 1 ]; then
     --tests 'com.nuvio.tv.core.tracking.TrackingSourceMemoryTest' \
     --tests 'com.nuvio.tv.core.express.*' \
     --tests 'com.nuvio.tv.core.backup.*' \
+    --tests 'com.nuvio.tv.core.player.ExternalPlayer*' \
+    --tests 'com.nuvio.tv.core.player.ExternalAutoNext*' \
+    --tests 'com.nuvio.tv.ui.screens.player.PlayerInitialBufferingTimeoutPolicyTest' \
+    --tests 'com.nuvio.tv.ui.screens.settings.SettingsStructureTest' \
     --tests 'com.nuvio.tv.core.deeplink.DeepLinkParser*' \
     --tests 'com.nuvio.tv.data.local.MDBListRatingCredentialStorage*' \
     --tests 'com.nuvio.tv.ui.screens.settings.MDBListSettingsViewModel*' \

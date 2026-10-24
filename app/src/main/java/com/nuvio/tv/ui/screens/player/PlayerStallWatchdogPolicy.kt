@@ -9,6 +9,7 @@ import androidx.media3.common.C
 internal object PlayerStallWatchdogPolicy {
 
     const val SKIP_PAST_BUFFERED_MS = 250L
+    const val INITIAL_BUFFERING_TIMEOUT_MS = 60_000L
 
     data class Input(
         val bufferedPositionMs: Long,
@@ -17,10 +18,14 @@ internal object PlayerStallWatchdogPolicy {
         val stalledForMs: Long,
         val thresholdMs: Long = PlayerRuntimeController.STALL_WATCHDOG_THRESHOLD_MS,
         val skipPastBufferedMs: Long = SKIP_PAST_BUFFERED_MS,
+        val hasRenderedFirstFrame: Boolean = true,
+        val userPausedManually: Boolean = false,
+        val initialBufferingElapsedMs: Long = 0L,
     )
 
     sealed class Decision {
         data object KeepWaiting : Decision()
+        data object TimeoutInitialBuffering : Decision()
         data object SkipUnknownDuration : Decision()
         data object SkipBufferedNotAhead : Decision()
         data object SkipTargetNotForward : Decision()
@@ -28,6 +33,14 @@ internal object PlayerStallWatchdogPolicy {
     }
 
     fun evaluate(input: Input): Decision {
+        if (!input.hasRenderedFirstFrame) {
+            if (!input.userPausedManually && input.initialBufferingElapsedMs >= INITIAL_BUFFERING_TIMEOUT_MS) {
+                return Decision.TimeoutInitialBuffering
+            }
+            // Before playback starts, a seek can discard buffered data without producing a
+            // state transition. Keep the deadline alive instead of ending this watcher.
+            return Decision.KeepWaiting
+        }
         if (input.stalledForMs < input.thresholdMs) {
             return Decision.KeepWaiting
         }

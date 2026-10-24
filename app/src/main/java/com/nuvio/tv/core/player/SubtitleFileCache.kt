@@ -47,11 +47,11 @@ class SubtitleFileCache @Inject constructor(
                 if (localUri != null) {
                     input.copy(url = localUri.toString())
                 } else {
-                    Log.w(TAG, "Failed to download subtitle: ${input.name}")
+                    Log.w(TAG, "Subtitle download did not produce a cached file.")
                     null
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Error caching subtitle: ${input.name}", e)
+                Log.w(TAG, "Subtitle cache failed (${e.javaClass.simpleName}).")
                 null
             }
         }
@@ -74,7 +74,7 @@ class SubtitleFileCache @Inject constructor(
         try {
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    Log.w(TAG, "HTTP ${response.code} downloading subtitle: ${input.url}")
+                    Log.w(TAG, "Subtitle download failed (HTTP ${response.code}).")
                     return@withContext null
                 }
 
@@ -91,7 +91,7 @@ class SubtitleFileCache @Inject constructor(
                 file
             )
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to download subtitle file: ${input.url}", e)
+            Log.w(TAG, "Subtitle download failed (${e.javaClass.simpleName}).")
             file.delete()
             null
         }
@@ -104,7 +104,7 @@ class SubtitleFileCache @Inject constructor(
         try {
             cacheDir.listFiles()?.forEach { it.delete() }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to clear subtitle cache", e)
+            Log.w(TAG, "Subtitle cache cleanup failed (${e.javaClass.simpleName}).")
         }
     }
 

@@ -1,5 +1,7 @@
 package com.nuvio.tv.core.debrid
 
+import android.util.Log
+
 import com.nuvio.tv.data.local.DebridSettingsDataStore
 import com.nuvio.tv.domain.model.StreamBehaviorHints
 import com.nuvio.tv.domain.model.Stream
@@ -73,8 +75,18 @@ class DirectDebridResolver @Inject constructor(
             else DebridProviders.byId(stream.clientResolve?.service)?.id
         val result = resolveInternal(stream, season, episode, binding, settings)
         if (result is DirectDebridResolveResult.Success) {
-            if (provider == null || playbackScope() != binding ||
-                !ConnectedServicePlaybackGrants.registry.issue(result.url, provider, binding)) return DirectDebridResolveResult.Error
+            if (provider == null) {
+                Log.w("DebridResolve", "stage=final_grant result=provider_missing")
+                return DirectDebridResolveResult.Error
+            }
+            if (playbackScope() != binding) {
+                Log.w("DebridResolve", "stage=final_grant result=scope_changed")
+                return DirectDebridResolveResult.Error
+            }
+            if (!ConnectedServicePlaybackGrants.registry.issue(result.url, provider, binding)) {
+                Log.w("DebridResolve", "stage=final_grant result=policy_rejected")
+                return DirectDebridResolveResult.Error
+            }
         }
         return result
     }

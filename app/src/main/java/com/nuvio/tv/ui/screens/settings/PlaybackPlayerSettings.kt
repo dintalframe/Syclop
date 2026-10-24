@@ -23,6 +23,7 @@ internal fun PlaybackPlayerSection(
         value = playerPreferenceLabel(settings.playerPreference),
         onClick = { onOpenDialog(PlaybackDialog.PLAYER_PREFERENCE) }
     )
+    ExternalPlayerSelectionRow(settings, onOpenDialog)
     SettingsActionRow(
         title = stringResource(R.string.playback_internal_player_engine),
         subtitle = null,

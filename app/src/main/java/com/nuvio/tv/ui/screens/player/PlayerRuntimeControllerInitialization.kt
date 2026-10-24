@@ -111,7 +111,7 @@ private suspend fun PlayerRuntimeController.resolveCurrentStreamMimeType(
     currentStreamMimeType?.let { resolvedMimeType ->
         Log.d(
             PlayerRuntimeController.TAG,
-            "Resolved stream mimeType=$resolvedMimeType for url=$url"
+            "Stream MIME is already resolved."
         )
         return
     }
@@ -123,7 +123,7 @@ private suspend fun PlayerRuntimeController.resolveCurrentStreamMimeType(
     )
     Log.d(
         PlayerRuntimeController.TAG,
-        "Resolved stream mimeType=${currentStreamMimeType ?: "unknown"} for url=$url"
+        "Stream MIME probe complete (known=${currentStreamMimeType != null})."
     )
 }
 

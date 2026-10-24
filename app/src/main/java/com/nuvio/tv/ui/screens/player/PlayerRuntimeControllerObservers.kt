@@ -1,6 +1,7 @@
 package com.nuvio.tv.ui.screens.player
 
 import android.util.Log
+import android.os.SystemClock
 import com.nuvio.tv.core.player.OpenSubtitlesHasher
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -787,7 +788,11 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
 
     stallWatchdogJob = scope.launch {
         var lastBufferedPosition = player.bufferedPosition
-        var lastAdvanceAtMs = System.currentTimeMillis()
+        val initialBufferingStartedAtMs = SystemClock.elapsedRealtime()
+        var lastAdvanceAtMs = initialBufferingStartedAtMs
+        if (!hasRenderedFirstFrame) {
+            Log.d(PlayerRuntimeController.TAG, "EXO_STARTUP: stage=initial_buffering_wait state=BUFFERING firstFrame=false")
+        }
 
         while (isActive) {
             delay(PlayerRuntimeController.STALL_WATCHDOG_POLL_INTERVAL_MS)
@@ -797,27 +802,49 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
                 return@launch
             }
 
-            val nowMs = System.currentTimeMillis()
+            val nowMs = SystemClock.elapsedRealtime()
             val bufferedNow = livePlayer.bufferedPosition
             if (bufferedNow > lastBufferedPosition) {
                 // Real progress — reset the stall timer.
                 lastBufferedPosition = bufferedNow
                 lastAdvanceAtMs = nowMs
-                continue
             }
 
             val stalledForMs = nowMs - lastAdvanceAtMs
-            when (
-                val decision = PlayerStallWatchdogPolicy.evaluate(
+            val decision = PlayerStallWatchdogPolicy.evaluate(
                     PlayerStallWatchdogPolicy.Input(
                         bufferedPositionMs = bufferedNow,
                         playheadMs = livePlayer.currentPosition,
                         durationMs = livePlayer.duration,
                         stalledForMs = stalledForMs,
+                        hasRenderedFirstFrame = hasRenderedFirstFrame,
+                        userPausedManually = userPausedManually,
+                        initialBufferingElapsedMs = nowMs - initialBufferingStartedAtMs,
                     )
                 )
-            ) {
+            when (decision) {
                 PlayerStallWatchdogPolicy.Decision.KeepWaiting -> Unit
+                PlayerStallWatchdogPolicy.Decision.TimeoutInitialBuffering -> {
+                    Log.w(PlayerRuntimeController.TAG,
+                        "EXO_STARTUP: stage=initial_buffering_timeout state=BUFFERING firstFrame=false " +
+                            "elapsedMs=${nowMs - initialBufferingStartedAtMs} " +
+                            "durationKnown=${livePlayer.duration > 0L} bufferedAhead=${bufferedNow > livePlayer.currentPosition}")
+                    recordLoadingDiagnosticEvent(phase = "exo_initial_buffering_timeout", detail = "deadline_reached")
+                    cancelFirstFrameWatchdog()
+                    cancelStableProgressReset()
+                    errorRetryJob?.cancel()
+                    errorRetryJob = null
+                    releasePlayer(flushPlaybackState = false)
+                    cancelNextEpisodeAutoPlayOnFatalError()
+                    _uiState.update { it.copy(
+                        error = context.getString(com.nuvio.tv.R.string.player_error_initial_buffering_timeout),
+                        showSwitchToMpvErrorAction = false,
+                        isPlaying = false, isBuffering = false, showLoadingOverlay = false,
+                        showPauseOverlay = false, loadingIssueReportVisible = false, loadingIssueElapsedMs = 0L,
+                        playbackEnded = false, postPlayMode = null
+                    ) }
+                    return@launch
+                }
                 PlayerStallWatchdogPolicy.Decision.SkipUnknownDuration -> {
                     Log.w(
                         PlayerRuntimeController.TAG,

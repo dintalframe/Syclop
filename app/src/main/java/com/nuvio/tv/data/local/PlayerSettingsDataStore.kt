@@ -346,7 +346,8 @@ data class PlayerSettings(
     val enableBufferLogs: Boolean = false,
     val resizeMode: Int = 0,
     // Nuvio ExoPlayer Performance Mode
-    val nuvioPerformanceModeEnabled: Boolean = DEFAULT_NUVIO_PERFORMANCE_MODE_ENABLED
+    val nuvioPerformanceModeEnabled: Boolean = DEFAULT_NUVIO_PERFORMANCE_MODE_ENABLED,
+    val externalPlayerPackage: String? = null
 ) {
     /** Prefer FFmpeg/extension audio decoder (EXTENSION_RENDERER_MODE_PREFER). */
     val isPreferAppDecoder: Boolean
@@ -546,6 +547,7 @@ class PlayerSettingsDataStore @Inject constructor(
 
     // Keys
     private val playerPreferenceKey = stringPreferencesKey("player_preference")
+    private val externalPlayerPackageKey = stringPreferencesKey("external_player_package")
     private val internalPlayerEngineKey = stringPreferencesKey("internal_player_engine")
     private val autoSwitchInternalPlayerOnErrorKey = booleanPreferencesKey("auto_switch_internal_player_on_error")
     private val useLibassKey = booleanPreferencesKey("use_libass")
@@ -915,6 +917,8 @@ class PlayerSettingsDataStore @Inject constructor(
                 playerPreference = prefs[playerPreferenceKey]?.let {
                     runCatching { PlayerPreference.valueOf(it) }.getOrDefault(PlayerPreference.INTERNAL)
                 } ?: PlayerPreference.INTERNAL,
+                externalPlayerPackage = prefs[externalPlayerPackageKey]
+                    ?.takeIf(com.nuvio.tv.core.player.ExternalPlayerChoiceRules::validPackage),
                 internalPlayerEngine = prefs[internalPlayerEngineKey]?.let {
                     runCatching { InternalPlayerEngine.valueOf(it) }.getOrDefault(InternalPlayerEngine.EXOPLAYER)
                 } ?: InternalPlayerEngine.EXOPLAYER,
@@ -1142,6 +1146,16 @@ class PlayerSettingsDataStore @Inject constructor(
     suspend fun setPlayerPreference(preference: PlayerPreference) {
         store().edit { prefs ->
             prefs[playerPreferenceKey] = preference.name
+        }
+    }
+
+    suspend fun setExternalPlayerPackage(packageName: String?) {
+        require(packageName == null || com.nuvio.tv.core.player.ExternalPlayerChoiceRules.validPackage(packageName))
+        val profile = profileManager.activeProfileId.value
+        val revision = profileManager.activeProfileSelectionRevision
+        store(profile).edit { prefs ->
+            if (profileManager.activeProfileId.value != profile || profileManager.activeProfileSelectionRevision != revision) return@edit
+            if (packageName == null) prefs.remove(externalPlayerPackageKey) else prefs[externalPlayerPackageKey] = packageName
         }
     }
 

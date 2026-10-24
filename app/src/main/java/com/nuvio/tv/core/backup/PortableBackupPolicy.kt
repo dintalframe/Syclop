@@ -17,7 +17,7 @@ object PortableBackupPolicy {
             "card_depth_enabled", "card_depth_edge_strength", "card_depth_sheen_strength", "card_depth_edge_coverage", "card_depth_posters_enabled",
             "card_depth_continue_watching_enabled", "card_depth_episode_cards_enabled", "card_depth_cast_enabled", "card_depth_trailers_enabled",
             "blur_unwatched_episodes", "random_episode_enabled", "startup_splash_enabled", "always_show_landscape_clearlogo"),
-        "player_settings" to setOf("player_preference", "internal_player_engine", "auto_switch_internal_player_on_error", "use_libass",
+        "player_settings" to setOf("player_preference", "external_player_package", "internal_player_engine", "auto_switch_internal_player_on_error", "use_libass",
             "libass_render_type", "libass_render_scale", "decoder_priority", "downmix_enabled", "audio_output_channels", "tunneling_enabled",
             "force_optical_passthrough", "skip_silence", "preferred_audio_language", "secondary_preferred_audio_language", "loading_overlay_enabled",
             "show_player_loading_status", "pause_overlay_enabled", "osd_clock_enabled", "skip_intro_enabled", "parental_guide_enabled",
@@ -57,7 +57,7 @@ object PortableBackupPolicy {
                 else -> "boolean"
             }
             "player_settings" -> when (key) {
-                "player_preference", "internal_player_engine", "libass_render_type", "libass_render_scale", "audio_output_channels",
+                "player_preference", "external_player_package", "internal_player_engine", "libass_render_type", "libass_render_scale", "audio_output_channels",
                 "preferred_audio_language", "secondary_preferred_audio_language", "frame_rate_matching_mode", "stream_auto_play_mode",
                 "stream_auto_play_source", "subtitle_organization_mode" -> "string"
                 "decoder_priority", "stream_auto_play_timeout_seconds", "still_watching_episode_threshold" -> "int"
@@ -112,6 +112,7 @@ object PortableBackupPolicy {
                     }
                     PortableValue("string", JsonPrimitive(sanitized.toString()))
                 }.getOrNull()
+                if (key == "external_player_package" && !com.nuvio.tv.core.player.ExternalPlayerChoiceRules.validPackage(value.asString)) return null
                 val choices = when (key) {
                     "selected_layout" -> setOf("CLASSIC", "GRID", "MODERN")
                     "selected_theme" -> setOf("CUSTOM", "GOLD", "JADE", "ROSE_GOLD", "ARCTIC_BLUE", "GRAPHITE", "CRIMSON", "OCEAN", "VIOLET", "EMERALD", "AMBER", "ROSE", "WHITE")

@@ -2093,7 +2093,7 @@ class StreamScreenViewModel @Inject constructor(
                 subtitleFileCache.cacheSubtitles(inputs)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to fetch subtitles for external player", e)
+            Log.w(TAG, "External subtitle lookup failed (${e.javaClass.simpleName}).")
             null
         }
     }

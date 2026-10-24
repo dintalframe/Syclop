@@ -31,6 +31,14 @@ internal fun ExoPlayer.Builder.buildWithAssSupportCompat(
     extractorsFactory: ExtractorsFactory = DefaultExtractorsFactory(),
     renderersFactory: RenderersFactory = DefaultRenderersFactory(context)
 ): ExoPlayer {
+    // Frame-timestamp JNI can start with the overlay before AssHandler's lazy Ass exists.
+    // The bundled Ass class loads this same library only when that delegate is realized.
+    try {
+        System.loadLibrary("asskt")
+    } catch (error: LinkageError) {
+        android.util.Log.e("PlayerLibass", "Native subtitle initialization failed (${error.javaClass.simpleName}).")
+        throw IllegalStateException("The native subtitle renderer could not be initialized.")
+    }
     val assHandler = AssHandler()
     val assSubtitleParserFactory = CompatAssSubtitleParserFactory(assHandler)
     val assExtractorsFactory = extractorsFactory.withAssMkvSupportCompat(
