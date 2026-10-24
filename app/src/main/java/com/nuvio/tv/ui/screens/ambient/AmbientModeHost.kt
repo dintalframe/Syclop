@@ -31,9 +31,10 @@ fun AmbientModeHost(
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val isShowing by controller.isShowing.collectAsStateWithLifecycle()
+    val criticalAuthPaused by controller.criticalAuthPaused.collectAsStateWithLifecycle()
     val slides by viewModel.slides.collectAsStateWithLifecycle()
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val active = settings.enabled && allowed && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    val active = settings.enabled && allowed && !criticalAuthPaused && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
     val timeoutMs = settings.timeoutMinutes * 60_000L
 
     LaunchedEffect(active, timeoutMs) {

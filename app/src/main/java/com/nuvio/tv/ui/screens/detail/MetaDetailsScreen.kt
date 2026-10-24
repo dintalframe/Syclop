@@ -948,6 +948,11 @@ fun MetaDetailsScreen(
                     },
                     showManualPlayOption = effectiveAutoplayEnabled,
                     onPlayButtonFocused = { viewModel.onEvent(MetaDetailsEvent.OnPlayButtonFocused) },
+                    showTraktActions = uiState.traktConnected && (uiState.meta?.let {
+                        com.nuvio.tv.core.trakt.TraktActionIdentity.title(it) != null ||
+                            it.videos.any { video -> com.nuvio.tv.core.trakt.TraktActionIdentity.episode(it, video) != null }
+                    } == true),
+                    onTraktActions = { viewModel.onEvent(MetaDetailsEvent.OnOpenTraktActions) },
                     onToggleLibrary = { viewModel.onEvent(MetaDetailsEvent.OnToggleLibrary) },
                     onLibraryLongPress = { viewModel.onEvent(MetaDetailsEvent.OnLibraryLongPress) },
                     onToggleMovieWatched = { viewModel.onEvent(MetaDetailsEvent.OnToggleMovieWatched) },
@@ -1109,6 +1114,10 @@ fun MetaDetailsScreen(
             )
         }
 
+        uiState.traktActions?.let { dialog ->
+            TraktActionDialog(dialog, viewModel::onEvent)
+        }
+
         if (uiState.removalConfirmations.isNotEmpty()) {
             TrackingRemovalConfirmationDialog(
                 itemTitle = uiState.meta?.name.orEmpty(),
@@ -1245,6 +1254,8 @@ private fun MetaDetailsContent(
     onPlayStartFromBeginningClick: (String) -> Unit = {},
     showManualPlayOption: Boolean,
     onPlayButtonFocused: () -> Unit,
+    showTraktActions: Boolean,
+    onTraktActions: () -> Unit,
     onToggleLibrary: () -> Unit,
     onLibraryLongPress: () -> Unit,
     onToggleMovieWatched: () -> Unit,
@@ -2477,6 +2488,8 @@ private fun MetaDetailsContent(
                             null
                         },
                         isInLibrary = isInLibrary,
+                        showTraktActions = showTraktActions,
+                        onTraktActions = onTraktActions,
                         onToggleLibrary = onToggleLibrary,
                         onLibraryLongPress = onLibraryLongPress,
                         isMovieWatched = isMovieWatched,

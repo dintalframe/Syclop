@@ -22,6 +22,7 @@ object ExternalPlayerLauncher {
         subtitles: List<SubtitleInput>? = null,
         skipSegmentsJson: String? = null
     ): Boolean {
+        if (!com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(url)) return false
         return try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(Uri.parse(url), "video/*")

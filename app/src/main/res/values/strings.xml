@@ -3008,7 +3008,8 @@
     <string name="simkl_sync_info_library_statuses">Shows placed in Simkl’s On Hold or Dropped lists are hidden from Continue Watching. They remain hidden for as long as they stay in either list.</string>
     <string name="simkl_sync_info_docs">Read the Simkl sync guide</string>
     <string name="error_open_browser_failed">Failed to open browser</string>
-    <string name="simkl_missing_credentials">Missing SIMKL_CLIENT_ID</string>
+    <string name="simkl_error_secure_storage">Unable to read secure Simkl account data. Select the viewer again or reconnect.</string>
+    <string name="simkl_missing_credentials">Simkl sign-in needs a valid Syclop AUTH V2 application registration in this build.</string>
     <string name="simkl_status_enter_code">Enter the code on Simkl to finish connecting</string>
     <string name="simkl_status_waiting">Waiting for Simkl approval…</string>
     <string name="simkl_status_connected">Connected to Simkl</string>
@@ -3406,4 +3407,32 @@
     <string name="debrid_use_api_key">Use API key</string>
     <string name="debrid_connect_another_account">Reconnect</string>
     <string name="debrid_auth_profile_changed">The active viewer or account changed. Start again.</string>
+
+    <string name="trakt_actions_title">Trakt rating and check-in</string>
+    <string name="trakt_actions_manual_note">These actions update your Trakt account. Check-in is manual and does not share to social networks.</string>
+    <string name="trakt_actions_pending">Contacting Trakt…</string>
+    <string name="trakt_actions_own_rating">Your Trakt rating: %1$d/10</string>
+    <string name="trakt_actions_unrated">You have not rated this item on Trakt.</string>
+    <string name="trakt_actions_rating_unknown">Your current rating could not be fully checked. You can still set one.</string>
+    <string name="trakt_actions_save_rating">Save rating</string>
+    <string name="trakt_actions_clear_rating">Clear rating</string>
+    <string name="trakt_actions_checkin">Check in: watching now</string>
+    <string name="trakt_actions_active_checkin">Active Trakt check-in: %1$s</string>
+    <string name="trakt_actions_cancel_note">This cancels your account’s active check-in, including one started on another device.</string>
+    <string name="trakt_actions_confirm_cancel">Confirm cancellation</string>
+    <string name="trakt_actions_cancel_checkin">Cancel active Trakt check-in</string>
+    <string name="trakt_actions_refresh">Refresh Trakt state</string>
+    <string name="trakt_actions_select_target">Exact identified titles and episodes</string>
+    <string name="trakt_actions_active_fallback">Current movie or episode</string>
+    <string name="trakt_actions_rating_saved">Trakt rating saved.</string>
+    <string name="trakt_actions_rating_cleared">Trakt rating cleared.</string>
+    <string name="trakt_actions_checkin_started">Check-in sent. Refresh to confirm the active title.</string>
+    <string name="trakt_actions_checkin_conflict">A Trakt check-in is already active. It was not replaced.</string>
+    <string name="trakt_actions_checkin_cancelled">Active Trakt check-in cancelled.</string>
+    <string name="trakt_actions_network_uncertain">Trakt could not confirm the result. Refresh before trying again; the action may have reached your account.</string>
+    <string name="trakt_actions_viewer_changed">The viewer or Trakt account changed. Open this menu again.</string>
+    <string name="trakt_actions_connect_first">Connect your Trakt account first.</string>
+    <string name="trakt_actions_item_not_found">Trakt could not identify this exact item. No success was confirmed.</string>
+    <string name="trakt_actions_failed">Trakt could not confirm this action. Please refresh and try again.</string>
+    <string name="debrid_stream_sort_bitrate_first">Bitrate first (estimated average)</string>
 </resources>

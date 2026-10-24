@@ -223,6 +223,7 @@ class PluginRuntime @Inject constructor() {
         scraperId: String,
         scraperSettings: Map<String, Any> = emptyMap()
     ): List<LocalScraperResult> = withTimeout(PLUGIN_TIMEOUT_MS) {
+        RemoteExecutablePluginPolicy.requireAllowed()
         executePluginInternal(code, tmdbId, mediaType, season, episode, scraperId, scraperSettings)
     }
 

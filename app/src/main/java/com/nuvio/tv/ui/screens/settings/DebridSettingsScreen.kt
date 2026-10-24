@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +68,7 @@ import androidx.tv.material3.Text
 import com.nuvio.tv.R
 import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.debrid.DebridDeviceAuthorization
+import com.nuvio.tv.core.debrid.nextDebridDevicePollInterval
 import com.nuvio.tv.core.debrid.DebridDeviceAuthorizationTokenResult
 import com.nuvio.tv.core.debrid.DebridProvider
 import com.nuvio.tv.core.debrid.DebridProviderAuthMethod
@@ -380,10 +382,9 @@ fun DebridSettingsContent(
                 onSave = { value, onSaved -> viewModel.validateAndSaveProviderApiKey(provider.id, value, onSaved) },
                 onSaved = { activeApiKeyDialog = null },
                 onClear = {
-                    viewModel.validateAndSaveProviderApiKey(provider.id, "") {}
-                    activeApiKeyDialog = null
+                    viewModel.validateAndSaveProviderApiKey(provider.id, "") { activeApiKeyDialog = null }
                 },
-                onDismiss = { activeApiKeyDialog = null }
+                onDismiss = { viewModel.cancelProviderCredentialValidation(); activeApiKeyDialog = null }
             )
         }
     }
@@ -444,7 +445,7 @@ fun DebridSettingsContent(
         DebridStreamPicker.SORT_MODE -> DebridSortModeDialog(
             selectedValue = sortProfileFor(uiState.streamPreferences.sortCriteria),
             onSelected = { value ->
-                viewModel.setStreamPreferences(uiState.streamPreferences.copy(sortCriteria = sortCriteriaForProfile(value)))
+                viewModel.setStreamPreferences(uiState.streamPreferences.copy(sortCriteria = sortCriteriaForProfile(value, uiState.streamPreferences.sortCriteria)))
                 activeStreamPicker = null
             },
             onDismiss = { activeStreamPicker = null }
@@ -824,6 +825,7 @@ private fun DebridSortModeDialog(
     onDismiss: () -> Unit
 ) {
     val options = listOf(
+        DebridSortProfile.BITRATE_FIRST,
         DebridSortProfile.ORIGINAL,
         DebridSortProfile.BEST_QUALITY,
         DebridSortProfile.LARGEST,
@@ -986,6 +988,7 @@ private fun streamMaxResultsLabel(value: Int): String {
 @Composable
 private fun sortProfileLabel(value: DebridSortProfile): String {
     return when (value) {
+        DebridSortProfile.BITRATE_FIRST -> stringResource(R.string.debrid_stream_sort_bitrate_first)
         DebridSortProfile.ORIGINAL -> stringResource(R.string.debrid_stream_sort_original)
         DebridSortProfile.BEST_QUALITY -> stringResource(R.string.debrid_stream_sort_best_quality)
         DebridSortProfile.LARGEST -> stringResource(R.string.debrid_stream_sort_largest)
@@ -1174,6 +1177,7 @@ private fun sortProfileFor(criteria: List<DebridStreamSortCriterion>): DebridSor
         DebridStreamSortKey.SIZE to DebridStreamSortDirection.DESC
     )
     return when {
+        normalized.firstOrNull()?.first == DebridStreamSortKey.BITRATE -> DebridSortProfile.BITRATE_FIRST
         normalized.isEmpty() -> DebridSortProfile.ORIGINAL
         normalized == bestQuality || normalized == legacyQuality -> DebridSortProfile.BEST_QUALITY
         normalized == listOf(DebridStreamSortKey.SIZE to DebridStreamSortDirection.DESC) -> DebridSortProfile.LARGEST
@@ -1192,8 +1196,9 @@ private fun sortProfileLabel(criteria: List<DebridStreamSortCriterion>): String 
     return sortProfileLabel(sortProfileFor(criteria))
 }
 
-private fun sortCriteriaForProfile(profile: DebridSortProfile): List<DebridStreamSortCriterion> {
+private fun sortCriteriaForProfile(profile: DebridSortProfile, existing: List<DebridStreamSortCriterion> = DebridStreamSortCriterion.defaultOrder): List<DebridStreamSortCriterion> {
     return when (profile) {
+        DebridSortProfile.BITRATE_FIRST -> DebridStreamSortCriterion.bitrateFirstOrder(existing.ifEmpty { DebridStreamSortCriterion.defaultOrder })
         DebridSortProfile.ORIGINAL -> DebridStreamSortCriterion.originalOrder
         DebridSortProfile.BEST_QUALITY -> DebridStreamSortCriterion.defaultOrder
         DebridSortProfile.LARGEST -> listOf(DebridStreamSortCriterion(DebridStreamSortKey.SIZE, DebridStreamSortDirection.DESC))
@@ -1215,6 +1220,7 @@ private fun sortCriteriaForProfile(profile: DebridSortProfile): List<DebridStrea
 }
 
 private enum class DebridSortProfile {
+    BITRATE_FIRST,
     ORIGINAL,
     BEST_QUALITY,
     LARGEST,
@@ -1232,9 +1238,11 @@ private fun DebridDeviceAuthDialog(
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val dismiss = { viewModel.cancelDeviceAuthorization(); onDismiss() }
+    val useManualKey = { viewModel.cancelDeviceAuthorization(); onUseManualKey() }
     val startingProfileId = remember(provider.id) { viewModel.activeProfileId.value }
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
-    LaunchedEffect(activeProfileId) { if (activeProfileId != startingProfileId) onDismiss() }
+    LaunchedEffect(activeProfileId) { if (activeProfileId != startingProfileId) dismiss() }
     var replacingConnection by remember(provider.id) { mutableStateOf(false) }
     val isConnected = currentValue.isNotBlank() && !replacingConnection
     var restartNonce by remember(provider.id) { mutableStateOf(0) }
@@ -1298,7 +1306,7 @@ private fun DebridDeviceAuthDialog(
                 is DebridDeviceAuthorizationTokenResult.Authorized -> {
                     val saved = runCatching { viewModel.completeDeviceAuthorization(activeSession, result) }
                         .getOrElse { error -> if (error is CancellationException) throw error else false }
-                    if (saved) onDismiss() else {
+                    if (saved) dismiss() else {
                         statusMessage = failedMessage
                         session = null
                     }
@@ -1313,7 +1321,7 @@ private fun DebridDeviceAuthDialog(
                     return@LaunchedEffect
                 }
                 DebridDeviceAuthorizationTokenResult.SlowDown -> {
-                    pollInterval = (pollInterval + 5).coerceAtMost(60)
+                    pollInterval = nextDebridDevicePollInterval(pollInterval)
                     statusMessage = waitingMessage
                 }
                 DebridDeviceAuthorizationTokenResult.Denied -> {
@@ -1336,14 +1344,15 @@ private fun DebridDeviceAuthDialog(
     }
 
     NuvioDialog(
-        onDismiss = onDismiss,
+        onDismiss = dismiss,
         title = stringResource(
             if (isConnected) R.string.debrid_disconnect_provider else R.string.debrid_connect_provider,
             provider.displayName
         ),
         width = 620.dp,
         titleTextAlign = TextAlign.Center,
-        suppressFirstKeyUp = false
+        suppressFirstKeyUp = false,
+        criticalAuthActive = !isConnected && (isStarting || session != null)
     ) {
         if (isConnected) {
             Text(
@@ -1420,11 +1429,11 @@ private fun DebridDeviceAuthDialog(
         SettingsDialogActionRow(horizontalAlignment = Alignment.CenterHorizontally) {
             SettingsDialogActionButton(
                 text = stringResource(R.string.action_cancel),
-                onClick = onDismiss
+                onClick = dismiss
             )
             SettingsDialogActionButton(
                 text = stringResource(R.string.debrid_use_api_key),
-                onClick = onUseManualKey
+                onClick = useManualKey
             )
             if (isConnected) {
                 SettingsDialogActionButton(
@@ -1434,8 +1443,8 @@ private fun DebridDeviceAuthDialog(
                 SettingsDialogActionButton(
                     text = stringResource(R.string.debrid_disconnect),
                     onClick = {
+                        dismiss()
                         onDisconnect()
-                        onDismiss()
                     },
                     primary = true
                 )
@@ -1512,6 +1521,10 @@ private fun DebridApiKeyDialog(
     onClear: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val startingProfileId = remember { viewModel.activeProfileId.value }
+    val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+    LaunchedEffect(activeProfileId) { if (activeProfileId != startingProfileId) { viewModel.cancelProviderCredentialValidation(); onDismiss() } }
+    DisposableEffect(viewModel) { onDispose { viewModel.cancelProviderCredentialValidation() } }
     var value by remember(currentValue) { mutableStateOf(currentValue) }
     var isInputFocused by remember { mutableStateOf(false) }
     val inputFocusRequester = remember { FocusRequester() }

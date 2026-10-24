@@ -251,6 +251,10 @@ data class DebridStreamSortCriterion(
 ) {
     companion object {
         val originalOrder = emptyList<DebridStreamSortCriterion>()
+        fun bitrateFirstOrder(existing: List<DebridStreamSortCriterion> = defaultOrder): List<DebridStreamSortCriterion> =
+            listOf(DebridStreamSortCriterion(DebridStreamSortKey.BITRATE, DebridStreamSortDirection.DESC),
+                DebridStreamSortCriterion(DebridStreamSortKey.RESOLUTION, DebridStreamSortDirection.DESC)) +
+                existing.filter { it.key != DebridStreamSortKey.BITRATE && it.key != DebridStreamSortKey.RESOLUTION }
         val defaultOrder = listOf(
             DebridStreamSortCriterion(DebridStreamSortKey.RESOLUTION, DebridStreamSortDirection.DESC),
             DebridStreamSortCriterion(DebridStreamSortKey.QUALITY, DebridStreamSortDirection.DESC),
@@ -264,6 +268,7 @@ data class DebridStreamSortCriterion(
 }
 
 enum class DebridStreamSortKey(val label: String) {
+    BITRATE("Bitrate"),
     RESOLUTION("Resolution"),
     QUALITY("Quality"),
     VISUAL_TAG("Visual tag"),

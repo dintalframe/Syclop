@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp" android:height="36dp"
+    android:viewportWidth="180" android:viewportHeight="40">
+    <!-- Existing original Syclop geometric letter paths, positioned without a raster conversion. -->
+    <group android:translateX="-70" android:translateY="-100">
+        <path android:fillColor="@android:color/transparent" android:strokeColor="#F2F2F7"
+            android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M94,110C91,107 87,106.5 84,106.5C72,106.5 71,117 81,119.5L88,121.5C99,124.5 95,134 84,134C80,134 76,132.5 73,129.5M105,107L115,120L125,107M115,120V134M155,111C152,107.5 149,106.5 145,106.5C130,106.5 130,134 145,134C149,134 152,133 155,129.5M166,107V134H184M204,106.5C189,106.5 189,134 204,134C219,134 219,106.5 204,106.5ZM226,134V107H236C251,107 251,122 236,122H226" />
+    </group>
+</vector>

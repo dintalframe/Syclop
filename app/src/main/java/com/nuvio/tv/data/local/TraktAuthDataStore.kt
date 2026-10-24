@@ -13,6 +13,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -58,6 +63,23 @@ class TraktAuthDataStore @Inject constructor(
 ) {
     companion object {
         private const val FEATURE = "trakt_auth_store"
+    }
+
+    val activeProfileId: Int get() = profileManager.activeProfileId.value
+    val activeProfileSelectionRevision: Long get() = profileManager.activeProfileSelectionRevision
+
+    private val grantRevisions = ConcurrentHashMap<Int, AtomicLong>()
+    private val grantMutations = ConcurrentHashMap<Int, AtomicInteger>()
+    fun grantRevision(profileId: Int): Long = if ((grantMutations[profileId]?.get() ?: 0) > 0) -1L
+        else grantRevisions[profileId]?.get() ?: 0L
+    private suspend fun changeGrant(profileId: Int, block: suspend () -> Unit) {
+        val mutations = grantMutations.computeIfAbsent(profileId) { AtomicInteger() }
+        mutations.incrementAndGet()
+        invalidateGrant(profileId)
+        try { block() } finally { mutations.decrementAndGet() }
+    }
+    private fun invalidateGrant(profileId: Int) {
+        grantRevisions.computeIfAbsent(profileId) { AtomicLong() }.incrementAndGet()
     }
 
     private val accessTokenKey = stringPreferencesKey("access_token")
@@ -130,7 +152,7 @@ class TraktAuthDataStore @Inject constructor(
         )
     }
 
-    suspend fun saveToken(token: TraktTokenResponseDto, profileId: Int, clientId: String) {
+    suspend fun saveToken(token: TraktTokenResponseDto, profileId: Int, clientId: String) = changeGrant(profileId) {
         store(profileId).edit { preferences ->
             preferences[accessTokenKey] = credentialCipher.encrypt(token.accessToken, profileId, "trakt_access_token")
             preferences[refreshTokenKey] = credentialCipher.encrypt(token.refreshToken, profileId, "trakt_refresh_token")
@@ -139,6 +161,58 @@ class TraktAuthDataStore @Inject constructor(
             preferences[createdAtKey] = token.createdAt
             preferences[expiresInKey] = normalizeTraktTokenLifetimeSeconds(token.expiresIn)
         }
+    }
+
+    /** Refresh of one existing grant: compare and commit in the DataStore transaction. */
+    suspend fun saveRefreshedTokenIfCurrent(token: TraktTokenResponseDto, expected: TraktAuthState,
+        expectedRevision: Long, isSelectionCurrent: () -> Boolean): Boolean {
+        var saved = false
+        store(expected.profileId).edit { preferences ->
+            currentCoroutineContext().ensureActive()
+            if (!isSelectionCurrent() || grantRevision(expected.profileId) != expectedRevision ||
+                preferences[registrationClientIdKey] != expected.registrationClientId ||
+                readSecret(preferences, accessTokenKey, expected.profileId) != expected.accessToken ||
+                readSecret(preferences, refreshTokenKey, expected.profileId) != expected.refreshToken) return@edit
+            preferences[accessTokenKey] = credentialCipher.encrypt(token.accessToken, expected.profileId, "trakt_access_token")
+            preferences[refreshTokenKey] = credentialCipher.encrypt(token.refreshToken, expected.profileId, "trakt_refresh_token")
+            preferences[tokenTypeKey] = token.tokenType
+            preferences[createdAtKey] = token.createdAt
+            preferences[expiresInKey] = normalizeTraktTokenLifetimeSeconds(token.expiresIn)
+            saved = true
+        }
+        return saved
+    }
+
+    suspend fun clearAuthIfCurrent(expected: TraktAuthState, expectedRevision: Long,
+        isSelectionCurrent: () -> Boolean): Boolean {
+        val mutations = grantMutations.computeIfAbsent(expected.profileId) { AtomicInteger() }
+        mutations.incrementAndGet()
+        try {
+            var cleared = false
+            store(expected.profileId).edit { preferences ->
+                currentCoroutineContext().ensureActive()
+                if (!isSelectionCurrent() || (grantRevisions[expected.profileId]?.get() ?: 0L) != expectedRevision ||
+                    preferences[registrationClientIdKey] != expected.registrationClientId ||
+                    readSecret(preferences, accessTokenKey, expected.profileId) != expected.accessToken ||
+                    readSecret(preferences, refreshTokenKey, expected.profileId) != expected.refreshToken) return@edit
+                invalidateGrant(expected.profileId)
+                preferences.remove(registrationClientIdKey)
+                preferences.remove(accessTokenKey)
+                preferences.remove(refreshTokenKey)
+                preferences.remove(tokenTypeKey)
+                preferences.remove(createdAtKey)
+                preferences.remove(expiresInKey)
+                preferences.remove(usernameKey)
+                preferences.remove(userSlugKey)
+                preferences.remove(deviceCodeKey)
+                preferences.remove(userCodeKey)
+                preferences.remove(verificationUrlKey)
+                preferences.remove(expiresAtKey)
+                preferences.remove(pollIntervalKey)
+                cleared = true
+            }
+            return cleared
+        } finally { mutations.decrementAndGet() }
     }
 
     suspend fun saveUser(username: String?, userSlug: String?, profileId: Int) {
@@ -156,7 +230,7 @@ class TraktAuthDataStore @Inject constructor(
         }
     }
 
-    suspend fun saveDeviceFlow(data: TraktDeviceCodeResponseDto, profileId: Int, clientId: String) {
+    suspend fun saveDeviceFlow(data: TraktDeviceCodeResponseDto, profileId: Int, clientId: String) = changeGrant(profileId) {
         val now = System.currentTimeMillis()
         store(profileId).edit { preferences ->
             preferences[deviceCodeKey] = credentialCipher.encrypt(data.deviceCode, profileId, "trakt_device_code")
@@ -188,7 +262,7 @@ class TraktAuthDataStore @Inject constructor(
 
     suspend fun clearAuth() = clearAuthForProfile(profileManager.activeProfileId.value)
 
-    suspend fun clearAuthForProfile(profileId: Int) {
+    suspend fun clearAuthForProfile(profileId: Int) = changeGrant(profileId) {
         store(profileId).edit { preferences ->
             preferences.remove(registrationClientIdKey)
             preferences.remove(accessTokenKey)

@@ -30,7 +30,8 @@ data class Stream(
     val badges: List<StreamBadge> = emptyList(),
     val subtitles: List<Subtitle> = emptyList(),
     val serverTarget: ServerPlaybackTarget? = null,
-    val pluginSourceName: String? = null
+    val pluginSourceName: String? = null,
+    val nativeFileMetadata: StreamFileMetadata? = null
 ) {
     /**
      * Returns the primary stream source URL
@@ -146,7 +147,20 @@ data class Stream(
      * when the list recomposes or items shift position. The [occurrence] parameter
      * disambiguates genuine duplicates (same addon+url+name+title).
      */
-    fun stableKey(occurrence: Int = 0): String = buildString {
+    fun stableKey(occurrence: Int = 0): String {
+        val inherited = nativeFileMetadata?.sourceIdentity?.takeIf { it.length == 64 && it.all { char -> char in '0'..'9' || char in 'a'..'f' } }
+        val identity = inherited ?: run {
+            val bytes = java.security.MessageDigest.getInstance("SHA-256").digest(sourceIdentityText().toByteArray(Charsets.UTF_8))
+            val alphabet = "0123456789abcdef"
+            val chars = CharArray(bytes.size * 2)
+            bytes.forEachIndexed { index, byte -> val value = byte.toInt() and 255
+                chars[index * 2] = alphabet[value ushr 4]; chars[index * 2 + 1] = alphabet[value and 15] }
+            String(chars)
+        }
+        return "$identity|$occurrence"
+    }
+
+    private fun sourceIdentityText(): String = buildString {
         append(addonName)
         append('\u0000')
         append(url ?: infoHash ?: clientResolve?.infoHash ?: ytId ?: externalUrl ?: serverTarget?.key() ?: "")
@@ -162,8 +176,6 @@ data class Stream(
         append(quality ?: "")
         append('\u0000')
         append(sources.orEmpty().joinToString("|"))
-        append('\u0000')
-        append(occurrence)
     }
 }
 

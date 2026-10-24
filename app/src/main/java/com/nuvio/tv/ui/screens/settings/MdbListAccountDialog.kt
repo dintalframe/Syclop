@@ -34,7 +34,8 @@ internal fun MdbListAccountDialog(
             )
         }
     } else {
-        NuvioDialog(onDismiss = onDismiss, title = "", width = 720.dp, titleTextAlign = TextAlign.Center, suppressFirstKeyUp = false) {
+        NuvioDialog(onDismiss = onDismiss, title = "", width = 720.dp, titleTextAlign = TextAlign.Center, suppressFirstKeyUp = false,
+            criticalAuthActive = state.session != null || state.isLoading || state.isPolling) {
             TrackingDeviceAuthContent(
                 providerName = stringResource(R.string.mdblist_name),
                 logo = logo,

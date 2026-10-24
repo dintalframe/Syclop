@@ -28,3 +28,7 @@ sealed interface DebridDeviceAuthorizationTokenResult {
     data object Unsupported : DebridDeviceAuthorizationTokenResult
     data class Failed(val message: String?) : DebridDeviceAuthorizationTokenResult
 }
+
+/** Server slow_down must increase even an already-large minimum interval. */
+internal fun nextDebridDevicePollInterval(current: Int): Int =
+    (current.coerceAtLeast(5).toLong() + 5L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()

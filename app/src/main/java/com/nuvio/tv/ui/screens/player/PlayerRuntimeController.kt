@@ -710,7 +710,7 @@ class PlayerRuntimeController(
     internal var libassPipelineDecisionStreamUrl: String? = null
     internal var torrentStreamJob: Job? = null
     internal var torrentStateObserverJob: Job? = null
-    internal var isTorrentStream: Boolean = navigationArgs.infoHash != null && !initialStreamUrl.startsWith("http")
+    internal var isTorrentStream: Boolean = false // Syclop never starts a local P2P route.
     internal var currentInfoHash: String? = navigationArgs.infoHash
     internal var currentFileIdx: Int? = navigationArgs.fileIdx
     internal var currentTorrentSources: List<String>? =

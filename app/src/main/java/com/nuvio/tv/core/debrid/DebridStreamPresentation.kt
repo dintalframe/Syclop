@@ -48,19 +48,23 @@ class DebridStreamPresentation @Inject constructor(
         val badgeFilters by lazy {
             if (includeBadgeMatches) getBadgeFilters(streamBadgeRules) else emptyList()
         }
-        return groups.map { group ->
-            val visibleStreams = group.streams
-                .filterNot { stream -> stream.isInactiveResolverStream(settings) }
-                .filterNot { stream -> stream.isUncachedDebridStream() }
-            val debridStreams = visibleStreams.filter { stream -> stream.isManagedDebridStream() }
-            if (debridStreams.isEmpty()) return@map group.copy(streams = visibleStreams)
+        val visibleGroups = groups.map { group -> group.copy(streams = group.streams
+            .filterNot { it.isInactiveResolverStream(settings) || it.isUncachedDebridStream() }) }
+        val managed = visibleGroups.flatMap { it.streams }.filter { it.isManagedDebridStream(settings) }
+        val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits = false)
+        val presented = ranked.associate { (stream, facts) -> stream to formatter.format(stream, settings, badgeFilters, facts) }
+        // Keep complete candidates for flattened All ranking/enrichment; final limits belong there.
+        return visibleGroups.map { group -> group.copy(streams = group.streams.mapNotNull { stream ->
+            if(stream.isManagedDebridStream(settings)) presented[stream] else stream
+        }.let { rankAll(it, settings, enforceLimits = false) }) }
+    }
 
-            val presentedDebridStreams = DirectDebridStreamFilter.applyPreferencesWithFacts(debridStreams, settings)
-                .map { (stream, facts) -> formatter.format(stream, settings, badgeFilters, facts) }
-            val passthroughStreams = visibleStreams.filterNot { stream -> stream.isManagedDebridStream() }
-
-            group.copy(streams = presentedDebridStreams + passthroughStreams)
-        }
+    /** Used for the flattened All list and autoplay, before pagination. */
+    fun rankAll(streams: List<Stream>, settings: DebridSettings, enforceLimits: Boolean = true): List<Stream> {
+        if (!settings.canResolvePlayableLinks) return streams
+        val managed = streams.filter { it.isManagedDebridStream(settings) }
+        val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits).map { it.first }
+        return ranked + streams.filterNot { it.isManagedDebridStream(settings) }
     }
 
     private fun getBadgeFilters(rules: StreamBadgeRules): List<CompiledStreamBadgeFilter> {
@@ -71,14 +75,13 @@ class DebridStreamPresentation @Inject constructor(
         return compiled
     }
 
-    private fun Stream.isManagedDebridStream(): Boolean {
-        val status = debridCacheStatus
-        return isDirectDebrid() || (
-            needsLocalDebridResolve() &&
-                status != null &&
-                DebridProviders.byId(status.providerId)?.supports(DebridProviderCapability.LocalTorrentCacheCheck) == true &&
-                status.state != StreamDebridCacheState.CHECKING
-            )
+    private fun Stream.isManagedDebridStream(settings: DebridSettings): Boolean {
+        if (nativeFileMetadata != null) return true
+        val active = settings.activeResolverCredential ?: return false
+        if (needsLocalDebridResolve() && active.provider.supports(DebridProviderCapability.LocalTorrentResolve)) return true
+        val explicitProvider = DebridProviders.byId(clientResolve?.service)?.id
+        return explicitProvider == active.provider.id && (isDirectDebrid() ||
+            clientResolve?.type.let { it.equals("hoster", true) || it.equals("http", true) })
     }
 
     private fun Stream.isUncachedDebridStream(): Boolean =

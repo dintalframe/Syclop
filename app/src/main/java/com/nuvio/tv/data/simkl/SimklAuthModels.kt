@@ -15,7 +15,9 @@ enum class SimklAuthError {
     PIN_EXPIRED,
     PIN_INVALIDATED,
     AUTHORIZATION_REVOKED,
-    NETWORK
+    NETWORK,
+    INSUFFICIENT_SCOPE,
+    STORAGE
 }
 
 @Serializable
@@ -23,8 +25,11 @@ data class SimklPinSession(
     val userCode: String,
     val verificationUri: String,
     val expiresAtEpochMs: Long,
-    val intervalSeconds: Int
-)
+    val intervalSeconds: Int,
+    val verificationUriComplete: String? = null
+) {
+    override fun toString() = "SimklPinSession()"
+}
 
 data class SimklAuthState(
     val isAuthenticated: Boolean = false,
@@ -103,3 +108,43 @@ internal data class SimklUser(val name: String? = null)
 
 @Serializable
 internal data class SimklAccount(val id: Long? = null)
+
+
+@Serializable
+data class SimklV2Tokens(
+    val accessToken: String,
+    val refreshToken: String,
+    val expiresAtEpochMs: Long,
+    val refreshExpiresAtEpochMs: Long,
+    val scope: String
+) {
+    fun isValid(): Boolean = accessToken.isNotBlank() && refreshToken.isNotBlank() &&
+        accessToken.length <= 2048 && refreshToken.length <= 2048 &&
+        accessToken.none { it <= ' ' } && refreshToken.none { it <= ' ' } &&
+        expiresAtEpochMs > 0 && refreshExpiresAtEpochMs > 0 &&
+        setOf("media:read", "media:write").all { it in scope.split(' ') }
+    override fun toString() = "SimklV2Tokens()"
+}
+
+data class SimklV2Authorization(val scope: SimklAuthScope, val tokens: SimklV2Tokens) {
+    override fun toString() = "SimklV2Authorization(scope=$scope)"
+}
+
+@Serializable
+internal data class SimklV2DeviceResponse(
+    @SerialName("device_code") val deviceCode: String? = null,
+    @SerialName("user_code") val userCode: String? = null,
+    @SerialName("verification_uri") val verificationUri: String? = null,
+    @SerialName("verification_uri_complete") val verificationUriComplete: String? = null,
+    @SerialName("expires_in") val expiresIn: Long? = null,
+    val interval: Int? = null
+) { override fun toString() = "SimklV2DeviceResponse()" }
+
+@Serializable
+internal data class SimklV2TokenResponse(
+    @SerialName("access_token") val accessToken: String? = null,
+    @SerialName("refresh_token") val refreshToken: String? = null,
+    @SerialName("token_type") val tokenType: String? = null,
+    @SerialName("expires_in") val expiresIn: Long? = null,
+    val scope: String? = null
+) { override fun toString() = "SimklV2TokenResponse()" }

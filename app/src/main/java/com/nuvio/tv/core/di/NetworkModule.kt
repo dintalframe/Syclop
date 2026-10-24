@@ -234,7 +234,8 @@ object NetworkModule {
     fun provideSimklApiClient(
         @Named("simkl") okHttpClient: OkHttpClient,
         configuration: SimklApiConfiguration,
-        storage: SimklAuthStorage
+        storage: SimklAuthStorage,
+        tokenManager: com.nuvio.tv.data.simkl.SimklV2TokenManager
     ): SimklApiClient = SimklApiClient(
         engine = OkHttpSimklEngine(okHttpClient),
         configuration = configuration,
@@ -245,7 +246,8 @@ object NetworkModule {
                 scope = authorization.scope,
                 expectedAccessToken = authorization.accessToken
             )
-        }
+        },
+        renewAuthorization = tokenManager::authorization
     )
 
     @Provides

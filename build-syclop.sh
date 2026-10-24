@@ -96,6 +96,13 @@ if [ "$run_tests" -eq 1 ]; then
     --tests 'com.nuvio.tv.data.local.TraktCredentialStorageTest' \
     --tests 'com.nuvio.tv.data.repository.TraktAuthServiceTest' \
     --tests 'com.nuvio.tv.data.mal.*' \
+    --tests 'com.nuvio.tv.data.simkl.*' \
+    --tests 'com.nuvio.tv.core.streams.*' \
+    --tests 'com.nuvio.tv.core.torrent.*' \
+    --tests 'com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicyTest' \
+    --tests 'com.nuvio.tv.ui.screens.ambient.AmbientCriticalAuthLeaseTest' \
+    --tests 'com.nuvio.tv.ui.screens.settings.MalSettingsModalLifecycleTest' \
+    --tests 'com.nuvio.tv.ui.screens.settings.Simkl*' \
     --tests 'com.nuvio.tv.ui.screens.settings.TrackingSettingsViewModelTest' \
     --tests 'com.nuvio.tv.core.tracking.TrackingLibrarySourceControllerTest' \
     --tests 'com.nuvio.tv.core.tracking.TrackingSourceMemoryTest' \
@@ -104,14 +111,27 @@ if [ "$run_tests" -eq 1 ]; then
     --tests 'com.nuvio.tv.core.deeplink.DeepLinkParser*' \
     --tests 'com.nuvio.tv.data.local.MDBListRatingCredentialStorage*' \
     --tests 'com.nuvio.tv.ui.screens.settings.MDBListSettingsViewModel*' \
-    --tests 'com.nuvio.tv.data.repository.MDBListRepository*' :app:assembleFull${variant}
-else
-  ./gradlew --no-daemon --console=plain --max-workers=2 \
-    -Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8' \
-    :app:assembleFull${variant}
+    --tests 'com.nuvio.tv.data.repository.MDBListRepository*' \
+    --tests 'com.nuvio.tv.data.repository.StreamRepositoryPluginIsolationTest'
 fi
+./gradlew --no-daemon --console=plain --max-workers=2 \
+  -Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8' \
+  :app:assembleFull${variant}
 mkdir -p "$workspace_dir/dist"
 outputs="$project_dir/app/build/outputs/apk/full/$variant_dir"
+python3 - "$outputs" "$variant_dir" <<'PY'
+from pathlib import Path
+import sys
+import zipfile
+outputs = Path(sys.argv[1])
+variant = sys.argv[2]
+for abi in ('arm64-v8a', 'universal'):
+    apk = outputs / f'app-full-{abi}-{variant}.apk'
+    with zipfile.ZipFile(apk) as archive:
+        if any(Path(name).name == 'libnuvio_engine.so' for name in archive.namelist()):
+            raise SystemExit(f'Refusing APK containing the disabled local P2P engine: {apk.name}')
+print('Verified both APKs exclude the native local P2P engine.')
+PY
 cp "$outputs/app-full-arm64-v8a-${variant_dir}.apk" "$workspace_dir/dist/syclop-arm64-${variant_dir}.apk"
 cp "$outputs/app-full-universal-${variant_dir}.apk" "$workspace_dir/dist/syclop-${variant_dir}.apk"
 (

@@ -18,10 +18,11 @@ class PremiumizeDirectDebridResolver @Inject constructor(
     suspend fun resolve(
         stream: Stream,
         season: Int?,
-        episode: Int?
+        episode: Int?,
+        operation: CapturedDebridOperation? = null
     ): DirectDebridResolveResult {
         val resolve = stream.clientResolve ?: return DirectDebridResolveResult.Error
-        val apiKey = dataStore.settings.first().premiumizeApiKey.trim()
+        val apiKey = operation?.credential(DebridProviders.PREMIUMIZE_ID) ?: dataStore.settings.first().premiumizeApiKey.trim()
         if (apiKey.isBlank()) return DirectDebridResolveResult.MissingApiKey
         val source = resolve.magnetUri?.takeIf { it.isNotBlank() }
             ?: buildMagnetUri(resolve)
@@ -30,7 +31,7 @@ class PremiumizeDirectDebridResolver @Inject constructor(
         val authorization = "Bearer $apiKey"
 
         return try {
-            val response = api.directDownload(authorization, source)
+            val response = scopedDebridRequest(operation) { api.directDownload(authorization, source) }
             if (!response.isSuccessful) {
                 return when (response.code()) {
                     401, 403 -> DirectDebridResolveResult.Error

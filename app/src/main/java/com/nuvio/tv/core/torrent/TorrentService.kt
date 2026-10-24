@@ -80,10 +80,12 @@ class TorrentService @Inject constructor(
         filename: String? = null,
         trackers: List<String> = emptyList()
     ): String = withContext(Dispatchers.IO) {
+        com.nuvio.tv.core.streams.SyclopPlaybackPolicy.requireLocalP2pAllowed()
         startMutex.withLock { startStreamLocked(infoHash, fileIdx, filename, trackers) }
     }
 
     suspend fun clearCache(): TorrentCacheClearResult = withContext(Dispatchers.IO) {
+        com.nuvio.tv.core.streams.SyclopPlaybackPolicy.requireLocalP2pAllowed()
         startMutex.withLock {
             check(_state.value !is TorrentState.Streaming && _state.value !is TorrentState.Connecting) {
                 "Torrent cache cannot be cleared during active playback"
@@ -305,6 +307,7 @@ class TorrentService @Inject constructor(
     }
 
     private suspend fun ensureEngine(): NuvioEngine {
+        com.nuvio.tv.core.streams.SyclopPlaybackPolicy.requireLocalP2pAllowed()
         val settings = torrentSettings.settings.first()
         val configurationKey = EngineConfigurationKey(
             uploadEnabled = settings.enableUpload,

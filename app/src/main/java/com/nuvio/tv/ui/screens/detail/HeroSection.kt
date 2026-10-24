@@ -121,7 +121,9 @@ fun HeroContentSection(
     onHeroActionFocused: () -> Unit = {},
     onPlayFocusRestored: () -> Unit = {},
     onShowFullDescription: () -> Unit = {},
-    onTruncationChanged: (Boolean) -> Unit = {}
+    onTruncationChanged: (Boolean) -> Unit = {},
+    showTraktActions: Boolean = false,
+    onTraktActions: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val isSeriesApi = remember(meta.apiType) {
@@ -275,6 +277,10 @@ fun HeroContentSection(
                             onLongPress = onLibraryLongPress,
                             onFocused = onHeroActionFocused
                         )
+
+                        if (showTraktActions) {
+                            Button(onClick = onTraktActions) { Text("Trakt") }
+                        }
 
                         if (meta.apiType == "movie") {
                             ActionIconButton(

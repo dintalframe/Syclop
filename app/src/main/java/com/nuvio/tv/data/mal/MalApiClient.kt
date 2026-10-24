@@ -5,8 +5,13 @@ import java.util.concurrent.TimeUnit
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import java.io.IOException
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -27,10 +32,14 @@ class MalApiException(val statusCode: Int) : Exception("MyAnimeList request fail
 
 /** Dedicated HTTPS client without request/response logging or shared authentication interceptors. */
 @Singleton
-class MalApiClient @Inject constructor() {
-    private val client = OkHttpClient.Builder()
+class MalApiClient internal constructor(
+    private val client: OkHttpClient,
+    private val apiUrl: String,
+    private val tokenUrl: String
+) {
+    @Inject constructor() : this(OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS)
-        .callTimeout(30, TimeUnit.SECONDS).followRedirects(false).build()
+        .callTimeout(30, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build(), API_URL, TOKEN_URL)
     private val json = Json { ignoreUnknownKeys = true }
 
     fun authorizationUrl(configuration: MalConfiguration, state: String, verifier: String): String =
@@ -46,13 +55,13 @@ class MalApiClient @Inject constructor() {
         val body = FormBody.Builder().add("client_id", configuration.clientId)
             .add("grant_type", "authorization_code").add("code", code)
             .add("redirect_uri", configuration.redirectUri).add("code_verifier", verifier).build()
-        return tokens(request(Request.Builder().url(TOKEN_URL).post(body).build()), null)
+        return tokens(request(Request.Builder().url(tokenUrl).post(body).build()), null)
     }
 
     suspend fun refresh(configuration: MalConfiguration, previous: MalTokens): MalTokens {
         val body = FormBody.Builder().add("client_id", configuration.clientId)
             .add("grant_type", "refresh_token").add("refresh_token", previous.refreshToken).build()
-        return tokens(request(Request.Builder().url(TOKEN_URL).post(body).build()), previous.refreshToken)
+        return tokens(request(Request.Builder().url(tokenUrl).post(body).build()), previous.refreshToken)
     }
 
     suspend fun username(token: String): String = get("users/@me", token).string("name")
@@ -127,7 +136,7 @@ class MalApiClient @Inject constructor() {
 
     private suspend fun publicGet(path: String, clientId: String, parameters: Map<String, String>): JsonObject {
         require(clientId.matches(Regex("[A-Za-z0-9_-]{8,128}"))) { "Syclop's MyAnimeList application is not configured." }
-        val url = "$API_URL/$path".toHttpUrl().newBuilder().also { builder ->
+        val url = "$apiUrl/$path".toHttpUrl().newBuilder().also { builder ->
             parameters.forEach { (key, value) -> builder.addQueryParameter(key, value) }
         }.build()
         return request(Request.Builder().url(url).header("X-MAL-CLIENT-ID", clientId).build())
@@ -142,14 +151,14 @@ class MalApiClient @Inject constructor() {
         val fields = edit.fields()
         require(fields.isNotEmpty()) { "No MyAnimeList values were changed." }
         val body = FormBody.Builder().also { builder -> fields.forEach { (key, value) -> builder.add(key, value) } }.build()
-        request(Request.Builder().url("$API_URL/anime/$id/my_list_status")
+        request(Request.Builder().url("$apiUrl/anime/$id/my_list_status")
             .header("Authorization", "Bearer $token").patch(body).build())
     }
 
     suspend fun remove(id: Long, token: String) {
         require(id > 0)
         try {
-            request(Request.Builder().url("$API_URL/anime/$id/my_list_status")
+            request(Request.Builder().url("$apiUrl/anime/$id/my_list_status")
                 .header("Authorization", "Bearer $token").delete().build())
         } catch (error: MalApiException) {
             // Official MAL DELETE is idempotent in effect but reports 404 when already absent.
@@ -158,33 +167,50 @@ class MalApiClient @Inject constructor() {
     }
 
     private suspend fun get(path: String, token: String, parameters: Map<String, String> = emptyMap()): JsonObject {
-        val url = "$API_URL/$path".toHttpUrl().newBuilder().also { builder ->
+        val url = "$apiUrl/$path".toHttpUrl().newBuilder().also { builder ->
             parameters.forEach { (key, value) -> builder.addQueryParameter(key, value) }
         }.build()
         return request(Request.Builder().url(url).header("Authorization", "Bearer $token").build())
     }
 
-    private suspend fun request(request: Request): JsonObject = withContext(Dispatchers.IO) {
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw MalApiException(response.code)
-            val body = response.body ?: error("MyAnimeList returned an empty response.")
-            val bytes = body.byteStream().use { input ->
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(8192)
-                while (output.size() <= MAX_RESPONSE_BYTES) {
-                    val read = input.read(buffer, 0, minOf(buffer.size, MAX_RESPONSE_BYTES + 1 - output.size()))
-                    if (read < 0) break
-                    output.write(buffer, 0, read)
+    private suspend fun request(request: Request): JsonObject = suspendCancellableCoroutine { continuation ->
+        val call = client.newCall(request)
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, error: IOException) {
+                if (continuation.isActive) continuation.resumeWithException(IOException("MyAnimeList network request failed."))
+            }
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    response.use {
+                        if (!continuation.isActive) return
+                        if (!it.isSuccessful) throw MalApiException(it.code)
+                        val body = it.body ?: throw IOException("MyAnimeList returned an empty response.")
+                        val bytes = body.byteStream().use { input ->
+                            val output = ByteArrayOutputStream()
+                            val buffer = ByteArray(8192)
+                            while (output.size() <= MAX_RESPONSE_BYTES) {
+                                val read = input.read(buffer, 0, minOf(buffer.size, MAX_RESPONSE_BYTES + 1 - output.size()))
+                                if (read < 0) break
+                                output.write(buffer, 0, read)
+                            }
+                            output.toByteArray()
+                        }
+                        if (bytes.size > MAX_RESPONSE_BYTES) throw IOException("MyAnimeList returned too much data.")
+                        val parsed = if (bytes.isEmpty()) JsonObject(emptyMap()) else {
+                            val value = json.parseToJsonElement(bytes.toString(Charsets.UTF_8))
+                            if (value is JsonObject) value else if (value.toString() == "null") JsonObject(emptyMap())
+                            else throw IOException("MyAnimeList returned an unsupported response.")
+                        }
+                        if (continuation.isActive) continuation.resume(parsed)
+                    }
+                } catch (failure: Exception) {
+                    // Parser/transport exception messages may contain payload snippets. Never propagate them.
+                    if (continuation.isActive) continuation.resumeWithException(if (failure is MalApiException) failure
+                        else IOException("MyAnimeList response could not be read."))
                 }
-                output.toByteArray()
             }
-            require(bytes.size <= MAX_RESPONSE_BYTES) { "MyAnimeList returned too much data." }
-            if (bytes.isEmpty()) JsonObject(emptyMap()) else {
-                val parsed = json.parseToJsonElement(bytes.toString(Charsets.UTF_8))
-                if (parsed is JsonObject) parsed else if (parsed.toString() == "null") JsonObject(emptyMap())
-                else error("MyAnimeList returned an unsupported response.")
-            }
-        }
+        })
     }
 
     private fun tokens(root: JsonObject, previousRefresh: String?): MalTokens {

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -65,9 +66,15 @@ class ProfileManager @Inject constructor(
     val canCreateProfile: Boolean
         get() = profiles.value.size < MAX_PROFILES
 
+    private val selectionRevision = AtomicLong()
+    /** Invalidates captured account actions before a profile switch can suspend. */
+    val activeProfileSelectionRevision: Long get() = selectionRevision.get()
+
     suspend fun setActiveProfile(id: Int) {
         val exists = profiles.value.any { it.id == id }
         if (exists) {
+            selectionRevision.incrementAndGet()
+            com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.clear()
             profileDataStore.setActiveProfile(id)
         }
     }

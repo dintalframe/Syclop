@@ -12,9 +12,9 @@ class AllDebridDirectDebridResolver @Inject constructor(
     private val dataStore: DebridSettingsDataStore,
     private val service: AllDebridService
 ) {
-    suspend fun resolve(stream: Stream, season: Int?, episode: Int?): DirectDebridResolveResult {
+    suspend fun resolve(stream: Stream, season: Int?, episode: Int?, operation: CapturedDebridOperation? = null): DirectDebridResolveResult {
         val metadata = stream.clientResolve ?: return DirectDebridResolveResult.Stale
-        val apiKey = dataStore.settings.first().allDebridApiKey.trim()
+        val apiKey = operation?.credential(DebridProviders.ALL_DEBRID_ID) ?: dataStore.settings.first().allDebridApiKey.trim()
         if (apiKey.isBlank()) return DirectDebridResolveResult.MissingApiKey
         return try {
             val magnet = metadata.magnetUri?.takeIf { it.startsWith("magnet:", true) }
@@ -22,13 +22,13 @@ class AllDebridDirectDebridResolver @Inject constructor(
             val source: String
             var selectedFile: AllDebridFile? = null
             if (magnet != null) {
-                val uploaded = service.upload(apiKey, magnet)
+                val uploaded = scopedDebridRequest(operation) { service.upload(apiKey, magnet) }
                 val id = uploaded.id ?: return DirectDebridResolveResult.Stale
                 // No background download polling. An uncached job remains available in cloud.
-                val ready = uploaded.ready == true || service.status(apiKey, id).any { it.id == id && it.statusCode == 4 }
+                val ready = uploaded.ready == true || scopedDebridRequest(operation) { service.status(apiKey, id) }.any { it.id == id && it.statusCode == 4 }
                 if (!ready) return DirectDebridResolveResult.NotCached
                 selectedFile = selectDebridFile(
-                    files = service.files(apiKey, listOf(id))[id].orEmpty(),
+                    files = scopedDebridRequest(operation) { service.files(apiKey, listOf(id)) }[id].orEmpty(),
                     resolve = metadata,
                     season = season,
                     episode = episode,
@@ -41,7 +41,7 @@ class AllDebridDirectDebridResolver @Inject constructor(
                 source = stream.getStreamUrl()?.takeIf { it.isHttpUrl() }
                     ?: return DirectDebridResolveResult.Stale
             }
-            val result = service.unlock(apiKey, source)
+            val result = scopedDebridRequest(operation) { service.unlock(apiKey, source) }
             DirectDebridResolveResult.Success(
                 url = result.link ?: return DirectDebridResolveResult.Stale,
                 filename = result.filename ?: selectedFile?.path?.substringAfterLast('/'),

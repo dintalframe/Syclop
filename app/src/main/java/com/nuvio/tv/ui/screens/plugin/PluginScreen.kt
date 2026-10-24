@@ -134,6 +134,14 @@ fun PluginScreenContent(
     viewModel: PluginViewModel = hiltViewModel(),
     showHeader: Boolean = true
 ) {
+    if (!com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.ALLOW_REMOTE_EXECUTABLE_PLUGINS) {
+        Column(modifier = Modifier.fillMaxWidth().padding(NuvioTheme.spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md)) {
+            Text("Source providers")
+            Text(com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.MESSAGE)
+        }
+        return
+    }
     var repoUrl by remember { mutableStateOf("") }
 
     DisposableEffect(Unit) {

@@ -52,19 +52,25 @@ import com.nuvio.tv.data.mal.MalListEdit
 import com.nuvio.tv.ui.components.NuvioDialog
 import com.nuvio.tv.ui.theme.NuvioTheme
 
-/** An independent MAL account/list UI; no changes to Trakt, Simkl or their selected sources. */
+/** Row state is safe to recycle; the owning modal is rendered by the stable screen host below. */
 @Composable
 internal fun MalSettingsSection(viewModel: MalSettingsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var showing by remember { mutableStateOf(false) }
-    LaunchedEffect(state.account.scope.profileId) { showing = false; viewModel.close() }
     SettingsActionRow(
         title = stringResource(R.string.syclop_mal_name),
         subtitle = state.account.username ?: stringResource(R.string.syclop_mal_summary),
         value = if (state.account.connected) "Connected" else "Connect",
-        onClick = { showing = true; viewModel.open() }
+        onClick = viewModel::open
     )
-    if (showing) MalAccountDialog(state, viewModel) { showing = false; viewModel.close() }
+}
+
+/** Must be outside LazyColumn items: item recycling must not close a live phone authorization. */
+@Composable
+internal fun MalSettingsDialogHost(viewModel: MalSettingsViewModel = hiltViewModel()) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val showing by viewModel.dialogVisible.collectAsStateWithLifecycle()
+    DisposableEffect(viewModel) { onDispose { viewModel.screenClosed() } }
+    if (showing) MalAccountDialog(state, viewModel, viewModel::close)
 }
 
 @Composable
@@ -77,12 +83,12 @@ private fun MalAccountDialog(state: MalSettingsUiState, viewModel: MalSettingsVi
     var query by remember(state.account.scope) { mutableStateOf("") }
     var editing by remember(state.account.scope) { mutableStateOf<MalAnime?>(null) }
     val visibleItems = state.searchResults ?: state.library.items
-    DisposableEffect(Unit) { onDispose { viewModel.close() } }
     LaunchedEffect(state.account.connected) { if (state.account.connected) viewModel.refresh() }
 
     NuvioDialog(onDismiss = dismiss, title = "MyAnimeList", subtitle = if (state.session != null)
         "Connect your account with your phone." else state.account.username
-        ?: stringResource(R.string.syclop_mal_dialog_summary), width = 780.dp, suppressFirstKeyUp = false) {
+        ?: stringResource(R.string.syclop_mal_dialog_summary), width = 780.dp, suppressFirstKeyUp = false,
+        criticalAuthActive = state.session != null) {
         val authorization = state.session
         if (authorization != null) {
             MalAuthorizationPane(authorization, state, viewModel)

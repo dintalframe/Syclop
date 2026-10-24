@@ -6,6 +6,7 @@ import com.nuvio.tv.core.tracking.TrackingRefreshIntent
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,15 +21,20 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 @Singleton
-class SimklSyncRepository @Inject constructor(
+class SimklSyncRepository internal constructor(
     private val engine: SimklSyncEngine,
     private val storage: SimklSyncStorage,
     private val authRepository: SimklAuthRepository,
     private val authStorage: SimklAuthStorage,
-    private val profileManager: ProfileManager
+    private val profileManager: ProfileManager,
+    private val ioDispatcher: CoroutineDispatcher,
+    private val scope: CoroutineScope
 ) {
+    @Inject constructor(engine: SimklSyncEngine, storage: SimklSyncStorage,
+        authRepository: SimklAuthRepository, authStorage: SimklAuthStorage,
+        profileManager: ProfileManager) : this(engine, storage, authRepository, authStorage,
+        profileManager, Dispatchers.IO, CoroutineScope(SupervisorJob() + Dispatchers.IO))
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val loadMutex = Mutex()
     private val snapshotMutex = Mutex()
     private val refreshGate = SimklRefreshGate()
@@ -54,7 +60,7 @@ class SimklSyncRepository @Inject constructor(
         }
     }
 
-    suspend fun ensureLoaded() = withContext(Dispatchers.IO) {
+    suspend fun ensureLoaded() = withContext(ioDispatcher) {
         val profileId = profileManager.activeProfileId.value
         if (loadedProfileId != profileId) loadProfile(profileId)
     }
@@ -63,7 +69,7 @@ class SimklSyncRepository @Inject constructor(
         scope.launch { refresh(intent) }
     }
 
-    suspend fun refresh(intent: TrackingRefreshIntent) = withContext(Dispatchers.IO) {
+    suspend fun refresh(intent: TrackingRefreshIntent) = withContext(ioDispatcher) {
         ensureLoaded()
         val profileId = profileManager.activeProfileId.value
         val generation = profileGeneration
@@ -86,26 +92,28 @@ class SimklSyncRepository @Inject constructor(
         }
     }
 
-    suspend fun clearCurrentProfile() = withContext(Dispatchers.IO) {
+    suspend fun clearCurrentProfile() {
+        // Capture before dispatch, while this call still belongs to its initiating viewer.
         val profileId = profileManager.activeProfileId.value
-        profileGeneration += 1L
-        storage.remove(profileId)
-        if (profileId == profileManager.activeProfileId.value) {
-            loadedProfileId = profileId
-            _projection.value = SimklSnapshotProjection.Empty
-            _state.value = SimklSyncState(hasLoaded = true)
-        }
+        clearProfile(profileId)
     }
 
-    suspend fun removeProfile(profileId: Int) = withContext(Dispatchers.IO) {
-        if (profileId == profileManager.activeProfileId.value) {
-            clearCurrentProfile()
-        } else {
+    suspend fun clearProfile(profileId: Int) = withContext(ioDispatcher) {
+        require(profileId in 1..6)
+        snapshotMutex.withLock {
             storage.remove(profileId)
+            if (profileId == profileManager.activeProfileId.value) {
+                profileGeneration += 1L
+                loadedProfileId = profileId
+                _projection.value = SimklSnapshotProjection.Empty
+                _state.value = SimklSyncState(hasLoaded = true)
+            }
         }
     }
 
-    suspend fun removePlaybackSessions(sessionIds: Set<Long>) = withContext(Dispatchers.IO) {
+    suspend fun removeProfile(profileId: Int) = clearProfile(profileId)
+
+    suspend fun removePlaybackSessions(sessionIds: Set<Long>) = withContext(ioDispatcher) {
         if (sessionIds.isEmpty()) return@withContext
         ensureLoaded()
         snapshotMutex.withLock {
@@ -123,7 +131,7 @@ class SimklSyncRepository @Inject constructor(
         }
     }
 
-    internal suspend fun commitScrobble(result: SimklScrobbleResult) = withContext(Dispatchers.IO) {
+    internal suspend fun commitScrobble(result: SimklScrobbleResult) = withContext(ioDispatcher) {
         ensureLoaded()
         val profileId = profileManager.activeProfileId.value
         val generation = profileGeneration
@@ -144,7 +152,7 @@ class SimklSyncRepository @Inject constructor(
         }
     }
 
-    internal suspend fun commitMutation(receipt: SimklMutationReceipt) = withContext(Dispatchers.IO) {
+    internal suspend fun commitMutation(receipt: SimklMutationReceipt) = withContext(ioDispatcher) {
         ensureLoaded()
         val profileId = profileManager.activeProfileId.value
         val generation = profileGeneration

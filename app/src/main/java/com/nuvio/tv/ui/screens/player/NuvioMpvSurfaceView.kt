@@ -38,6 +38,15 @@ class NuvioMpvSurfaceView @JvmOverloads constructor(
         applyAspectModeInternal(currentAspectMode, allowRetry = true)
     }
 
+    private fun authorizedMedia(url: String): Boolean {
+        if (com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(url)) return true
+        pendingInitialMediaUrl = null
+        pendingInitialStartOption = null
+        deferredLoadUntilSurface = false
+        Log.w(TAG, "Media load rejected by connected-service policy")
+        return false
+    }
+
     fun ensureInitialized() {
         if (initialized) return
         Utils.copyAssets(context)
@@ -49,6 +58,7 @@ class NuvioMpvSurfaceView @JvmOverloads constructor(
     }
 
     fun setMedia(url: String, headers: Map<String, String>, startPositionMs: Long = 0L) {
+        if (!authorizedMedia(url)) return
         ensureInitialized()
         val requestKey = buildMediaRequestKey(url = url, headers = headers) +
             "#start=${startPositionMs.coerceAtLeast(0L)}"
@@ -103,6 +113,8 @@ class NuvioMpvSurfaceView @JvmOverloads constructor(
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
+        val queued = pendingInitialMediaUrl ?: requestedMediaUrl
+        if (queued != null && !authorizedMedia(queued)) return
         super.surfaceCreated(holder)
         deferredLoadUntilSurface = false
         val url = pendingInitialMediaUrl ?: return
@@ -122,10 +134,12 @@ class NuvioMpvSurfaceView @JvmOverloads constructor(
      * the whole command and stay idle, i.e. resuming at a position would never load the file.
      */
     private fun loadFileWithOptions(url: String, options: String) {
+        if (!authorizedMedia(url)) return
         mpv.command("loadfile", url, "replace", LOADFILE_DEFAULT_INDEX, options)
     }
 
     fun setMediaUsingLoadfile(url: String, headers: Map<String, String>) {
+        if (!authorizedMedia(url)) return
         ensureInitialized()
         val requestKey = buildMediaRequestKey(url = url, headers = headers)
         applyHeaders(headers)

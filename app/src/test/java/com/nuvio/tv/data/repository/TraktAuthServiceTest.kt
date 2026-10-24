@@ -25,10 +25,21 @@ class TraktAuthServiceTest {
         val traktApi = mockk<TraktApi>()
         val traktAuthDataStore = mockk<TraktAuthDataStore>()
         val authSessionNoticeDataStore = mockk<AuthSessionNoticeDataStore>()
-        var authState = authenticatedState()
+        var authState = authenticatedState().copy(registrationClientId = "syclop-client-id-123456")
+        var grantRevision = 0L
 
+        every { traktAuthDataStore.activeProfileId } returns 1
+        every { traktAuthDataStore.activeProfileSelectionRevision } returns 0L
+        every { traktAuthDataStore.grantRevision(1) } answers { grantRevision }
         coEvery { traktAuthDataStore.getCurrentState() } answers { authState }
-        coEvery { traktAuthDataStore.clearAuthForProfile(1) } answers { authState = TraktAuthState() }
+        coEvery { traktAuthDataStore.getCurrentState(1) } answers { authState }
+        coEvery { traktAuthDataStore.clearAuthIfCurrent(any(), any(), any()) } coAnswers {
+            if (firstArg<TraktAuthState>() == authState && secondArg<Long>() == grantRevision && thirdArg<() -> Boolean>()()) {
+                authState = TraktAuthState(profileId = 1)
+                grantRevision += 1L
+                true
+            } else false
+        }
         coEvery { authSessionNoticeDataStore.markTraktReconnectRequired() } returns Unit
         coEvery { traktApi.refreshToken(any()) } returns Response.error(400, "invalid_grant".toResponseBody())
 
@@ -47,7 +58,8 @@ class TraktAuthServiceTest {
 
         coVerify(exactly = 1) { traktApi.refreshToken(any()) }
         coVerify(exactly = 1) { authSessionNoticeDataStore.markTraktReconnectRequired() }
-        coVerify(exactly = 1) { traktAuthDataStore.clearAuthForProfile(1) }
+        coVerify(exactly = 1) { traktAuthDataStore.clearAuthIfCurrent(any(), 0L, any()) }
+        coVerify(exactly = 0) { traktAuthDataStore.clearAuthForProfile(any()) }
     }
 
     @Test

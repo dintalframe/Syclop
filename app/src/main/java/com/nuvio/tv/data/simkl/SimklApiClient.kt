@@ -32,20 +32,20 @@ data class SimklApiRequest(
     val requiresAuthentication: Boolean = true,
     val retryPolicy: SimklRetryPolicy = SimklRetryPolicy.TRANSIENT_FAILURES,
     val scrobbleStopConflictIsSuccess: Boolean = false
-)
+) { override fun toString() = "SimklApiRequest(method=$method)" }
 
 data class SimklRawHttpResponse(
     val status: Int,
     val body: String,
     val headers: Map<String, String> = emptyMap()
-)
+) { override fun toString() = "SimklRawHttpResponse(status=$status)" }
 
 data class SimklApiResponse(
     val status: Int,
     val body: String,
     val headers: Map<String, String>,
     val isSoftSuccess: Boolean = false
-)
+) { override fun toString() = "SimklApiResponse(status=$status)" }
 
 class SimklApiException(
     val status: Int?,
@@ -70,7 +70,8 @@ class SimklApiClient(
     private val onUnauthorized: (SimklAuthorization) -> Unit,
     private val nowEpochMs: () -> Long = System::currentTimeMillis,
     private val sleep: suspend (Long) -> Unit = { delay(it) },
-    private val retryJitterMs: () -> Long = { Random.nextLong(RETRY_JITTER_BOUND_MS + 1L) }
+    private val retryJitterMs: () -> Long = { Random.nextLong(RETRY_JITTER_BOUND_MS + 1L) },
+    private val renewAuthorization: (suspend (SimklAuthorization, Boolean) -> SimklAuthorization)? = null
 ) {
     private val requestMutex = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
@@ -81,6 +82,7 @@ class SimklApiClient(
         request: SimklApiRequest,
         expectedAuthScope: SimklAuthScope? = null
     ): SimklApiResponse {
+        if (configuration.clientId.isBlank()) throw SimklAuthException(SimklAuthError.MISSING_CLIENT_ID)
         val queuedAtEpochMs = nowEpochMs()
         if (request.path.startsWith("/scrobble/")) {
             Log.d(
@@ -96,84 +98,85 @@ class SimklApiClient(
                         (nowEpochMs() - queuedAtEpochMs).coerceAtLeast(0L)
                 )
             }
-            val requestAuthorization = if (request.requiresAuthentication) {
+            var requestAuthorization = if (request.requiresAuthentication) {
                 authorization()?.takeIf { it.accessToken.isNotBlank() }
                     ?.also { current ->
                         if (expectedAuthScope != null && current.scope != expectedAuthScope) {
-                            throw SimklApiException(
-                                409,
-                                "auth_scope_changed",
-                                "Simkl authentication profile changed"
-                            )
+                            throw SimklApiException(409, "auth_scope_changed", "Simkl authentication profile changed")
                         }
-                    }
-                    ?: throw SimklApiException(401, "authentication_required", "Simkl authentication is required")
-            } else {
-                null
+                    } ?: throw SimklApiException(401, "authentication_required", "Simkl authentication is required")
+            } else null
+            val initialAuthorization = requestAuthorization
+            if (initialAuthorization != null && renewAuthorization != null) {
+                requestAuthorization = renewAuthorization.invoke(initialAuthorization, false)
             }
-            val token = requestAuthorization?.accessToken
             val maxAttempts = if (request.retryPolicy == SimklRetryPolicy.NEVER) 1 else MAX_ATTEMPTS
             var syncWriteLockRetried = false
-            repeat(maxAttempts) { attempt ->
+            var authenticationRetried = false
+            var attempt = 0
+            while (attempt < maxAttempts) {
+                requestAuthorization?.let { current ->
+                    if (authorization()?.scope != current.scope) {
+                        throw SimklApiException(409, "auth_scope_changed", "Simkl authentication profile changed")
+                    }
+                }
                 val response = try {
                     executeRateLimited(request.method) {
                         engine.execute(
                             method = request.method.name,
                             url = buildSimklApiUrl(configuration, request.path, request.query),
-                            headers = simklRequestHeaders(
-                                configuration = configuration,
-                                accessToken = token,
-                                contentTypeJson = request.method != SimklHttpMethod.GET
-                            ),
+                            headers = simklRequestHeaders(configuration, requestAuthorization?.accessToken,
+                                contentTypeJson = request.method != SimklHttpMethod.GET),
                             body = request.body
                         )
                     }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
+                } catch (error: CancellationException) { throw error }
+                catch (error: Throwable) {
                     if (attempt == maxAttempts - 1) {
                         throw SimklApiException(null, "transport_failure", "Simkl request failed", error)
                     }
-                    sleep(retryDelayMs(attempt, null, retryJitterMs()))
-                    return@repeat
+                    sleep(retryDelayMs(attempt++, null, retryJitterMs()))
+                    continue
                 }
-
+                requestAuthorization?.let { current ->
+                    if (authorization()?.scope != current.scope) {
+                        throw SimklApiException(409, "auth_scope_changed", "Simkl authentication profile changed")
+                    }
+                }
                 logSyncResponse(request, response, attempt + 1)
                 if (request.path.startsWith("/scrobble/")) {
-                    Log.d(
-                        TRACKING_SCROBBLE_DIAGNOSTIC_TAG,
-                        "simkl client response path=${request.path} status=${response.status} attempt=${attempt + 1}"
-                    )
+                    Log.d(TRACKING_SCROBBLE_DIAGNOSTIC_TAG,
+                        "simkl client response path=${request.path} status=${response.status} attempt=${attempt + 1}")
                 }
-                if (
-                    request.retryPolicy == SimklRetryPolicy.SYNC_WRITE &&
-                    response.status == 400 &&
-                    !syncWriteLockRetried &&
-                    response.errorCode(json) == "rate_limit" &&
-                    attempt < maxAttempts - 1
-                ) {
+                if (request.retryPolicy == SimklRetryPolicy.SYNC_WRITE && response.status == 400 &&
+                    !syncWriteLockRetried && response.errorCode(json) == "rate_limit" && attempt < maxAttempts - 1) {
                     syncWriteLockRetried = true
+                    attempt++
                     sleep(SYNC_WRITE_LOCK_RETRY_DELAY_MS)
-                    return@repeat
+                    continue
                 }
-
                 when (classifySimklResponse(response.status, request.scrobbleStopConflictIsSuccess)) {
                     SimklResponseAction.SUCCESS -> return@withLock response.toApiResponse()
                     SimklResponseAction.SOFT_SUCCESS -> return@withLock response.toApiResponse(true)
                     SimklResponseAction.REAUTHENTICATE -> {
+                        // This means a missing Authorization header, not an expired token.
+                        if (response.errorCode(json) == "user_token_required") throw response.toApiException(json)
+                        val current = requestAuthorization
+                        if (!authenticationRetried && current != null && renewAuthorization != null) {
+                            authenticationRetried = true
+                            val refreshed = renewAuthorization.invoke(current, true)
+                            if (refreshed.accessToken != current.accessToken) {
+                                requestAuthorization = refreshed
+                                continue
+                            }
+                        }
                         requestAuthorization?.let(onUnauthorized)
                         throw response.toApiException(json)
                     }
                     SimklResponseAction.FAIL -> throw response.toApiException(json)
                     SimklResponseAction.RETRY -> {
                         if (attempt == maxAttempts - 1) throw response.toApiException(json)
-                        sleep(
-                            retryDelayMs(
-                                attempt,
-                                response.headers.headerValue("retry-after"),
-                                retryJitterMs()
-                            )
-                        )
+                        sleep(retryDelayMs(attempt++, response.headers.headerValue("retry-after"), retryJitterMs()))
                     }
                 }
             }
@@ -276,17 +279,11 @@ fun simklSyncResponseLogMessage(
 private fun SimklRawHttpResponse.toApiResponse(isSoftSuccess: Boolean = false): SimklApiResponse =
     SimklApiResponse(status, body, headers, isSoftSuccess)
 
-private fun SimklRawHttpResponse.toApiException(json: Json): SimklApiException {
-    val envelope = errorEnvelope(json)
-    return SimklApiException(
-        status = status,
-        errorCode = envelope?.error,
-        message = envelope?.message?.takeIf(String::isNotBlank)
-            ?: envelope?.errorDescription?.takeIf(String::isNotBlank)
-            ?: envelope?.error?.takeIf(String::isNotBlank)
-            ?: "Simkl request failed with HTTP $status"
-    )
-}
+private fun SimklRawHttpResponse.toApiException(json: Json): SimklApiException = SimklApiException(
+    status = status,
+    errorCode = errorEnvelope(json)?.error?.takeIf { it.matches(Regex("[a-z_]{1,64}")) },
+    message = "Simkl request failed with HTTP $status"
+)
 
 private fun SimklRawHttpResponse.errorCode(json: Json): String? = errorEnvelope(json)?.error
 

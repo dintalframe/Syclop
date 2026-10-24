@@ -57,7 +57,7 @@ class TorrentSettings @Inject constructor(
 
     val settings: Flow<TorrentSettingsData> = context.torrentDataStore.data.map { prefs ->
         TorrentSettingsData(
-            p2pEnabled = prefs[Keys.P2P_ENABLED] ?: false,
+            p2pEnabled = false, // Immutable Syclop product policy; old preferences cannot opt into P2P.
             enableUpload = prefs[Keys.ENABLE_UPLOAD] ?: true,
             hideTorrentStats = prefs[Keys.HIDE_TORRENT_STATS] ?: true,
             torrentProfile = prefs[Keys.TORRENT_PROFILE]
@@ -70,6 +70,7 @@ class TorrentSettings @Inject constructor(
     }
 
     fun setP2pEnabled(enabled: Boolean) {
+        if (enabled) return // This product has no local P2P mode, including previously saved consent.
         scope.launch {
             context.torrentDataStore.edit { it[Keys.P2P_ENABLED] = enabled }
         }

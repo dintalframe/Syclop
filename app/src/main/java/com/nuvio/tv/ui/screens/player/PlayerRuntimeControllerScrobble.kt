@@ -44,6 +44,11 @@ internal fun PlayerRuntimeController.preparePlaybackBeforeStart(
     }
 
     playbackPreparationJob = scope.launch {
+        if (!directDebridResolver.isPlaybackAuthorized(playbackUrl, profileId)) {
+            _uiState.update { it.copy(error = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE,
+                showLoadingOverlay = false, isBuffering = false) }
+            return@launch
+        }
         setLoadingStatus(
             phase = "preparing_metadata",
             message = context.getString(com.nuvio.tv.R.string.player_loading_preparing)

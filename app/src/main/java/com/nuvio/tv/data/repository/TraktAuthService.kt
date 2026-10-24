@@ -41,11 +41,12 @@ class TraktAuthService @Inject constructor(
     private val traktApi: TraktApi,
     private val traktAuthDataStore: TraktAuthDataStore,
     private val authSessionNoticeDataStore: AuthSessionNoticeDataStore,
-    private val appRegistrationStore: TraktAppRegistrationStore
+    private val appRegistrationStore: TraktAppRegistrationStore,
+    private val refreshCoordinator: com.nuvio.tv.core.trakt.TraktTokenRefreshCoordinator = com.nuvio.tv.core.trakt.TraktTokenRefreshCoordinator()
 ) {
     private val refreshLeewaySeconds = 60L
     private val writeRequestMutex = Mutex()
-    private val tokenRefreshMutex = Mutex()
+    private val tokenRefreshMutex = refreshCoordinator.mutex
     private var lastWriteRequestAtMs = 0L
     private val minWriteIntervalMs = 1_000L
     private val transientRetryStatusCodes = setOf(502, 503, 504, 520, 521, 522)
@@ -265,48 +266,48 @@ class TraktAuthService @Inject constructor(
         }
     }
 
-    suspend fun refreshTokenIfNeeded(force: Boolean = false): Boolean {
+    suspend fun refreshTokenIfNeeded(force: Boolean = false,
+        expectedSelection: Pair<Int, Long>? = null): Boolean {
         val registration = appRegistrationStore.current()
         if (!registration.isConfigured) return false
-
+        val selection = expectedSelection ?: currentSelection()
+        fun selectionCurrent() = currentSelection() == selection && appRegistrationStore.current() == registration
+        if (!selectionCurrent()) return false
         return tokenRefreshMutex.withLock {
-            val state = getCurrentAuthState()
+            if (!selectionCurrent()) return@withLock false
+            val revision = traktAuthDataStore.grantRevision(selection.first)
+            if (revision < 0L) return@withLock false
+            val state = traktAuthDataStore.getCurrentState(selection.first)
+            if (!selectionCurrent() || traktAuthDataStore.grantRevision(selection.first) != revision ||
+                state.registrationClientId != registration.clientId) return@withLock false
             val refreshToken = state.refreshToken ?: return@withLock false
-            if (!force && !isTokenExpiredOrExpiring(state)) {
-                trace("refreshTokenIfNeeded: token still valid, skip refresh")
-                return@withLock true
-            }
-
-            trace("refreshTokenIfNeeded: refreshing token (force=$force)")
+            if (!force && !isTokenExpiredOrExpiring(state)) return@withLock true
             val response = try {
-                traktApi.refreshToken(
-                    TraktRefreshTokenRequestDto(
-                        refreshToken = refreshToken,
-                        clientId = registration.clientId,
-                        redirectUri = registration.redirectUri
-                    )
-                )
-            } catch (e: IOException) {
-                Log.w("TraktAuthService", "Network error while refreshing token")
-                return@withLock false
-            }
-
+                traktApi.refreshToken(TraktRefreshTokenRequestDto(refreshToken, registration.clientId, registration.redirectUri))
+            } catch (_: IOException) { return@withLock false }
+            if (!selectionCurrent()) { response.errorBody()?.close(); return@withLock false }
             val tokenBody = response.body()
             if (!response.isSuccessful || tokenBody == null) {
-                trace("refreshTokenIfNeeded: failed code=${response.code()}")
-                if (response.code() == 400 || response.code() == 401 || response.code() == 403) {
-                    invalidateCredentials(response.code(), state.profileId)
+                response.errorBody()?.close()
+                if (response.code() in setOf(400, 401, 403) &&
+                    traktAuthDataStore.clearAuthIfCurrent(state, revision, ::selectionCurrent)) {
+                    authSessionNoticeDataStore.markTraktReconnectRequired()
+                    tripCircuit("Token refresh returned ${response.code()}")
                 }
                 return@withLock false
             }
-
-            traktAuthDataStore.saveToken(tokenBody, state.profileId, registration.clientId)
+            if (tokenBody.accessToken.isBlank() || tokenBody.refreshToken.isBlank() ||
+                !tokenBody.tokenType.equals("bearer", true) || tokenBody.expiresIn <= 0 || tokenBody.createdAt <= 0) return@withLock false
+            if (!traktAuthDataStore.saveRefreshedTokenIfCurrent(tokenBody, state, revision, ::selectionCurrent)) return@withLock false
+            if (!selectionCurrent()) return@withLock false
             authSessionNoticeDataStore.markTraktAuthenticated()
             resetCircuit()
-            trace("refreshTokenIfNeeded: success")
             true
         }
     }
+
+    private fun currentSelection(): Pair<Int, Long> = traktAuthDataStore.activeProfileId to
+        traktAuthDataStore.activeProfileSelectionRevision
 
     suspend fun revokeAndLogout() {
         val registration = appRegistrationStore.current()
@@ -341,22 +342,44 @@ class TraktAuthService @Inject constructor(
         return username
     }
 
+    private data class AuthorizedRequestBinding(val selection: Pair<Int, Long>,
+        val registration: com.nuvio.tv.core.trakt.TraktAppRegistration, val grantRevision: Long)
+    private fun captureRequestBinding(): AuthorizedRequestBinding {
+        val selection = currentSelection()
+        return AuthorizedRequestBinding(selection, appRegistrationStore.current(), traktAuthDataStore.grantRevision(selection.first))
+    }
+    private fun bindingCurrent(binding: AuthorizedRequestBinding) = binding.grantRevision >= 0L &&
+        currentSelection() == binding.selection && appRegistrationStore.current() == binding.registration &&
+        traktAuthDataStore.grantRevision(binding.selection.first) == binding.grantRevision
+
     suspend fun <T> executeAuthorizedRequest(
         call: suspend (authorizationHeader: String) -> Response<T>
-    ): Response<T>? {
+    ): Response<T>? = executeAuthorizedBoundRequest(captureRequestBinding(), call)
+
+    private suspend fun <T> executeAuthorizedBoundRequest(binding: AuthorizedRequestBinding,
+        call: suspend (authorizationHeader: String) -> Response<T>): Response<T>? {
+        val selection = binding.selection
+        val registration = binding.registration
+        val revision = binding.grantRevision
+        fun requestCurrent() = revision >= 0L && currentSelection() == selection &&
+            appRegistrationStore.current() == registration && traktAuthDataStore.grantRevision(selection.first) == revision
+        if (!requestCurrent()) return null
         if (isCircuitOpen()) {
             trace("authorized request: circuit breaker is OPEN, skipping request")
             return null
         }
 
-        var token = getValidAccessToken() ?: return null
+        var token = getValidAccessToken(selection) ?: return null
+        if (!requestCurrent()) return null
         var retriedAuth = false
         var retriedRateLimit = false
         var retriedTransient = false
         var retriedNetwork = false
 
         while (true) {
+            if (!requestCurrent()) return null
             acquireGetRateSlot()
+            if (!requestCurrent()) return null
 
             val response = try {
                 call("Bearer $token")
@@ -371,6 +394,7 @@ class TraktAuthService @Inject constructor(
                 return null
             }
 
+            if (!requestCurrent()) { response.errorBody()?.close(); return null }
             val code = response.code()
 
             if (response.isSuccessful) {
@@ -394,10 +418,11 @@ class TraktAuthService @Inject constructor(
             }
 
             if (code == 401 && !retriedAuth) {
-                val refreshed = refreshTokenIfNeeded(force = true)
+                val refreshed = refreshTokenIfNeeded(force = true, expectedSelection = selection)
                 if (refreshed) {
                     trace("authorized request: 401 for ${responseTarget(response)}, retrying after token refresh")
-                    token = getCurrentAuthState().accessToken ?: return response
+                    token = traktAuthDataStore.getCurrentState(selection.first).accessToken ?: return response
+                    if (!requestCurrent()) { response.errorBody()?.close(); return null }
                     retriedAuth = true
                     continue
                 }
@@ -490,19 +515,22 @@ class TraktAuthService @Inject constructor(
     suspend fun <T> executeAuthorizedWriteRequest(
         call: suspend (authorizationHeader: String) -> Response<T>
     ): Response<T>? {
+        val binding = captureRequestBinding() // Before mutex/pacing can suspend.
+        if (!bindingCurrent(binding)) return null
         writeRequestMutex.withLock {
             val now = System.currentTimeMillis()
             val waitMs = (lastWriteRequestAtMs + minWriteIntervalMs - now).coerceAtLeast(0L)
             if (waitMs > 0L) delay(waitMs)
             lastWriteRequestAtMs = System.currentTimeMillis()
         }
-        return executeAuthorizedRequest(call)
+        if (!bindingCurrent(binding)) return null
+        return executeAuthorizedBoundRequest(binding, call)
     }
 
-    private suspend fun getValidAccessToken(): String? {
+    private suspend fun getValidAccessToken(expectedSelection: Pair<Int, Long>? = null): String? {
         val state = getCurrentAuthState()
         if (state.accessToken.isNullOrBlank()) return null
-        if (refreshTokenIfNeeded(force = false)) {
+        if (refreshTokenIfNeeded(force = false, expectedSelection = expectedSelection)) {
             return getCurrentAuthState().accessToken
         }
         return null

@@ -27,6 +27,10 @@ internal fun PlaybackP2pSection(
     onOpenDialog: (PlaybackDialog) -> Unit,
     onClearTorrentCache: () -> Unit
 ) {
+    if (!com.nuvio.tv.core.streams.SyclopPlaybackPolicy.ALLOW_LOCAL_P2P) {
+        androidx.tv.material3.Text("Local P2P is disabled. Playback uses connected streaming services.")
+        return
+    }
     SettingsToggleRow(
         title = stringResource(R.string.p2p_consent_enable),
         subtitle = null,

@@ -605,6 +605,11 @@ internal fun PlayerRuntimeController.attachAddonSubtitleViaMediaReload(subtitle:
     val currentPosition = player.currentPosition
     val playWhenReady = player.playWhenReady
 
+    if (!com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(currentStreamUrl)) {
+        _uiState.update { it.copy(error = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE,
+            showLoadingOverlay = false, isBuffering = false) }
+        return
+    }
     player.setMediaSource(
         mediaSourceFactory.createMediaSource(
             context = context,

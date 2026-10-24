@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.data.mal.MalAccountState
 import com.nuvio.tv.data.mal.MalAnime
 import com.nuvio.tv.data.mal.MalAuthRepository
+import com.nuvio.tv.data.mal.MalAuthStage
 import com.nuvio.tv.data.mal.MalAuthorizationSession
 import com.nuvio.tv.data.mal.MalLibraryState
 import com.nuvio.tv.data.mal.MalListStatus
@@ -17,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -40,7 +42,10 @@ class MalSettingsViewModel @Inject constructor(
     private val auth: MalAuthRepository,
     private val repository: MalRepository
 ) : ViewModel() {
+    private val dialogLock = Any()
     private val local = MutableStateFlow(MalLocalUiState())
+    private val mutableDialogVisible = MutableStateFlow(false)
+    val dialogVisible = mutableDialogVisible.asStateFlow()
     val uiState = combine(auth.state, auth.session, repository.state, auth.notice, local) { account, session, library, notice, extra ->
         MalSettingsUiState(account, session,
             if (library.scope == account.scope) library else MalLibraryState(scope = account.scope),
@@ -49,16 +54,39 @@ class MalSettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            auth.state.map { it.scope }.distinctUntilChanged().collect { local.value = MalLocalUiState() }
+            var previousProfile = auth.state.value.scope.profileId
+            auth.state.map { it.scope }.distinctUntilChanged().collect { scope ->
+                local.value = MalLocalUiState()
+                if (scope.profileId != previousProfile) {
+                    closeOwnedDialog(MalAuthStage.ACCOUNT_CHANGED)
+                }
+                previousProfile = scope.profileId
+            }
         }
     }
 
     fun suggestedRedirect(): String = auth.defaultRedirectUri().orEmpty()
-    fun open() { if (auth.state.value.connected) refresh() }
-    fun close() { auth.cancel() }
-    fun connect() = runAction { auth.connect(); Unit }
+    fun open() { synchronized(dialogLock) { mutableDialogVisible.value = true }; if (auth.state.value.connected) refresh() }
+    fun close() = closeOwnedDialog(MalAuthStage.USER_CANCELLED)
+    fun screenClosed() = closeOwnedDialog(MalAuthStage.SCREEN_CLOSED)
+    fun connect() {
+        val expected = auth.state.value.scope
+        runAction { connectIfOpen(expected) }
+    }
+    internal fun connectIfOpen(expected: MalScope) = synchronized(dialogLock) {
+        // Serialize initial server/session creation with Close. A queued IO action cannot reopen a dismissed scan.
+        if (mutableDialogVisible.value && auth.store.isCurrent(expected)) auth.connect()
+        Unit
+    }
+    private fun closeOwnedDialog(reason: MalAuthStage) = synchronized(dialogLock) {
+        mutableDialogVisible.value = false
+        auth.cancel(reason)
+    }
     fun cancelConnection() { auth.cancel() }
-    fun signOut() { auth.signOut(); local.value = MalLocalUiState() }
+    fun signOut() {
+        val expected = auth.state.value.scope
+        runAction { if (auth.signOut(expected)) local.value = MalLocalUiState() }
+    }
     fun setAutomaticProgress(enabled: Boolean) = runAction { auth.store.automaticProgress(enabled) }
     fun configure(clientId: String, redirect: String) = runAction { auth.saveConfiguration(clientId, redirect) }
     fun submitCallback(value: String) = runAction { auth.submitCallback(value) }
@@ -80,6 +108,8 @@ class MalSettingsViewModel @Inject constructor(
         }
     }
 
+    override fun onCleared() { closeOwnedDialog(MalAuthStage.SCREEN_CLOSED); super.onCleared() }
+
     private fun runAction(block: suspend () -> Unit) {
         if (local.value.busy) return
         val expected = auth.state.value.scope
@@ -91,7 +121,9 @@ class MalSettingsViewModel @Inject constructor(
                 if (auth.store.isCurrent(expected)) local.value = local.value.copy(error = "Review the MyAnimeList application settings or returned callback, then try again.")
             }
             catch (_: Exception) {
-                if (auth.store.isCurrent(expected)) local.value = local.value.copy(error = "MyAnimeList could not complete this request. Try again.")
+                if (auth.store.isCurrent(expected)) local.value = local.value.copy(error = if (!auth.store.storageAvailable)
+                    "Protected MyAnimeList storage failed. Restart Syclop and try again."
+                    else "MyAnimeList could not complete this request. Try again.")
             }
             finally { if (auth.store.isCurrent(expected)) local.value = local.value.copy(busy = false) }
         }

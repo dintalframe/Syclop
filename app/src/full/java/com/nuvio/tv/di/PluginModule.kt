@@ -26,18 +26,5 @@ object PluginModule {
 
     @Provides
     @Singleton
-    fun providePluginManager(
-        dataStore: PluginDataStore,
-        runtime: PluginRuntime,
-        pluginSyncService: PluginSyncService,
-        authManager: AuthManager,
-        externalRepoParser: ExternalRepoParser,
-        externalExtensionLoader: ExternalExtensionLoader,
-        externalExtensionRunner: ExternalExtensionRunner
-    ): PluginManager {
-        return PluginManager(
-            dataStore, runtime, pluginSyncService, authManager,
-            externalRepoParser, externalExtensionLoader, externalExtensionRunner
-        )
-    }
+    fun providePluginManager(): PluginManager = PluginManager()
 }

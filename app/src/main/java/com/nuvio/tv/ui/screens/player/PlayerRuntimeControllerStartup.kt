@@ -6,6 +6,7 @@ import android.util.Log
 import com.nuvio.tv.R
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import java.lang.ref.WeakReference
 
 internal fun PlayerRuntimeController.attachHostActivity(activity: Activity?) {
@@ -16,6 +17,16 @@ internal fun PlayerRuntimeController.startInitialPlaybackIfNeeded() {
     if (initialPlaybackStarted) return
 
     initialPlaybackStarted = true
+    scope.launch {
+        com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.invalidations.collect {
+            if (currentStreamUrl.isNotBlank() &&
+                !com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(currentStreamUrl)) {
+                releasePlayer()
+                _uiState.update { it.copy(error = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE,
+                    showLoadingOverlay = false, isBuffering = false) }
+            }
+        }
+    }
 
     val bg = navigationArgs.bingeGroup
     val cid = contentId
@@ -42,43 +53,11 @@ internal fun PlayerRuntimeController.startInitialPlaybackIfNeeded() {
         "startInitialPlayback: infoHash=$infoHash host=${currentStreamUrl.safeStartupHost()} " +
             "urlHash=${currentStreamUrl.hashCode().toUInt().toString(16)}"
     )
-    if (infoHash != null && !initialStreamUrl.startsWith("http")) {
-        torrentStreamJob = scope.launch {
-            try {
-                Log.d("PlayerStartup", "Starting torrent stream for $infoHash")
-                observeTorrentState()
-                val localUrl = startTorrentStream(
-                    infoHash = infoHash,
-                    fileIdx = navigationArgs.fileIdx,
-                    filename = navigationArgs.filename,
-                    trackers = navigationArgs.torrentTrackers
-                )
-                Log.d("PlayerStartup", "Torrent stream ready: $localUrl")
-                currentStreamUrl = localUrl
-                currentHeaders = emptyMap()
-                preparePlaybackBeforeStart(
-                    url = localUrl,
-                    headers = emptyMap(),
-                    loadSavedProgress = true
-                )
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e("PlayerStartup", "Failed to start torrent", e)
-                _uiState.update {
-                    it.copy(
-                        error = context.getString(
-                            R.string.player_error_failed_start_torrent,
-                            e.message ?: context.getString(R.string.error_unknown)
-                        ),
-                        showLoadingOverlay = false
-                    )
-                }
-            }
-        }
+    if (infoHash != null && !com.nuvio.tv.core.streams.SyclopPlaybackPolicy.isHttps(initialStreamUrl)) {
+        _uiState.update { it.copy(error = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE,
+            showLoadingOverlay = false, isBuffering = false) }
         return
     }
-
     preparePlaybackBeforeStart(
         url = currentStreamUrl,
         headers = currentHeaders,

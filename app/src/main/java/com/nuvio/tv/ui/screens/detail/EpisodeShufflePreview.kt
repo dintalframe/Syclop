@@ -84,7 +84,7 @@ internal fun EpisodeShufflePreview(
         onDismissRequest = { if (!starting) onBack() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        AmbientDialogEffect { if (!starting) onBack() }
+        AmbientDialogEffect(onDismiss = { if (!starting) onBack() })
         LaunchedEffect(canShuffleAgain) { playFocus.requestFocusAfterFrames() }
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
         SideEffect {

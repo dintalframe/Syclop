@@ -12,14 +12,15 @@ import com.nuvio.tv.core.debrid.DebridProviderCapability
 import com.nuvio.tv.core.debrid.DebridProviders
 import com.nuvio.tv.core.debrid.DebridAccountValidator
 import com.nuvio.tv.core.debrid.DebridNativeDeviceAuth
+import com.nuvio.tv.core.debrid.PremiumizeDeviceAuth
 import com.nuvio.tv.core.debrid.DebridAuthProfileGuard
+import com.nuvio.tv.core.debrid.DebridManualCredentialSaver
 import com.nuvio.tv.core.debrid.supports
 import com.nuvio.tv.core.qr.QrCodeGenerator
 import com.nuvio.tv.core.server.DebridFormatterConfigServer
 import com.nuvio.tv.core.server.DebridFormatterSettings
 import com.nuvio.tv.core.server.DeviceIpAddress
 import com.nuvio.tv.data.local.DebridSettingsDataStore
-import com.nuvio.tv.data.remote.dto.PremiumizeDeviceTokenDto
 import com.nuvio.tv.data.remote.dto.TorboxDeviceTokenDto
 import com.nuvio.tv.data.remote.dto.TorboxDeviceTokenRequestDto
 import com.nuvio.tv.data.remote.dto.TorboxEnvelopeDto
@@ -53,7 +54,8 @@ class DebridSettingsViewModel @Inject constructor(
     private val torboxApi: TorboxApi,
     private val premiumizeApi: PremiumizeApi,
     private val accountValidator: DebridAccountValidator,
-    private val nativeDeviceAuth: DebridNativeDeviceAuth
+    private val nativeDeviceAuth: DebridNativeDeviceAuth,
+    private val premiumizeDeviceAuth: PremiumizeDeviceAuth
 ) : ViewModel() {
     val activeProfileId = dataStore.activeProfileId
     private val authProfileGuard = DebridAuthProfileGuard(activeProfileId.value)
@@ -69,8 +71,26 @@ class DebridSettingsViewModel @Inject constructor(
     private val _validationError = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val validationError: SharedFlow<String> = _validationError.asSharedFlow()
 
+    private val manualCredentialSaver = DebridManualCredentialSaver(
+        scope = viewModelScope,
+        captureScope = { authProfileGuard.capture(activeProfileId.value) },
+        isCurrent = { authProfileGuard.valid(it, activeProfileId.value) },
+        credential = dataStore::credentialForProfile,
+        validate = ::validateProviderApiKey,
+        commit = { profile, provider, key, expected ->
+            dataStore.setProviderApiKeyForProfile(profile, provider, key, expected)
+        },
+        setBusy = { _validating.value = it },
+        onFailure = { failure ->
+            _validationError.tryEmit(context.getString(if (failure == DebridManualCredentialSaver.Failure.PROFILE_CHANGED)
+                R.string.debrid_auth_profile_changed else R.string.debrid_key_invalid))
+        }
+    )
+
     init {
-        viewModelScope.launch { activeProfileId.collectLatest { authProfileGuard.observe(it) } }
+        viewModelScope.launch {
+            activeProfileId.collectLatest { authProfileGuard.observe(it); manualCredentialSaver.cancel() }
+        }
         loadLogoBytes()
         viewModelScope.launch {
             dataStore.settings.collectLatest { settings ->
@@ -222,28 +242,10 @@ class DebridSettingsViewModel @Inject constructor(
     }
 
     fun validateAndSaveProviderApiKey(providerId: String, value: String, onSuccess: () -> Unit) {
-        val trimmed = value.trim()
-        val ticket = authProfileGuard.capture(activeProfileId.value)
-        if (_validating.value) return
-        viewModelScope.launch {
-            _validating.value = true
-            try {
-                val expected = dataStore.credentialForProfile(ticket.profileId, providerId)
-                if (trimmed.isBlank() || validateProviderApiKey(providerId, trimmed)) {
-                    if (authProfileGuard.valid(ticket, activeProfileId.value) &&
-                        dataStore.setProviderApiKeyForProfile(ticket.profileId, providerId, trimmed, expected)) onSuccess()
-                    else _validationError.tryEmit(context.getString(R.string.debrid_auth_profile_changed))
-                } else {
-                    _validationError.tryEmit(context.getString(R.string.debrid_key_invalid))
-                }
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                _validationError.tryEmit(context.getString(R.string.debrid_key_invalid))
-            } finally {
-                _validating.value = false
-            }
-        }
+        manualCredentialSaver.submit(providerId, value, onSuccess)
     }
+
+    fun cancelProviderCredentialValidation() { manualCredentialSaver.cancel() }
 
     private suspend fun validateProviderApiKey(providerId: String, apiKey: String): Boolean {
         return try {
@@ -291,23 +293,7 @@ class DebridSettingsViewModel @Inject constructor(
                     expiresAt = data.expiresAt?.takeIf { it.isNotBlank() }
                 )
             }
-            DebridProviders.PREMIUMIZE_ID -> {
-                val clientId = premiumizeClientIdOrThrow()
-                val response = premiumizeApi.startDeviceAuthorization(clientId = clientId)
-                val data = response.body()?.takeIf { response.isSuccessful } ?: return null
-                val deviceCode = data.deviceCode?.takeIf { it.isNotBlank() } ?: return null
-                val userCode = data.userCode?.takeIf { it.isNotBlank() } ?: return null
-                val verificationUrl = data.verificationUri?.takeIf { it.isNotBlank() } ?: return null
-                DebridDeviceAuthorization(
-                    providerId = DebridProviders.PREMIUMIZE_ID,
-                    deviceCode = deviceCode,
-                    userCode = userCode,
-                    verificationUrl = verificationUrl,
-                    friendlyVerificationUrl = data.verificationUriComplete?.takeIf { it.isNotBlank() } ?: verificationUrl,
-                    intervalSeconds = data.interval?.coerceAtLeast(1) ?: 5,
-                    expiresAt = data.expiresIn?.takeIf { it > 0 }?.let { "${it}s" }
-                )
-            }
+            DebridProviders.PREMIUMIZE_ID -> premiumizeDeviceAuth.start(premiumizeClientIdOrThrow())
             else -> null
         }
         if (!authProfileGuard.valid(ticket, activeProfileId.value)) return null
@@ -319,6 +305,8 @@ class DebridSettingsViewModel @Inject constructor(
         val revision = session.profileRevision ?: return false
         return authProfileGuard.valid(DebridAuthProfileGuard.Ticket(profile, revision), activeProfileId.value)
     }
+
+    fun cancelDeviceAuthorization() { authProfileGuard.invalidate() }
 
     suspend fun completeDeviceAuthorization(session: DebridDeviceAuthorization,
         result: DebridDeviceAuthorizationTokenResult.Authorized): Boolean {
@@ -340,14 +328,7 @@ class DebridSettingsViewModel @Inject constructor(
                 val response = torboxApi.redeemDeviceAuthorization(TorboxDeviceTokenRequestDto(normalized))
                 torboxDeviceAuthorizationTokenResult(response)
             }
-            DebridProviders.PREMIUMIZE_ID -> {
-                val clientId = premiumizeClientIdOrThrow()
-                val response = premiumizeApi.redeemDeviceAuthorization(
-                    deviceCode = normalized,
-                    clientId = clientId
-                )
-                premiumizeDeviceAuthorizationTokenResult(response)
-            }
+            DebridProviders.PREMIUMIZE_ID -> premiumizeDeviceAuth.poll(premiumizeClientIdOrThrow(), session)
             else -> DebridDeviceAuthorizationTokenResult.Unsupported
         }
     }
@@ -386,28 +367,6 @@ class DebridSettingsViewModel @Inject constructor(
                 DebridDeviceAuthorizationTokenResult.Expired
             else ->
                 DebridDeviceAuthorizationTokenResult.Failed(null)
-        }
-    }
-
-    private fun premiumizeDeviceAuthorizationTokenResult(
-        response: retrofit2.Response<PremiumizeDeviceTokenDto>
-    ): DebridDeviceAuthorizationTokenResult {
-        val body = response.body()
-        body?.accessToken?.takeIf { response.isSuccessful && it.isNotBlank() }?.let { accessToken ->
-            return DebridDeviceAuthorizationTokenResult.Authorized(accessToken)
-        }
-        return when (body?.error?.lowercase()) {
-            "authorization_pending", "slow_down" -> DebridDeviceAuthorizationTokenResult.Pending
-            "invalid_grant", "expired_token" -> DebridDeviceAuthorizationTokenResult.Expired
-            "access_denied" -> DebridDeviceAuthorizationTokenResult.Failed(null)
-            else -> {
-                if (response.code() == 400 && body?.error.isNullOrBlank()) {
-                    DebridDeviceAuthorizationTokenResult.Pending
-                } else {
-                    response.errorBody()?.close()
-                    DebridDeviceAuthorizationTokenResult.Failed(null)
-                }
-            }
         }
     }
 

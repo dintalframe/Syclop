@@ -27,6 +27,8 @@ enum class CommentsMode {
 }
 
 data class MetaDetailsUiState(
+    val traktConnected: Boolean = false,
+    val traktActions: TraktActionDialogState? = null,
     val isLoading: Boolean = true,
     val meta: Meta? = null,
     val error: String? = null,
@@ -103,6 +105,16 @@ sealed class MetaDetailsEvent {
     data class OnEpisodeClick(val video: Video) : MetaDetailsEvent()
     data class OnCommentsModeSelected(val mode: CommentsMode) : MetaDetailsEvent()
     data class OnCommentsEpisodeSelected(val video: Video) : MetaDetailsEvent()
+    data object OnOpenTraktActions : MetaDetailsEvent()
+    data class OnSelectTraktTarget(val target: com.nuvio.tv.core.trakt.TraktActionTarget) : MetaDetailsEvent()
+    data class OnSelectTraktRating(val rating: Int) : MetaDetailsEvent()
+    data object OnSaveTraktRating : MetaDetailsEvent()
+    data object OnClearTraktRating : MetaDetailsEvent()
+    data object OnTraktCheckin : MetaDetailsEvent()
+    data object OnRequestCancelTraktCheckin : MetaDetailsEvent()
+    data object OnConfirmCancelTraktCheckin : MetaDetailsEvent()
+    data object OnRefreshTraktActions : MetaDetailsEvent()
+    data object OnDismissTraktActions : MetaDetailsEvent()
     data object OnPlayClick : MetaDetailsEvent()
     data object OnToggleLibrary : MetaDetailsEvent()
     data object OnRetry : MetaDetailsEvent()

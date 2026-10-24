@@ -1,7 +1,11 @@
 package com.nuvio.tv.data.simkl
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -17,7 +21,7 @@ class OkHttpSimklEngine(private val client: OkHttpClient) : SimklHttpEngine {
         url: String,
         headers: Map<String, String>,
         body: String
-    ): SimklRawHttpResponse = withContext(Dispatchers.IO) {
+    ): SimklRawHttpResponse {
         val builder = Request.Builder().url(url)
         headers.forEach(builder::header)
         val requestBody = body.toRequestBody(JSON_MEDIA_TYPE)
@@ -27,12 +31,25 @@ class OkHttpSimklEngine(private val client: OkHttpClient) : SimklHttpEngine {
             SimklHttpMethod.DELETE.name -> builder.delete(requestBody)
             else -> throw IllegalArgumentException("Unsupported Simkl method")
         }
-        client.newCall(builder.build()).execute().use { response ->
-            SimklRawHttpResponse(
-                status = response.code,
-                body = readSimklResponseBodyOrEmpty(response.body),
-                headers = response.headers.toMultimap().mapValues { it.value.joinToString(",") }
-            )
+        return suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(builder.build())
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(IOException("Simkl network request failed"))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        response.use {
+                            val result = SimklRawHttpResponse(it.code, readSimklResponseBodyOrEmpty(it.body),
+                                it.headers.toMultimap().mapValues { entry -> entry.value.joinToString(",") })
+                            if (continuation.isActive) continuation.resume(result)
+                        }
+                    } catch (_: Exception) {
+                        if (continuation.isActive) continuation.resumeWithException(IOException("Simkl response could not be read"))
+                    }
+                }
+            })
         }
     }
 

@@ -203,6 +203,7 @@ class ExternalExtensionLoader @Inject constructor(
      * Returns the local file path, or null on failure.
      */
     suspend fun downloadExtension(scraperId: String, downloadUrl: String): File? = withContext(Dispatchers.IO) {
+        com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.requireAllowed()
         com.nuvio.tv.core.runtime.PluginRuntimeHooks.ensureCloudstreamInitialized()
         try {
             val targetFile = File(extensionsDir, "${safeFileName(scraperId)}.cs3")
@@ -259,6 +260,7 @@ class ExternalExtensionLoader @Inject constructor(
      * Load a .cs3 DEX file and return the MainAPI instance(s) registered by the plugin.
      */
     fun loadExtension(scraperId: String): List<MainAPI> {
+        com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.requireAllowed()
         // Check cache first
         apiCache[scraperId]?.let { return listOf(it) }
         com.nuvio.tv.core.runtime.PluginRuntimeHooks.ensureCloudstreamInitialized()
@@ -420,6 +422,7 @@ class ExternalExtensionLoader @Inject constructor(
      * Get a cached MainAPI for the given scraper ID, loading if necessary.
      */
     fun getApi(scraperId: String): MainAPI? {
+        com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.requireAllowed()
         return apiCache[scraperId] ?: run {
             val apis = loadExtension(scraperId)
             apis.firstOrNull()
@@ -430,6 +433,7 @@ class ExternalExtensionLoader @Inject constructor(
      * Load extension with diagnostic output.
      */
     fun loadExtensionWithDiagnostics(scraperId: String, diagnostics: TestDiagnostics): List<MainAPI> {
+        com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.requireAllowed()
         apiCache[scraperId]?.let {
             diagnostics.addStep("MainAPI cached: ${it.name}")
             return listOf(it)
@@ -573,6 +577,7 @@ class ExternalExtensionLoader @Inject constructor(
      * Eagerly load all ExtractorApi subclasses from the given .cs3 files.
      */
     fun ensureExtractorsLoaded(scraperIds: List<String>, diagnostics: TestDiagnostics? = null) {
+        com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.requireAllowed()
         com.nuvio.tv.core.runtime.PluginRuntimeHooks.ensureCloudstreamInitialized()
         val idsToLoad = scraperIds.filter { it !in extractorPreloadedIds }
         if (idsToLoad.isEmpty()) {

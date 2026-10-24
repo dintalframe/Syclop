@@ -10,6 +10,8 @@ class DebridAuthProfileGuard(initialProfileId: Int) {
         if (activeProfileId != profileId) { profileId = activeProfileId; revision += 1 }
     }
 
+    @Synchronized fun invalidate() { revision += 1L }
+
     @Synchronized fun capture(activeProfileId: Int): Ticket {
         observe(activeProfileId)
         return Ticket(profileId, revision)

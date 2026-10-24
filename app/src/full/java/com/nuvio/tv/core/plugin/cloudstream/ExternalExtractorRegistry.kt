@@ -23,6 +23,7 @@ class ExternalExtractorRegistry @Inject constructor() {
     private var installed = false
 
     fun registerExtractor(extractor: ExtractorApi) {
+        com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.requireAllowed()
         // Avoid duplicates by mainUrl
         if (extractorApis.any { it.mainUrl == extractor.mainUrl }) return
         extractorApis.add(extractor)
@@ -48,6 +49,7 @@ class ExternalExtractorRegistry @Inject constructor() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.requireAllowed()
         return try {
             val result = loadExtractor(url, referer, subtitleCallback, callback)
             if (!result) {

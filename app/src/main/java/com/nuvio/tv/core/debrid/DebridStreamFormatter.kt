@@ -71,6 +71,9 @@ class DebridStreamFormatter @Inject constructor(
         return linkedMapOf(
             "stream.title" to (parsed?.parsedTitle ?: resolve?.title ?: stream.title),
             "stream.year" to parsed?.year,
+            "stream.bitrate" to facts.estimatedBitrateBps?.let(StreamBitrateFacts::formattedMbps),
+            "stream.bitrateLabel" to StreamBitrateFacts.label(stream),
+            "stream.providerBitrateClaim" to StreamBitrateFacts.providerClaimMbps(stream),
             "stream.season" to season,
             "stream.episode" to episode,
             "stream.seasons" to seasons,

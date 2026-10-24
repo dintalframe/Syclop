@@ -55,6 +55,7 @@ fun NuvioDialog(
     containerCornerRadius: Dp = NuvioTheme.radii.xl,
     contentPadding: Dp = NuvioTheme.spacing.xl,
     contentSpacing: Dp = NuvioTheme.spacing.lg,
+    criticalAuthActive: Boolean = false,
     backgroundContent: @Composable BoxScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -71,7 +72,7 @@ fun NuvioDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = usePlatformDefaultWidth)
     ) {
-        AmbientDialogEffect(onDismiss)
+        AmbientDialogEffect(onDismiss, criticalAuthActive = criticalAuthActive)
         Box(
             modifier = Modifier
                 .width(width)

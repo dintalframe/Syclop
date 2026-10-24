@@ -189,6 +189,8 @@ fun StreamScreen(
     fun openExternalInBrowser(playbackInfo: StreamPlaybackInfo): Boolean {
         if (!playbackInfo.isExternal) return false
         val url = playbackInfo.url?.takeIf { it.isNotBlank() } ?: return false
+        scope.coroutineLaunch {
+        if (!viewModel.authorizePlaybackUrl(url)) return@coroutineLaunch
         val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
             .addCategory(Intent.CATEGORY_BROWSABLE)
         runCatching {
@@ -201,6 +203,7 @@ fun StreamScreen(
                 headers = playbackInfo.headers,
                 startFromBeginning = startFromBeginning
             )
+        }
         }
         return true
     }
@@ -215,9 +218,9 @@ fun StreamScreen(
             return
         }
         val preference = if (playbackInfo.isServerStream) PlayerPreference.INTERNAL else playerPreference ?: return
-        if (playbackInfo.isTorrent && !p2pEnabled) {
-            pendingTorrentPlaybackInfo = playbackInfo
-            showP2pConsentDialog = true
+        if (playbackInfo.isTorrent) {
+            viewModel.onEvent(StreamScreenEvent.OnAutoPlayConsumed)
+            scope.coroutineLaunch { viewModel.authorizePlaybackUrl("") }
             return
         }
         when (preference) {
@@ -242,9 +245,9 @@ fun StreamScreen(
             return
         }
         // Always check P2P consent for torrents, even in direct auto-play flow
-        if (playbackInfo.isTorrent && !p2pEnabled) {
-            pendingTorrentPlaybackInfo = playbackInfo
-            showP2pConsentDialog = true
+        if (playbackInfo.isTorrent) {
+            viewModel.onEvent(StreamScreenEvent.OnAutoPlayConsumed)
+            scope.coroutineLaunch { viewModel.authorizePlaybackUrl("") }
             return
         }
         val preference = if (playbackInfo.isServerStream) PlayerPreference.INTERNAL else playerPreference ?: return
@@ -339,9 +342,9 @@ fun StreamScreen(
         }
         if (playbackInfo.url != null || (playbackInfo.isTorrent && playbackInfo.infoHash != null)) {
             // Torrent cached links still need P2P consent
-            if (playbackInfo.isTorrent && !p2pEnabled) {
-                pendingTorrentPlaybackInfo = playbackInfo
-                showP2pConsentDialog = true
+            if (playbackInfo.isTorrent) {
+                viewModel.onEvent(StreamScreenEvent.OnAutoPlayConsumed)
+                viewModel.authorizePlaybackUrl("")
                 return@LaunchedEffect
             }
             // Respect player preference for cached links too
@@ -1148,7 +1151,7 @@ private fun StreamsList(
         if (key != null && prevKeys !== streamKeys) {
             val oldIndex = prevKeys.indexOf(key)
             val newIndex = streamKeys.indexOf(key)
-            if (oldIndex >= 0 && newIndex >= 0 && oldIndex != newIndex && oldIndex > 0) {
+            if (oldIndex >= 0 && newIndex >= 0 && oldIndex != newIndex) {
                 val shift = newIndex - oldIndex
                 val correctedFirst = (streamListState.firstVisibleItemIndex + shift)
                     .coerceIn(0, (streamKeys.size - 1).coerceAtLeast(0))
@@ -1456,6 +1459,13 @@ private fun StreamCard(
                             maxLines = 1
                         )
                     }
+                }
+
+                Text(text = com.nuvio.tv.core.debrid.StreamBitrateFacts.label(stream),
+                    style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary)
+                com.nuvio.tv.core.debrid.StreamBitrateFacts.providerClaimMbps(stream)?.let { claim ->
+                    Text(text = "Provider claim: $claim Mbps (unverified)",
+                        style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary)
                 }
 
                 stream.pluginSourceName?.takeIf { it.isNotBlank() && it != stream.addonName }?.let { sourceName ->

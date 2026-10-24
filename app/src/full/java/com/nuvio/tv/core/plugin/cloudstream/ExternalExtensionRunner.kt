@@ -65,6 +65,7 @@ class ExternalExtensionRunner @Inject constructor(
         season: Int?,
         episode: Int?
     ): List<LocalScraperResult> = withContext(Dispatchers.IO) {
+        com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.requireAllowed()
         extensionLoader.ensureExtractorsLoaded(listOf(scraperId))
 
         val api = extensionLoader.getApi(scraperId)
@@ -97,6 +98,7 @@ class ExternalExtensionRunner @Inject constructor(
         episode: Int?,
         diagnostics: TestDiagnostics
     ): List<LocalScraperResult> = withContext(Dispatchers.IO) {
+        com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicy.requireAllowed()
         extensionLoader.ensureExtractorsLoaded(listOf(scraperId), diagnostics)
 
         diagnostics.addStep("Loading DEX extension...")

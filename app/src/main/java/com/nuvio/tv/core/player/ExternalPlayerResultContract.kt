@@ -55,7 +55,14 @@ data class ExternalPlayerResult(
  */
 class ExternalPlayerResultContract : ActivityResultContract<ExternalPlayerInput, ExternalPlayerResult?>() {
 
+    override fun getSynchronousResult(context: Context, input: ExternalPlayerInput): SynchronousResult<ExternalPlayerResult?>? =
+        if (com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(input.url)) null
+        else SynchronousResult(null)
+
     override fun createIntent(context: Context, input: ExternalPlayerInput): Intent {
+        check(com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(input.url)) {
+            com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE
+        }
         return Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(Uri.parse(input.url), "video/*")
 

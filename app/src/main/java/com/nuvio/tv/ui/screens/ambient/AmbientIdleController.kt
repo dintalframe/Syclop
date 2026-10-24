@@ -6,21 +6,32 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class AmbientIdleController {
-    private val _lastInteractionAt = MutableStateFlow(SystemClock.uptimeMillis())
+class AmbientIdleController internal constructor(private val now: () -> Long) {
+    constructor() : this({ SystemClock.uptimeMillis() })
+
+    private val _lastInteractionAt = MutableStateFlow(now())
     val lastInteractionAt: StateFlow<Long> = _lastInteractionAt.asStateFlow()
 
     private val _isShowing = MutableStateFlow(false)
     val isShowing: StateFlow<Boolean> = _isShowing.asStateFlow()
 
+    private val authPauseLeases = AmbientAuthPauseLeases {
+        _isShowing.value = false
+        _lastInteractionAt.value = now()
+    }
+    val criticalAuthPaused: StateFlow<Boolean> = authPauseLeases.isPaused
+
+    /** The caller must close this scope on completion, cancellation, viewer change or disposal. */
+    fun acquireCriticalAuthLease(): AutoCloseable = authPauseLeases.acquire()
+
     private var swallowedKeyCode: Int? = null
 
     fun onInteraction() {
-        _lastInteractionAt.value = SystemClock.uptimeMillis()
+        _lastInteractionAt.value = now()
     }
 
     fun show() {
-        _isShowing.value = true
+        authPauseLeases.runUnlessPaused { _isShowing.value = true }
     }
 
     fun dismiss() {

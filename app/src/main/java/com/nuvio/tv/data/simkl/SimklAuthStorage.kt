@@ -10,7 +10,9 @@ data class SimklAuthScope(
 data class SimklAuthorization(
     val scope: SimklAuthScope,
     val accessToken: String
-)
+) {
+    override fun toString() = "SimklAuthorization(scope=$scope)"
+}
 
 interface SimklAuthStorage {
     val state: StateFlow<SimklAuthState>
@@ -18,6 +20,8 @@ interface SimklAuthStorage {
     fun currentScope(): SimklAuthScope
     fun isCurrent(scope: SimklAuthScope): Boolean
     fun authorization(): SimklAuthorization?
+    fun oauthAuthorization(): SimklV2Authorization?
+    fun saveV2Tokens(tokens: SimklV2Tokens, scope: SimklAuthScope, expectedAccessToken: String? = null): Boolean
     fun accessToken(): String? = authorization()?.accessToken
     fun savePinSession(session: SimklPinSession, scope: SimklAuthScope = currentScope()): Boolean
     fun clearPinSession(

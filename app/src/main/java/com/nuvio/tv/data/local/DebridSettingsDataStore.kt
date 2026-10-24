@@ -2,6 +2,7 @@ package com.nuvio.tv.data.local
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.gson.Gson
@@ -62,12 +63,14 @@ class DebridSettingsDataStore @Inject constructor(
     private val streamDolbyVisionFilterKey = stringPreferencesKey("stream_dolby_vision_filter")
     private val streamHdrFilterKey = stringPreferencesKey("stream_hdr_filter")
     private val streamCodecFilterKey = stringPreferencesKey("stream_codec_filter")
+    private val bitrateOrderMigrationKey = booleanPreferencesKey("stream_bitrate_order_v1")
     private val streamPreferencesKey = stringPreferencesKey("stream_preferences")
     private val streamNameTemplateKey = stringPreferencesKey("debrid_stream_name_template")
     private val streamDescriptionTemplateKey = stringPreferencesKey("debrid_stream_description_template")
 
     val settings: Flow<DebridSettings> = profileManager.activeProfileId.flatMapLatest { pid ->
-        factory.get(pid, FEATURE).data.map { prefs ->
+        factory.get(pid, FEATURE).data.map { original ->
+            val prefs = migrateBitrateOrder(pid, original)
             migrateLegacyCredentials(pid, prefs)
             val keys = DebridProviders.all().associate { provider ->
                 provider.id to readCredential(prefs, pid, provider.id)
@@ -148,6 +151,16 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     val activeProfileId get() = profileManager.activeProfileId
+    val activeProfileSelectionRevision get() = profileManager.activeProfileSelectionRevision
+    private val credentialRevision = java.util.concurrent.atomic.AtomicLong()
+    private val credentialMutations = java.util.concurrent.atomic.AtomicInteger()
+    val activeCredentialRevision: Long get() = if (credentialMutations.get() > 0) -1L else credentialRevision.get()
+    init {
+        com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.bindLiveOrigin {
+            com.nuvio.tv.core.streams.ServicePlaybackOrigin(activeProfileId.value, activeProfileSelectionRevision, activeCredentialRevision)
+        }
+    }
+
     val localProfileIds get() = profileManager.profiles.value.map { it.id }
 
     suspend fun credentialForProfile(profileId: Int, providerId: String): String =
@@ -173,6 +186,10 @@ class DebridSettingsDataStore @Inject constructor(
         val normalized = apiKey.trim()
         val pid = profileId
         if (profileManager.activeProfileId.value != pid) return false
+        credentialMutations.incrementAndGet()
+        credentialRevision.incrementAndGet()
+        com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.clear()
+        try {
         // Encryption must succeed before anything is committed. Never fall back to plaintext.
         val encrypted = credentialCipher.encrypt(normalized, pid, provider.id)
         val encryptedOAuth = realDebridOAuth?.let {
@@ -200,6 +217,7 @@ class DebridSettingsDataStore @Inject constructor(
             saved = true
         }
         return saved
+        } finally { credentialMutations.decrementAndGet() }
     }
 
     private fun readCredential(prefs: androidx.datastore.preferences.core.Preferences, pid: Int, id: String): String =
@@ -381,6 +399,28 @@ class DebridSettingsDataStore @Inject constructor(
         }
         val normalizedStored = DebridProviders.byId(stored)?.id
         return connected.firstOrNull { it == normalizedStored } ?: connected.firstOrNull().orEmpty()
+    }
+
+    /** The approved default changes only sort order, once per viewer; later choices remain. */
+    private suspend fun migrateBitrateOrder(profileId: Int, snapshot: Preferences): Preferences {
+        if (snapshot[bitrateOrderMigrationKey] == true) return snapshot
+        var result = snapshot
+        store(profileId).edit { current ->
+            if (current[bitrateOrderMigrationKey] != true) {
+                val existing = parseStreamPreferences(current[streamPreferencesKey]) ?: legacyStreamPreferences(
+                    current[streamMaxResultsKey] ?: 0,
+                    enumValueOrDefault(current[streamSortModeKey], DebridStreamSortMode.DEFAULT),
+                    enumValueOrDefault(current[streamMinimumQualityKey], DebridStreamMinimumQuality.ANY),
+                    enumValueOrDefault(current[streamDolbyVisionFilterKey], DebridStreamFeatureFilter.ANY),
+                    enumValueOrDefault(current[streamHdrFilterKey], DebridStreamFeatureFilter.ANY),
+                    enumValueOrDefault(current[streamCodecFilterKey], DebridStreamCodecFilter.ANY))
+                current[streamPreferencesKey] = gson.toJson(existing.copy(sortCriteria =
+                    DebridStreamSortCriterion.bitrateFirstOrder(existing.sortCriteria.ifEmpty { DebridStreamSortCriterion.defaultOrder })))
+                current[bitrateOrderMigrationKey] = true
+            }
+            result = current.toPreferences()
+        }
+        return result
     }
 
     private fun parseStreamPreferences(value: String?): DebridStreamPreferences? {

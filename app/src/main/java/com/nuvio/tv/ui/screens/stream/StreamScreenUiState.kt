@@ -24,6 +24,8 @@ data class StreamScreenUiState(
     val episode: Int? = null,
     val episodeName: String? = null,
     val runtime: Int? = null,
+    val bitrateDurationMillis: Long? = null,
+    val bitrateDurationOrigin: com.nuvio.tv.domain.model.StreamDurationOrigin? = null,
     // Movie-specific fields
     val genres: String? = null,
     val year: String? = null,

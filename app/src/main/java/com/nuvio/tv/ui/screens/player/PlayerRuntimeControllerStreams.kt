@@ -812,6 +812,12 @@ private fun PlayerRuntimeController.openExternalStreamInBrowser(
         return true
     }
 
+    scope.launch {
+    if (!directDebridResolver.isPlaybackAuthorized(externalUrl, profileId)) {
+        _uiState.update { if (fromEpisodePanel) it.copy(episodeStreamsError = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE)
+            else it.copy(sourceStreamsError = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE) }
+        return@launch
+    }
     val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(externalUrl))
         .addCategory(Intent.CATEGORY_BROWSABLE)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -845,6 +851,7 @@ private fun PlayerRuntimeController.openExternalStreamInBrowser(
         }
     }
 
+    }
     return true
 }
 
@@ -904,7 +911,8 @@ internal fun PlayerRuntimeController.switchToSourceStream(
             if (resolved != null && !resolved.getStreamUrl().isNullOrBlank()) {
                 switchToSourceStream(resolved)
             } else if (resolved != null) {
-                switchToTorrentSourceStream(resolved)
+                _uiState.update { it.copy(isLoadingSourceStreams = false,
+                    sourceStreamsError = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE) }
             } else {
                 _uiState.update {
                     it.copy(
@@ -1475,7 +1483,8 @@ internal fun PlayerRuntimeController.switchToEpisodeStream(
             if (resolved != null && !resolved.getStreamUrl().isNullOrBlank()) {
                 switchToEpisodeStream(resolved, forcedTargetVideo, isAutoPlay)
             } else if (resolved != null) {
-                switchToTorrentEpisodeStream(resolved, forcedTargetVideo, isAutoPlay)
+                _uiState.update { it.copy(isLoadingEpisodeStreams = false,
+                    episodeStreamsError = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE) }
             } else {
                 _uiState.update {
                     it.copy(

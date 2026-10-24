@@ -11,6 +11,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
+import com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants
 
 @Singleton
 class CloudLibraryRepository @Inject constructor(
@@ -73,6 +74,10 @@ class CloudLibraryRepository @Inject constructor(
         item: CloudLibraryItem,
         file: CloudLibraryFile
     ): CloudLibraryPlaybackResult {
+        val profile = dataStore.activeProfileId.value
+        val selectionRevision = dataStore.activeProfileSelectionRevision
+        val accountRevision = dataStore.activeCredentialRevision
+        if (accountRevision < 0L) return CloudLibraryPlaybackResult.MissingCredentials
         if (!file.playable) return CloudLibraryPlaybackResult.NotPlayable
         val settings = dataStore.settings.first()
         if (!settings.cloudLibraryEnabled) {
@@ -85,11 +90,24 @@ class CloudLibraryRepository @Inject constructor(
             ?: return CloudLibraryPlaybackResult.MissingCredentials
         val api = providerApis.firstOrNull { it.provider.id == item.providerId }
             ?: return CloudLibraryPlaybackResult.Failed()
-        return api.resolvePlayback(
+        val credentials = DebridProviders.all().associate { it.id to dataStore.credentialForProfile(profile, it.id).trim() }
+        if (credentials[credential.provider.id] != credential.apiKey.trim()) return CloudLibraryPlaybackResult.MissingCredentials
+        if (dataStore.activeProfileId.value != profile || dataStore.activeProfileSelectionRevision != selectionRevision)
+            return CloudLibraryPlaybackResult.MissingCredentials
+        val binding = ConnectedServicePlaybackGrants.registry.observe(profile, credentials, selectionRevision, accountRevision)
+        val result = api.resolvePlayback(
             apiKey = credential.apiKey,
             item = item,
             file = file
         )
+        if (result is CloudLibraryPlaybackResult.Success) {
+            val current = DebridProviders.all().associate { it.id to dataStore.credentialForProfile(profile, it.id).trim() }
+            if (dataStore.activeProfileId.value != profile || dataStore.activeProfileSelectionRevision != selectionRevision || dataStore.activeCredentialRevision != accountRevision || current != credentials ||
+                !ConnectedServicePlaybackGrants.registry.issue(result.url, credential.provider.id, binding)) {
+                return CloudLibraryPlaybackResult.MissingCredentials
+            }
+        }
+        return result
     }
 
     suspend fun connectedCloudCredentials(): List<DebridServiceCredential> {

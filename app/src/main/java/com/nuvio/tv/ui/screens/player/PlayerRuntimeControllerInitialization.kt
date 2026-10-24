@@ -165,6 +165,11 @@ internal fun PlayerRuntimeController.initializePlayer(
 
     scope.launch {
         try {
+            if (!directDebridResolver.isPlaybackAuthorized(url, profileId)) {
+                _uiState.update { it.copy(error = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE,
+                    showLoadingOverlay = false, isBuffering = false) }
+                return@launch
+            }
             if (allowEngineFailover) {
                 startupEngineFailoverTriggered = false
             }

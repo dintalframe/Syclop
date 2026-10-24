@@ -106,20 +106,7 @@ fun EssentialPlaybackSettingsContent(
                         },
                         enabled = settings != null
                     )
-                    SettingsToggleRow(
-                        title = stringResource(R.string.essential_p2p_streams),
-                        subtitle = stringResource(R.string.essential_p2p_streams_subtitle),
-                        checked = torrentSettings?.p2pEnabled == true,
-                        onToggle = {
-                            val current = torrentSettings ?: return@SettingsToggleRow
-                            if (current.p2pEnabled) {
-                                viewModel.setP2pEnabled(false)
-                            } else {
-                                showP2pConsentDialog = true
-                            }
-                        },
-                        enabled = torrentSettings != null
-                    )
+                    androidx.tv.material3.Text("Local P2P is disabled. Playback uses connected streaming services.")
                 }
             }
             item(key = "subtitles_audio") {

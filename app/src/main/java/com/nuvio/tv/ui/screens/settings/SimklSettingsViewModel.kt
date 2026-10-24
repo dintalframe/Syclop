@@ -63,7 +63,7 @@ class SimklSettingsViewModel @Inject constructor(
                         isPolling = state.mode == SimklConnectionMode.AWAITING_APPROVAL && current.isPolling,
                         username = state.username,
                         userCode = state.pinSession?.userCode,
-                        verificationUri = state.pinSession?.verificationUri,
+                        verificationUri = state.pinSession?.let { it.verificationUriComplete ?: it.verificationUri },
                         expiresAtEpochMs = state.pinSession?.expiresAtEpochMs,
                         pollIntervalSeconds = state.pinSession?.intervalSeconds ?: 5,
                         errorMessage = state.error?.message()
@@ -150,10 +150,12 @@ class SimklSettingsViewModel @Inject constructor(
     }
 
     fun onDisconnect() {
+        val expectedScope = authRepository.currentScope()
         viewModelScope.launch {
-            pollJob?.cancel()
-            authRepository.disconnect()
-            syncRepository.clearCurrentProfile()
+            val disconnectedScope = authRepository.disconnect(expectedScope) ?: return@launch
+            if (authRepository.isCurrentScope(disconnectedScope)) pollJob?.cancel()
+            syncRepository.clearProfile(expectedScope.profileId)
+            if (!authRepository.isCurrentScope(disconnectedScope)) return@launch
             _uiState.update {
                 it.copy(
                     isLoading = false,
@@ -248,12 +250,13 @@ class SimklSettingsViewModel @Inject constructor(
         SimklAuthError.PIN_EXPIRED,
         SimklAuthError.PIN_INVALIDATED -> context.getString(R.string.simkl_error_code_expired)
         SimklAuthError.AUTHORIZATION_REVOKED -> context.getString(R.string.simkl_error_authorization_revoked)
+        SimklAuthError.STORAGE -> context.getString(R.string.simkl_error_secure_storage)
+        SimklAuthError.INSUFFICIENT_SCOPE -> "Reconnect Simkl and allow library and playback updates."
         SimklAuthError.INVALID_PIN_RESPONSE,
         SimklAuthError.NETWORK -> context.getString(R.string.simkl_error_network)
     }
 
     private fun Throwable.toUserMessage(): String =
         (this as? SimklAuthException)?.error?.message()
-            ?: message?.takeIf(String::isNotBlank)
             ?: context.getString(R.string.simkl_error_network)
 }

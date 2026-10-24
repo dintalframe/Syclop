@@ -57,7 +57,7 @@ class LocalBackupManager @Inject constructor(
         if (uri.scheme == "file") {
             val directory = ownDirectory().canonicalFile
             val file = File(requireNotNull(uri.path)).canonicalFile
-            require(file.parentFile == directory && file.name.endsWith(".syclop"))
+            require(file.parentFile == directory && LocalBackupFileNames.isBackup(file.name))
             file.inputStream().use(PortableBackupArchive::decode)
         } else {
             val ownMedia = uri.authority == "media" && localFiles().any { it.uri == uri }
@@ -69,7 +69,7 @@ class LocalBackupManager @Inject constructor(
     suspend fun cancel() = lock.withLock { withContext(Dispatchers.IO) { BackupRestoreBootstrap.cancelPending(context) } }
 
     suspend fun localFiles(): List<LocalBackupFile> = withContext(Dispatchers.IO) {
-        val fallbackFiles = ownDirectory().listFiles().orEmpty().filter { it.isFile && it.name.endsWith(".syclop") }
+        val fallbackFiles = ownDirectory().listFiles().orEmpty().filter { it.isFile && LocalBackupFileNames.isBackup(it.name) }
             .sortedByDescending(File::lastModified).map { LocalBackupFile(it.name, Uri.fromFile(it)) }
         if (Build.VERSION.SDK_INT < 29) fallbackFiles
         else try {
@@ -79,7 +79,7 @@ class LocalBackupManager @Inject constructor(
                 "${MediaStore.Downloads.RELATIVE_PATH} = ?", arrayOf("Download/SyclopBackups/"), "${MediaStore.Downloads.DATE_ADDED} DESC")?.use { cursor ->
                 while (cursor.moveToNext() && result.size < 100) {
                     val name = cursor.getString(1)
-                    if (name.startsWith("Syclop-") && name.endsWith(".syclop")) result += LocalBackupFile(name,
+                    if (LocalBackupFileNames.isBackup(name)) result += LocalBackupFile(name,
                         android.content.ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cursor.getLong(0)))
                 }
             }
@@ -134,7 +134,7 @@ class LocalBackupManager @Inject constructor(
             return "Saved to app Downloads/SyclopBackups/$name. Copy this file elsewhere before uninstalling Syclop."
         }
         val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, name); put(MediaStore.Downloads.MIME_TYPE, "application/zip")
+            put(MediaStore.Downloads.DISPLAY_NAME, name); put(MediaStore.Downloads.MIME_TYPE, LocalBackupFileNames.MIME_TYPE)
             put(MediaStore.Downloads.RELATIVE_PATH, "Download/SyclopBackups/"); put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val uri = runCatching { context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) }.getOrNull()
@@ -142,12 +142,20 @@ class LocalBackupManager @Inject constructor(
             BackupRestoreBootstrap.atomicWrite(File(ownDirectory(), name), bytes)
             return "Public Downloads is unavailable. Saved to app Downloads/SyclopBackups/$name. Copy this file elsewhere before uninstalling Syclop."
         }
-        try {
-            context.contentResolver.openFileDescriptor(uri, "w").use { descriptor ->
-                requireNotNull(descriptor); FileOutputStream(descriptor.fileDescriptor).use { it.write(bytes); it.fd.sync() }
+        BackupMediaStorePublication.save(
+            write = {
+                context.contentResolver.openFileDescriptor(uri, "w").use { descriptor ->
+                    requireNotNull(descriptor); FileOutputStream(descriptor.fileDescriptor).use { it.write(bytes); it.fd.sync() }
+                }
+            },
+            publish = { context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null) },
+            remove = { context.contentResolver.delete(uri, null, null); Unit }
+        )
+        val actualName = runCatching {
+            context.contentResolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
             }
-            context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
-            return "Saved to Downloads/SyclopBackups/$name."
-        } catch (failure: Exception) { context.contentResolver.delete(uri, null, null); throw failure }
+        }.getOrNull() ?: name
+        return "Saved to Downloads/SyclopBackups/$actualName."
     }
 }

@@ -174,6 +174,9 @@ internal class PlayerMediaSourceFactory(private val context: Context) {
         mediaMetadata: androidx.media3.common.MediaMetadata? = null,
         cacheKey: String? = null
     ): MediaSource {
+        check(com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(url)) {
+            com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE
+        }
         val sanitizedHeaders = sanitizeHeaders(headers)
         val resolvedMimeType = mimeTypeOverride ?: inferMimeType(
             url = url,

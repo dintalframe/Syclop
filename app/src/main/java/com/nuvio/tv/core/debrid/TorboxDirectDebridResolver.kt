@@ -26,10 +26,11 @@ class TorboxDirectDebridResolver @Inject constructor(
     suspend fun resolve(
         stream: Stream,
         season: Int?,
-        episode: Int?
+        episode: Int?,
+        operation: CapturedDebridOperation? = null
     ): DirectDebridResolveResult {
         val resolve = stream.clientResolve ?: return DirectDebridResolveResult.Error
-        val apiKey = dataStore.settings.first().torboxApiKey.trim()
+        val apiKey = operation?.credential(DebridProviders.TORBOX_ID) ?: dataStore.settings.first().torboxApiKey.trim()
         if (apiKey.isBlank()) return DirectDebridResolveResult.MissingApiKey
         val magnet = resolve.magnetUri?.takeIf { it.isNotBlank() }
             ?: buildMagnetUri(resolve)
@@ -39,22 +40,22 @@ class TorboxDirectDebridResolver @Inject constructor(
         return try {
             Log.d(TAG, "resolve: createTorrent hash=${resolve.infoHash?.take(12)}...")
             val createStartMs = System.currentTimeMillis()
-            val create = api.createTorrent(
+            val create = scopedDebridRequest(operation) { api.createTorrent(
                 authorization = authorization,
                 magnet = magnet.toTextPart(),
                 addOnlyIfCached = "true".toTextPart(),
                 allowZip = "false".toTextPart()
-            )
+            ) }
             Log.d(TAG, "resolve: createTorrent done in ${System.currentTimeMillis() - createStartMs}ms code=${create.code()}")
             val torrentId = create.extractTorrentId() ?: return create.toFailureForCreate()
 
             Log.d(TAG, "resolve: getTorrent id=$torrentId")
             val getTorrentStartMs = System.currentTimeMillis()
-            val torrent = api.getTorrent(
+            val torrent = scopedDebridRequest(operation) { api.getTorrent(
                 authorization = authorization,
                 id = torrentId,
                 bypassCache = true
-            )
+            ) }
             Log.d(TAG, "resolve: getTorrent done in ${System.currentTimeMillis() - getTorrentStartMs}ms code=${torrent.code()}")
             if (!torrent.isSuccessful) return DirectDebridResolveResult.Stale
             val files = torrent.body()?.data?.files.orEmpty()
@@ -64,7 +65,7 @@ class TorboxDirectDebridResolver @Inject constructor(
 
             Log.d(TAG, "resolve: requestDownloadLink torrentId=$torrentId fileId=$fileId")
             val linkStartMs = System.currentTimeMillis()
-            val link = api.requestDownloadLink(
+            val link = scopedDebridRequest(operation) { api.requestDownloadLink(
                 authorization = authorization,
                 token = apiKey,
                 torrentId = torrentId,
@@ -72,7 +73,7 @@ class TorboxDirectDebridResolver @Inject constructor(
                 zipLink = false,
                 redirect = false,
                 appendName = false
-            )
+            ) }
             Log.d(TAG, "resolve: requestDownloadLink done in ${System.currentTimeMillis() - linkStartMs}ms code=${link.code()}")
             if (!link.isSuccessful) return DirectDebridResolveResult.Stale
             val url = link.body()?.data?.takeIf { it.isNotBlank() }

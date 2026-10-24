@@ -18,6 +18,7 @@ internal suspend fun PlayerRuntimeController.startTorrentStream(
     filename: String? = null,
     trackers: List<String> = emptyList()
 ): String {
+    com.nuvio.tv.core.streams.SyclopPlaybackPolicy.requireLocalP2pAllowed()
     isTorrentStream = true
     currentInfoHash = infoHash
     currentFileIdx = fileIdx

@@ -120,7 +120,8 @@ internal fun TraktAccountDialog(
             title = "",
             width = 720.dp,
             titleTextAlign = TextAlign.Center,
-            suppressFirstKeyUp = false
+            suppressFirstKeyUp = false,
+            criticalAuthActive = state.mode == TraktConnectionMode.AWAITING_APPROVAL || state.isLoading || state.isPolling
         ) {
             val displayUrl = state.verificationUrl ?: TRAKT_ACTIVATION_URL
             val qrUrl = displayUrl // Use Trakt's returned verification URL; show the approval code separately.
@@ -254,7 +255,8 @@ internal fun SimklAccountDialog(
             title = "",
             width = 720.dp,
             titleTextAlign = TextAlign.Center,
-            suppressFirstKeyUp = false
+            suppressFirstKeyUp = false,
+            criticalAuthActive = !state.userCode.isNullOrBlank() || state.isLoading || state.isPolling
         ) {
             TrackingDeviceAuthContent(
                 providerName = stringResource(R.string.simkl_name),

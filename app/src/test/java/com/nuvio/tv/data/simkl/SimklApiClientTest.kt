@@ -52,11 +52,11 @@ class SimklApiClientTest {
         val request = engine.requests.single()
         assertFalse("spoofed" in request.url)
         assertTrue("client_id=client-id" in request.url)
-        assertTrue("app-name=nuvio" in request.url)
+        assertTrue("app-name=syclop" in request.url)
         assertTrue("app-version=1.0" in request.url)
         assertEquals("Bearer token", request.headers["Authorization"])
         assertEquals("application/json", request.headers["Accept"])
-        assertEquals("NuvioTV/1.0", request.headers["User-Agent"])
+        assertEquals("Syclop/1.0", request.headers["User-Agent"])
     }
 
     @Test
@@ -234,7 +234,7 @@ class SimklApiClientTest {
                 it.now = { now }
                 it.onResponse = { now += responseDurationMs }
             },
-            configuration = SimklApiConfiguration("client-id", "nuvio", "1.0"),
+            configuration = SimklApiConfiguration("client-id", "syclop", "1.0"),
             authorization = { testSimklAuthorization() },
             onUnauthorized = { wasUnauthorized = true },
             nowEpochMs = { now },

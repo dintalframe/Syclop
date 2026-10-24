@@ -1,346 +1,203 @@
 package com.nuvio.tv.data.simkl
 
-import kotlinx.coroutines.flow.MutableStateFlow
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Assert.assertThrows
+import org.junit.Assert.*
 import org.junit.Test
 
 class SimklAuthRepositoryTest {
-    @Test
-    fun `pin creation persists documented session fields`() = runTest {
-        val harness = Harness(
-            response(
-                200,
-                """{"result":"OK","device_code":"DEVICE_CODE","user_code":"A1B2C","verification_uri":"https://simkl.com/pin","expires_in":900,"interval":5}"""
-            )
-        )
-
-        val session = harness.repository.startPinAuth()
-
-        assertEquals("A1B2C", session.userCode)
-        assertEquals("https://simkl.com/pin", session.verificationUri)
-        assertEquals(900_000L, session.expiresAtEpochMs)
-        assertEquals(5, session.intervalSeconds)
-        assertEquals(SimklConnectionMode.AWAITING_APPROVAL, harness.storage.state.value.mode)
-        assertFalse("Authorization" in harness.engine.requests.single().headers)
+    @Test fun `device flow sends public client and write scope without a browser secret or PKCE`() = runTest {
+        val h = Harness(this)
+        h.oauthResponses += device()
+        val session = h.repository.startPinAuth()
+        assertEquals("ABCD-EFGH", session.userCode)
+        assertEquals("https://simkl.com/pin?user_code=ABCD-EFGH", session.verificationUriComplete)
+        assertEquals(SimklConnectionMode.AWAITING_APPROVAL, h.storage.state.value.mode)
+        val request = h.oauthRequests.single()
+        assertEquals("/oauth2/device", request.first)
+        assertEquals(mapOf("client_id" to "test-public-client", "scope" to "media:read media:write"), request.second)
     }
 
-    @Test
-    fun `pending poll keeps the original pin session`() = runTest {
-        val harness = Harness(response(200, """{"result":"KO","message":"Authorization pending"}"""))
-        harness.storage.savePinSession(session())
-
-        assertEquals(SimklPinPollResult.Pending, harness.repository.pollPin())
-        assertEquals("ABCDE", harness.storage.state.value.pinSession?.userCode)
-        assertFalse(harness.storage.state.value.isAuthenticated)
+    @Test fun `successful approval saves full V2 pair and fetches viewer identity`() = runTest {
+        val h = Harness(this); h.start()
+        h.oauthResponses += tokens()
+        assertEquals(SimklPinPollResult.Authorized, h.repository.pollPin())
+        assertEquals("test-access", h.storage.oauthAuthorization()?.tokens?.accessToken)
+        assertEquals("test-refresh", h.storage.oauthAuthorization()?.tokens?.refreshToken)
+        assertEquals("Viewer", h.storage.state.value.username)
+        assertEquals("GET", h.restRequests.single().first)
+        assertTrue(h.restRequests.single().second.contains("/users/settings?"))
+        assertNull(h.storage.state.value.pinSession)
+        assertEquals(SimklV2OAuthClient.DEVICE_GRANT, h.oauthRequests.last().second["grant_type"])
+        assertEquals("test-device-code", h.oauthRequests.last().second["device_code"])
     }
 
-    @Test
-    fun `approved pin stores token clears code and loads identity`() = runTest {
-        val harness = Harness(
-            response(200, """{"result":"OK","access_token":"secret-token"}"""),
-            response(200, """{"user":{"name":"viewer"},"account":{"id":42}}""")
-        )
-        harness.storage.savePinSession(session())
-
-        assertEquals(SimklPinPollResult.Authorized, harness.repository.pollPin())
-
-        assertEquals("secret-token", harness.storage.accessToken())
-        assertNull(harness.storage.state.value.pinSession)
-        assertTrue(harness.storage.state.value.isAuthenticated)
-        assertEquals("viewer", harness.storage.state.value.username)
-        assertEquals(42L, harness.storage.state.value.accountId)
-        assertEquals("Bearer secret-token", harness.engine.requests.last().headers["Authorization"])
+    @Test fun `identity fetch failure preserves approved encrypted authorization`() = runTest {
+        val h = Harness(this); h.start(); h.settingsStatus = 400; h.oauthResponses += tokens()
+        assertEquals(SimklPinPollResult.Authorized, h.repository.pollPin())
+        assertTrue(h.storage.state.value.isAuthenticated)
+        assertNull(h.storage.state.value.username)
     }
 
-    @Test
-    fun `approved pin remains connected when identity fetch fails`() = runTest {
-        val harness = Harness(
-            response(200, """{"result":"OK","access_token":"secret-token"}"""),
-            response(400, """{"error":"settings_unavailable"}""")
-        )
-        harness.storage.savePinSession(session())
-
-        assertEquals(SimklPinPollResult.Authorized, harness.repository.pollPin())
-        assertTrue(harness.storage.state.value.isAuthenticated)
-        assertEquals("secret-token", harness.storage.accessToken())
-        assertNull(harness.storage.state.value.username)
+    @Test fun `decline remains pending only until the monotonic device deadline`() = runTest {
+        val h = Harness(this); h.start(); h.oauthResponses += oauthErrorResponse("authorization_pending")
+        assertEquals(SimklPinPollResult.Pending, h.repository.pollPin())
+        h.monotonic = 900_001; h.now = 0 // A wall-clock change must not extend the authorization.
+        assertEquals(SimklPinPollResult.Expired, h.repository.pollPin())
+        assertEquals(2, h.oauthRequests.size)
+        assertEquals(SimklAuthError.PIN_EXPIRED, h.storage.state.value.error)
     }
 
-    @Test
-    fun `connected account can recover a missing normalized identity`() = runTest {
-        val harness = Harness(
-            response(200, """{"user":{"name":"  Actual Viewer  "},"account":{"id":42}}""")
-        )
-        harness.storage.completePinAuthorization("secret-token", harness.storage.currentScope())
-
-        assertEquals("Actual Viewer", harness.repository.refreshUserSettings())
-        assertEquals("Actual Viewer", harness.storage.state.value.username)
-        assertEquals(42L, harness.storage.state.value.accountId)
-        assertTrue(harness.storage.state.value.hasFetchedUserSettings)
+    @Test fun `slow down adds five seconds and actually prevents an early network poll`() = runTest {
+        val h = Harness(this); h.start(); h.oauthResponses += oauthErrorResponse("slow_down")
+        assertEquals(SimklPinPollResult.Pending, h.repository.pollPin())
+        assertEquals(10, h.storage.state.value.pinSession?.intervalSeconds)
+        h.advance(5_000)
+        assertEquals(SimklPinPollResult.Pending, h.repository.pollPin())
+        assertEquals(2, h.oauthRequests.size)
+        h.advance(5_000); h.oauthResponses += oauthErrorResponse("authorization_pending")
+        h.repository.pollPin()
+        assertEquals(3, h.oauthRequests.size)
     }
 
-    @Test
-    fun `fresh init response while polling invalidates original code`() = runTest {
-        val harness = Harness(
-            response(
-                200,
-                """{"result":"OK","device_code":"DEVICE_CODE","user_code":"ZZZZZ","verification_uri":"https://simkl.com/pin","expires_in":900,"interval":5}"""
-            )
-        )
-        harness.storage.savePinSession(session())
-
-        assertEquals(SimklPinPollResult.Invalidated, harness.repository.pollPin())
-        assertNull(harness.storage.state.value.pinSession)
-        assertEquals(SimklAuthError.PIN_INVALIDATED, harness.storage.state.value.error)
+    @Test fun `cancelled request cannot store a late successful approval`() = runTest {
+        val h = Harness(this); h.start(); h.oauthResponses += tokens()
+        h.beforeOAuthResponse = { h.repository.cancelPinAuth() }
+        assertEquals(SimklPinPollResult.Invalidated, h.repository.pollPin())
+        assertNull(h.storage.oauthAuthorization())
+        assertNull(h.storage.state.value.pinSession)
     }
 
-    @Test
-    fun `expired pin stops without a network request`() = runTest {
-        val harness = Harness()
-        harness.now = 20_000L
-        harness.storage.savePinSession(session(expiresAt = 10_000L))
-
-        assertEquals(SimklPinPollResult.Expired, harness.repository.pollPin())
-        assertTrue(harness.engine.requests.isEmpty())
-        assertEquals(SimklAuthError.PIN_EXPIRED, harness.storage.state.value.error)
+    @Test fun `profile switch away and back invalidates a late approval`() = runTest {
+        val h = Harness(this); h.start(); h.oauthResponses += tokens()
+        h.beforeOAuthResponse = { h.storage.selectProfile(2); h.storage.selectProfile(1) }
+        assertEquals(SimklPinPollResult.Invalidated, h.repository.pollPin())
+        assertNull(h.storage.oauthAuthorization())
     }
 
-    @Test
-    fun `missing client id fails before network access`() {
-        val harness = Harness(configuration = SimklApiConfiguration("", "nuvio", "1.0"))
-
-        val error = assertThrows(SimklAuthException::class.java) {
-            kotlinx.coroutines.runBlocking { harness.repository.startPinAuth() }
-        }
-
-        assertEquals(SimklAuthError.MISSING_CLIENT_ID, error.error)
-        assertTrue(harness.engine.requests.isEmpty())
+    @Test fun `cancel during device request prevents creating an orphan visible code`() = runTest {
+        val h = Harness(this); h.oauthResponses += device()
+        h.beforeOAuthResponse = { h.repository.cancelPinAuth() }
+        try { h.repository.startPinAuth(); fail("Expected cancellation") } catch (_: CancellationException) { }
+        assertNull(h.storage.state.value.pinSession)
     }
 
-    @Test
-    fun `disconnect removes identity pin and access token`() {
-        val harness = Harness()
-        harness.storage.completePinAuthorization("token", harness.storage.currentScope())
-        harness.storage.saveIdentity("viewer", 42)
-        harness.storage.savePinSession(session())
-
-        harness.repository.disconnect()
-
-        assertNull(harness.storage.accessToken())
-        assertEquals(SimklAuthState(), harness.storage.state.value)
+    @Test fun `missing client ID cannot contact the service`() = runTest {
+        val h = Harness(this, clientId = "")
+        try { h.repository.startPinAuth(); fail("Expected configuration error") }
+        catch (e: SimklAuthException) { assertEquals(SimklAuthError.MISSING_CLIENT_ID, e.error) }
+        assertTrue(h.oauthRequests.isEmpty())
     }
 
-    @Test
-    fun `approved pin is discarded when the active profile changes during polling`() = runTest {
-        val harness = Harness(response(200, """{"result":"OK","access_token":"profile-one-token"}"""))
-        harness.storage.savePinSession(session())
-        harness.engine.beforeResponse = { harness.storage.switchProfile(2) }
-
-        assertEquals(SimklPinPollResult.Invalidated, harness.repository.pollPin())
-        assertNull(harness.storage.accessToken())
-
-        harness.storage.switchProfile(1)
-
-        assertNull(harness.storage.accessToken())
-        assertFalse(harness.storage.state.value.isAuthenticated)
-    }
-
-    @Test
-    fun `delayed unauthorized response cannot disconnect the newly active profile`() {
-        val harness = Harness(response(401))
-        harness.storage.completePinAuthorization("profile-one-token", harness.storage.currentScope())
-        harness.storage.switchProfile(2)
-        harness.storage.completePinAuthorization("profile-two-token", harness.storage.currentScope())
-        harness.storage.switchProfile(1)
-        harness.engine.beforeResponse = { harness.storage.switchProfile(2) }
-
-        assertThrows(SimklApiException::class.java) {
-            kotlinx.coroutines.runBlocking { harness.repository.refreshUserSettings() }
-        }
-
-        assertEquals("profile-two-token", harness.storage.accessToken())
-        assertTrue(harness.storage.state.value.isAuthenticated)
-        assertNull(harness.storage.state.value.error)
-    }
-
-    private class Harness(
-        vararg responses: SimklRawHttpResponse,
-        configuration: SimklApiConfiguration = SimklApiConfiguration("client-id", "nuvio", "1.0")
-    ) {
-        var now = 0L
-        val engine = RecordingEngine(*responses)
-        val storage = FakeStorage()
-        val client = SimklApiClient(
-            engine = engine,
-            configuration = configuration,
-            authorization = storage::authorization,
-            onUnauthorized = { authorization ->
-                storage.clearAuth(
-                    error = SimklAuthError.AUTHORIZATION_REVOKED,
-                    scope = authorization.scope,
-                    expectedAccessToken = authorization.accessToken
-                )
-            },
-            nowEpochMs = { now },
-            sleep = { now += it },
-            retryJitterMs = { 0L }
-        )
-        val repository = SimklAuthRepository(client, configuration, storage) { now }
-    }
-
-    private class FakeStorage : SimklAuthStorage {
-        private val profiles = mutableMapOf(1 to StoredProfile())
-        private val mutableState = MutableStateFlow(SimklAuthState())
-        private var activeProfileId = 1
-        private var generation = 0L
-        override val state: StateFlow<SimklAuthState> = mutableState
-
-        override fun currentScope() = SimklAuthScope(activeProfileId, generation)
-
-        override fun isCurrent(scope: SimklAuthScope): Boolean = scope == currentScope()
-
-        override fun authorization(): SimklAuthorization? {
-            val token = currentProfile().token ?: return null
-            return SimklAuthorization(currentScope(), token)
-        }
-
-        override fun savePinSession(session: SimklPinSession, scope: SimklAuthScope): Boolean =
-            mutate(scope) { profile ->
-                profile.state = profile.state.copy(pinSession = session, error = null)
-            }
-
-        override fun clearPinSession(error: SimklAuthError?, scope: SimklAuthScope): Boolean =
-            mutate(scope) { profile ->
-                profile.state = profile.state.copy(pinSession = null, error = error)
-            }
-
-        override fun completePinAuthorization(token: String, scope: SimklAuthScope): Boolean =
-            mutate(scope) { profile ->
-                profile.token = token
-                profile.state = profile.state.copy(
-                    isAuthenticated = true,
-                    pinSession = null,
-                    error = null
-                )
-            }
-
-        override fun saveIdentity(
-            username: String?,
-            accountId: Long?,
-            settingsActivityWatermark: String?,
-            scope: SimklAuthScope
-        ): Boolean = mutate(scope) { profile ->
-            profile.state = profile.state.copy(
-                username = username,
-                accountId = accountId,
-                hasFetchedUserSettings = true,
-                settingsActivityWatermark = settingsActivityWatermark
-                    ?: profile.state.settingsActivityWatermark
-            )
-        }
-
-        override fun recordSettingsActivityWatermark(
-            watermark: String,
-            scope: SimklAuthScope
-        ): Boolean = mutate(scope) { profile ->
-            profile.state = profile.state.copy(settingsActivityWatermark = watermark)
-        }
-
-        override fun clearAuth(
-            error: SimklAuthError?,
-            scope: SimklAuthScope,
-            expectedAccessToken: String?
-        ): Boolean {
-            if (!isCurrent(scope)) return false
-            val profile = currentProfile()
-            if (expectedAccessToken != null && profile.token != expectedAccessToken) return false
-            profile.token = null
-            profile.state = SimklAuthState(error = error)
-            generation += 1L
-            publish()
-            return true
-        }
-
-        override fun removeProfile(profileId: Int) {
-            profiles.remove(profileId)
-            if (profileId == activeProfileId) {
-                generation += 1L
-                profiles[profileId] = StoredProfile()
-                publish()
-            }
-        }
-
-        override fun clearAllProfiles() {
-            profiles.clear()
-            generation += 1L
-            profiles[activeProfileId] = StoredProfile()
-            publish()
-        }
-
-        fun switchProfile(profileId: Int) {
-            if (profileId != activeProfileId) {
-                activeProfileId = profileId
-                generation += 1L
-            }
-            profiles.getOrPut(profileId, ::StoredProfile)
-            publish()
-        }
-
-        private fun currentProfile(): StoredProfile = profiles.getOrPut(activeProfileId, ::StoredProfile)
-
-        private fun mutate(scope: SimklAuthScope, block: (StoredProfile) -> Unit): Boolean {
-            if (!isCurrent(scope)) return false
-            block(currentProfile())
-            publish()
-            return true
-        }
-
-        private fun publish() {
-            mutableState.value = currentProfile().state
-        }
-
-        private data class StoredProfile(
-            var token: String? = null,
-            var state: SimklAuthState = SimklAuthState()
-        )
-    }
-
-    private class RecordingEngine(vararg responses: SimklRawHttpResponse) : SimklHttpEngine {
-        private val responses = ArrayDeque(responses.toList())
-        val requests = mutableListOf<Request>()
-        var beforeResponse: ((Int) -> Unit)? = null
-
-        override suspend fun execute(
-            method: String,
-            url: String,
-            headers: Map<String, String>,
-            body: String
-        ): SimklRawHttpResponse {
-            requests += Request(method, url, headers, body)
-            beforeResponse?.invoke(requests.size)
-            return responses.removeFirst()
+    @Test fun `untrusted verification destinations and malformed deadlines are rejected`() = runTest {
+        for (body in listOf(
+            deviceBody().replace("https://simkl.com/pin", "https://simkl.com.evil.example/pin"),
+            deviceBody().replace("https://simkl.com/pin", "https://user@simkl.com/pin"),
+            deviceBody().replace("https://simkl.com/pin", "https://simkl.com/pin?redirect=elsewhere"),
+            deviceBody().replace("900", "9223372036854775807"),
+            deviceBody().replace("\"interval\":5", "\"interval\":0")
+        )) {
+            val h = Harness(this); h.oauthResponses += SimklRawHttpResponse(200, body)
+            try { h.repository.startPinAuth(); fail("Expected invalid response") }
+            catch (e: SimklAuthException) { assertEquals(SimklAuthError.INVALID_PIN_RESPONSE, e.error) }
+            assertFalse(h.storage.state.value.isAuthenticated)
         }
     }
 
-    private data class Request(
-        val method: String,
-        val url: String,
-        val headers: Map<String, String>,
-        val body: String
-    )
+    @Test fun `read only token is not saved as a fully connected tracking account`() = runTest {
+        val h = Harness(this); h.start(); h.oauthResponses += tokens(scope = "media:read")
+        try { h.repository.pollPin(); fail("Expected missing write scope") }
+        catch (e: SimklAuthException) { assertEquals(SimklAuthError.INSUFFICIENT_SCOPE, e.error) }
+        assertNull(h.storage.oauthAuthorization())
+    }
 
-    private fun session(expiresAt: Long = 100_000L) = SimklPinSession(
-        userCode = "ABCDE",
-        verificationUri = "https://simkl.com/pin",
-        expiresAtEpochMs = expiresAt,
-        intervalSeconds = 5
-    )
+    @Test fun `disconnect clears locally before revoking only the captured viewer grant`() = runTest {
+        val h = Harness(this); h.start(); h.oauthResponses += tokens(); h.repository.pollPin()
+        h.oauthResponses += SimklRawHttpResponse(200, "")
+        h.repository.disconnect()
+        assertNull(h.storage.oauthAuthorization())
+        h.storage.selectProfile(2)
+        runCurrent()
+        assertEquals("/oauth2/revoke", h.oauthRequests.last().first)
+        assertEquals("test-refresh", h.oauthRequests.last().second["token"])
+        assertNull(h.storage.oauthAuthorization())
+    }
 
-    private fun response(status: Int, body: String = "") = SimklRawHttpResponse(status, body)
+    @Test fun `cancellation is propagated instead of converted into a network error`() = runTest {
+        val h = Harness(this); h.beforeOAuthResponse = { throw CancellationException("Cancelled") }
+        try { h.repository.startPinAuth(); fail("Expected cancellation") } catch (_: CancellationException) { }
+        assertNull(h.storage.oauthAuthorization())
+    }
+
+    @Test fun `logout captured by viewer A cannot disconnect viewer B before coroutine starts`() = runTest {
+        val h = Harness(this); h.start(); h.oauthResponses += tokens(); h.repository.pollPin()
+        val initiatingScope = h.repository.currentScope()
+        h.storage.selectProfile(2)
+        h.storage.saveV2Tokens(tokens("viewer-b", "refresh-b").v2Tokens(h.now), h.storage.currentScope())
+        assertNull(h.repository.disconnect(initiatingScope))
+        assertEquals("viewer-b", h.storage.authorization()?.accessToken)
+        assertFalse(h.oauthRequests.any { it.first == "/oauth2/revoke" })
+    }
+
+    @Test fun `logout result cannot publish UI after another viewer becomes active`() = runTest {
+        val h = Harness(this); h.start(); h.oauthResponses += tokens(); h.repository.pollPin()
+        h.oauthResponses += SimklRawHttpResponse(200, "")
+        val clearedScope = h.repository.disconnect(h.repository.currentScope())!!
+        assertTrue(h.repository.isCurrentScope(clearedScope))
+        h.storage.selectProfile(2)
+        assertFalse(h.repository.isCurrentScope(clearedScope))
+        runCurrent()
+    }
+
+    private class Harness(scope: CoroutineScope, clientId: String = "test-public-client") {
+        var now = 1_000_000L
+        var monotonic = 0L
+        val persistence = MemorySimklV2Persistence()
+        val storage = SimklV2AuthStore(persistence)
+        val oauthResponses = ArrayDeque<SimklRawHttpResponse>()
+        val oauthRequests = mutableListOf<Pair<String, Map<String, String>>>()
+        var beforeOAuthResponse: (() -> Unit)? = null
+        var settingsStatus = 200
+        val restRequests = mutableListOf<Pair<String, String>>()
+        val configuration = SimklApiConfiguration(clientId, "syclop", "test")
+        val oauth = SimklV2OAuthClient(SimklV2OAuthTransport { path, fields ->
+            oauthRequests += path to fields
+            beforeOAuthResponse?.invoke()
+            oauthResponses.removeFirst()
+        }, configuration)
+        val tokenManager = SimklV2TokenManager(storage, oauth) { now }
+        val client = SimklApiClient(SimklHttpEngine { method, url, _, _ ->
+            restRequests += method to url
+            SimklRawHttpResponse(settingsStatus, """{"user":{"name":"Viewer"},"account":{"id":42}}""")
+        }, configuration, storage::authorization, { }, nowEpochMs = { now },
+            sleep = { advance(it) }, renewAuthorization = tokenManager::authorization)
+        val repository = SimklAuthRepository(client, configuration, storage, oauth, { now }, { monotonic }, scope)
+        fun advance(ms: Long) { now += ms; monotonic += ms }
+        suspend fun start() { oauthResponses += device(); repository.startPinAuth(); advance(5_000) }
+    }
 }
+
+internal class MemorySimklV2Persistence : SimklV2AuthPersistence {
+    val values = mutableMapOf<Int, String>()
+    var failWrites = false
+    var failReadsFor: Set<Int> = emptySet()
+    override fun read(profileId: Int): String? {
+        if (profileId in failReadsFor) throw IOException("Test persistence read unavailable")
+        return values[profileId]
+    }
+    override fun write(profileId: Int, value: String?) {
+        if (failWrites) throw IOException("Test persistence unavailable")
+        if (value == null) values.remove(profileId) else values[profileId] = value
+    }
+    override fun clear() { values.clear() }
+}
+
+internal fun deviceBody() = """{"device_code":"test-device-code","user_code":"ABCD-EFGH","verification_uri":"https://simkl.com/pin","expires_in":900,"interval":5}"""
+internal fun device() = SimklRawHttpResponse(200, deviceBody())
+internal fun oauthErrorResponse(code: String, status: Int = 400) = SimklRawHttpResponse(status, """{"error":"$code"}""")
+internal fun tokens(access: String = "test-access", refresh: String = "test-refresh", scope: String = "media:read media:write") =
+    SimklRawHttpResponse(200, """{"access_token":"$access","refresh_token":"$refresh","token_type":"Bearer","expires_in":604800,"scope":"$scope"}""")

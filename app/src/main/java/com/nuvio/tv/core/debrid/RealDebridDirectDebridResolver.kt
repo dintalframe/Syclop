@@ -18,10 +18,11 @@ class RealDebridDirectDebridResolver @Inject constructor(
     suspend fun resolve(
         stream: Stream,
         season: Int?,
-        episode: Int?
+        episode: Int?,
+        operation: CapturedDebridOperation? = null
     ): DirectDebridResolveResult {
         val resolve = stream.clientResolve ?: return DirectDebridResolveResult.Error
-        val apiKey = dataStore.settings.first().realDebridApiKey.trim()
+        val apiKey = operation?.credential(DebridProviders.REAL_DEBRID_ID) ?: dataStore.settings.first().realDebridApiKey.trim()
         if (apiKey.isBlank()) return DirectDebridResolveResult.MissingApiKey
         val authorization = "Bearer $apiKey"
 
@@ -31,18 +32,18 @@ class RealDebridDirectDebridResolver @Inject constructor(
             if (magnet == null) {
                 val source = stream.getStreamUrl()?.takeIf { it.isHttpUrl() }
                     ?: return DirectDebridResolveResult.Stale
-                val response = api.unrestrictLink(authorization, source)
+                val response = scopedDebridRequest(operation) { api.unrestrictLink(authorization, source) }
                 val body = response.body()
                 response.errorBody()?.close()
                 val url = body?.download?.takeIf { response.isSuccessful && it.isHttpUrl() }
                     ?: return DirectDebridResolveResult.Error
                 return DirectDebridResolveResult.Success(url, body.filename, body.filesize)
             }
-            val add = api.addMagnet(authorization, magnet)
+            val add = scopedDebridRequest(operation) { api.addMagnet(authorization, magnet) }
             val torrentId = add.body()?.id?.takeIf { add.isSuccessful && it.isNotBlank() }
                 ?: return add.toFailureForAdd()
             // addMagnet does not guarantee a new, app-owned cloud job. Never delete on failure.
-            val infoBefore = api.getTorrentInfo(authorization, torrentId)
+            val infoBefore = scopedDebridRequest(operation) { api.getTorrentInfo(authorization, torrentId) }
             if (!infoBefore.isSuccessful) return DirectDebridResolveResult.Stale
             val file = fileSelector.selectFile(
                 files = infoBefore.body()?.files.orEmpty(),
@@ -51,25 +52,25 @@ class RealDebridDirectDebridResolver @Inject constructor(
                 episode = episode
             ) ?: return DirectDebridResolveResult.Stale
             val fileId = file.id ?: return DirectDebridResolveResult.Stale
-            val select = api.selectFiles(
+            val select = scopedDebridRequest(operation) { api.selectFiles(
                 authorization = authorization,
                 id = torrentId,
                 files = fileId.toString()
-            )
+            ) }
             select.body()?.close()
             select.errorBody()?.close()
             if (!select.isSuccessful && select.code() != 202) {
                 return DirectDebridResolveResult.Stale
             }
 
-            val infoAfter = api.getTorrentInfo(authorization, torrentId)
+            val infoAfter = scopedDebridRequest(operation) { api.getTorrentInfo(authorization, torrentId) }
             if (!infoAfter.isSuccessful) return DirectDebridResolveResult.Stale
             if (infoAfter.body()?.status in setOf("downloading", "queued", "magnet_conversion", "compressing", "uploading")) {
                 return DirectDebridResolveResult.NotCached
             }
             val link = infoAfter.body()?.selectedDownloadLink(fileId)
                 ?: return DirectDebridResolveResult.Stale
-            val unrestrict = api.unrestrictLink(authorization, link)
+            val unrestrict = scopedDebridRequest(operation) { api.unrestrictLink(authorization, link) }
             if (!unrestrict.isSuccessful) return DirectDebridResolveResult.Stale
             val url = unrestrict.body()?.download?.takeIf { it.isHttpUrl() }
                 ?: return DirectDebridResolveResult.Stale

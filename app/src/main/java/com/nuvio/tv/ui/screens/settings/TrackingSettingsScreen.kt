@@ -226,6 +226,8 @@ fun TrackingSettingsContent(
         }
     )
 
+    MalSettingsDialogHost()
+
     when (activeProvider) {
         TrackingDialogProvider.TRAKT -> {
             TraktAccountDialog(

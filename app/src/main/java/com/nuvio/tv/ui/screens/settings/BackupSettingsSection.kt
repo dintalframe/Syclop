@@ -19,6 +19,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import com.nuvio.tv.ui.components.NuvioDialog
+import com.nuvio.tv.core.backup.LocalBackupFileNames
 import com.nuvio.tv.ui.theme.NuvioTheme
 
 @Composable
@@ -26,7 +27,7 @@ internal fun BackupSettingsSection(viewModel: BackupSettingsViewModel = hiltView
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var visible by remember { mutableStateOf(false) }
     var confirmUndo by remember { mutableStateOf(false) }
-    val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> if (uri != null) viewModel.export(uri) }
+    val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(LocalBackupFileNames.MIME_TYPE)) { uri -> if (uri != null) viewModel.export(uri) }
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) viewModel.inspect(uri) }
     SettingsActionRow("Local backup and restore", "Profiles, supported settings, Library, watched history and resume progress. Account credentials are excluded.",
         value = "Manage", onClick = { visible = true; viewModel.open() })

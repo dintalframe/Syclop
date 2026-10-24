@@ -91,6 +91,11 @@ internal fun PlayerRuntimeController.initializeMpvPlayer(
     headers: Map<String, String>,
     allowEngineFailover: Boolean = true
 ) {
+    if (!com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(url)) {
+        _uiState.update { it.copy(error = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE,
+            showLoadingOverlay = false, isBuffering = false) }
+        return
+    }
     mpvMediaLoadPrepared = true
     prefetchAutoSyncIndex(url, headers) // AutoSync hook
     _exoPlayer?.release()

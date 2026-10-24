@@ -95,6 +95,7 @@ class MetaDetailsViewModel @Inject constructor(
     private val traktAuthDataStore: TraktAuthDataStore,
     private val traktCommentsService: TraktCommentsService,
     private val traktRelatedService: TraktRelatedService,
+    private val traktActionsService: com.nuvio.tv.data.repository.TraktActionsService,
     private val traktSettingsDataStore: TraktSettingsDataStore,
     private val simklRelatedService: com.nuvio.tv.data.simkl.SimklRelatedService,
     private val simklAuthRepository: com.nuvio.tv.data.simkl.SimklAuthRepository,
@@ -113,6 +114,9 @@ class MetaDetailsViewModel @Inject constructor(
     private val itemType: String = savedStateHandle["itemType"] ?: ""
     private val preferredAddonBaseUrl: String? = savedStateHandle["addonBaseUrl"]
 
+    private var traktActionJob: Job? = null
+    private var traktActionSession: com.nuvio.tv.core.trakt.TraktActionSession? = null
+    private var traktActionRevision = 0L
     private val _uiState = MutableStateFlow(MetaDetailsUiState())
     private val shuffleVisit = System.nanoTime()
     val uiState: StateFlow<MetaDetailsUiState> = combine(
@@ -167,6 +171,16 @@ class MetaDetailsViewModel @Inject constructor(
         observeMetaViewSettings()
         observeTrailerAutoplaySettings()
         observeTraktCommentsAvailability()
+        viewModelScope.launch {
+            traktAuthDataStore.state.collectLatest { auth ->
+                _uiState.update { it.copy(traktConnected = auth.isAuthenticated) }
+                val session = traktActionSession
+                if (session != null && !traktActionsService.isCurrent(session)) dismissTraktActions()
+            }
+        }
+        viewModelScope.launch {
+            profileManager.activeProfileId.collect { dismissTraktActions() }
+        }
         observeLibraryState()
         observeWatchProgress()
         observeMovieResumeProgress()
@@ -345,6 +359,16 @@ class MetaDetailsViewModel @Inject constructor(
 
     fun onEvent(event: MetaDetailsEvent) {
         when (event) {
+            MetaDetailsEvent.OnOpenTraktActions -> openTraktActions()
+            is MetaDetailsEvent.OnSelectTraktTarget -> openTraktActions(event.target)
+            is MetaDetailsEvent.OnSelectTraktRating -> if(event.rating in 1..10) _uiState.update { it.copy(traktActions = it.traktActions?.copy(selectedRating = event.rating)) }
+            MetaDetailsEvent.OnSaveTraktRating -> runTraktAction("rate")
+            MetaDetailsEvent.OnClearTraktRating -> runTraktAction("clear")
+            MetaDetailsEvent.OnTraktCheckin -> runTraktAction("checkin")
+            MetaDetailsEvent.OnRequestCancelTraktCheckin -> _uiState.update { it.copy(traktActions = it.traktActions?.copy(confirmCancel = true)) }
+            MetaDetailsEvent.OnConfirmCancelTraktCheckin -> runTraktAction("cancel")
+            MetaDetailsEvent.OnRefreshTraktActions -> _uiState.value.traktActions?.target?.let { openTraktActions(it) }
+            MetaDetailsEvent.OnDismissTraktActions -> dismissTraktActions()
             is MetaDetailsEvent.OnSeasonSelected -> selectSeason(event.season)
             is MetaDetailsEvent.OnEpisodeClick -> { /* Navigate to stream */ }
             is MetaDetailsEvent.OnCommentsModeSelected -> selectCommentsMode(event.mode)
@@ -380,6 +404,101 @@ class MetaDetailsViewModel @Inject constructor(
             MetaDetailsEvent.OnClearMessage -> clearMessage()
             MetaDetailsEvent.OnLifecyclePause -> handleLifecyclePause()
         }
+    }
+
+    private fun dismissTraktActions() {
+        traktActionRevision += 1
+        traktActionJob?.cancel()
+        traktActionJob = null
+        traktActionSession = null
+        _uiState.update { it.copy(traktActions = null) }
+    }
+
+    private fun openTraktActions(requested: com.nuvio.tv.core.trakt.TraktActionTarget? = null) {
+        val meta = _uiState.value.meta ?: return
+        if (!_uiState.value.traktConnected) return
+        val targets = listOfNotNull(com.nuvio.tv.core.trakt.TraktActionIdentity.title(meta)) +
+            meta.videos.mapNotNull { com.nuvio.tv.core.trakt.TraktActionIdentity.episode(meta, it) }
+        val target = requested?.takeIf { it in targets } ?: if(requested == null) targets.firstOrNull() else null
+        target ?: return
+        val selection = traktActionsService.selection() // Capture synchronously before launching.
+        dismissTraktActions()
+        val revision = traktActionRevision
+        _uiState.update { it.copy(traktActions = TraktActionDialogState(targets, target)) }
+        traktActionJob = viewModelScope.launch {
+            try {
+                val session = traktActionsService.capture(selection)
+                if (revision != traktActionRevision) return@launch
+                traktActionSession = session
+                val loaded = traktActionsService.load(session, target)
+                if (revision != traktActionRevision || !traktActionsService.isCurrent(session)) return@launch
+                _uiState.update { state -> state.copy(traktActions = state.traktActions?.copy(
+                    pending = false, ownRating = loaded.rating.value, selectedRating = loaded.rating.value,
+                    ratingComplete = loaded.rating.complete,
+                    activeCheckinTitle = loaded.watching?.takeIf { it.action == "checkin" }?.let {
+                        it.movie?.title ?: it.episode?.title ?: localizedContext.getString(R.string.trakt_actions_active_fallback)
+                    }, checkinExpiresAt = loaded.watching?.takeIf { it.action == "checkin" }?.expiresAt)) }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) {
+                if (revision == traktActionRevision) _uiState.update { it.copy(traktActions = it.traktActions?.copy(pending = false,
+                    message = safeTraktActionMessage(e))) }
+            }
+        }
+    }
+
+    private fun runTraktAction(operation: String) {
+        val dialog = _uiState.value.traktActions ?: return
+        val session = traktActionSession ?: return
+        if (dialog.pending || (operation == "cancel" && (!dialog.confirmCancel || dialog.activeCheckinTitle == null))) return
+        val revision = traktActionRevision
+        _uiState.update { it.copy(traktActions = it.traktActions?.copy(pending = true, message = null)) }
+        traktActionJob = viewModelScope.launch {
+            try {
+                val message = when(operation) {
+                    "rate" -> {
+                        val rating = dialog.selectedRating ?: return@launch
+                        traktActionsService.rate(session, dialog.target, rating)
+                        localizedContext.getString(R.string.trakt_actions_rating_saved)
+                    }
+                    "clear" -> {
+                        traktActionsService.clearRating(session, dialog.target)
+                        localizedContext.getString(R.string.trakt_actions_rating_cleared)
+                    }
+                    "checkin" -> when(val result = traktActionsService.checkin(session, dialog.target)) {
+                        is com.nuvio.tv.data.repository.TraktCheckinResult.Started -> localizedContext.getString(R.string.trakt_actions_checkin_started)
+                        is com.nuvio.tv.data.repository.TraktCheckinResult.Conflict -> localizedContext.getString(R.string.trakt_actions_checkin_conflict) +
+                            (result.expiresAt?.let { " $it" } ?: "")
+                    }
+                    "cancel" -> {
+                        traktActionsService.cancelActiveCheckin(session)
+                        localizedContext.getString(R.string.trakt_actions_checkin_cancelled)
+                    }
+                    else -> return@launch
+                }
+                if (revision != traktActionRevision || !traktActionsService.isCurrent(session)) return@launch
+                // Confirmed writes update local display; explicit Refresh reconciles server state.
+                _uiState.update { state -> state.copy(traktActions = state.traktActions?.copy(pending = false,
+                    ownRating = when(operation) { "rate" -> dialog.selectedRating; "clear" -> null; else -> state.traktActions.ownRating },
+                    ratingComplete = if(operation in setOf("rate", "clear")) true else state.traktActions.ratingComplete,
+                    activeCheckinTitle = if(operation == "cancel") null else state.traktActions.activeCheckinTitle,
+                    confirmCancel = false, message = message)) }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) {
+                if (revision == traktActionRevision) _uiState.update { it.copy(traktActions = it.traktActions?.copy(
+                    pending = false, message = safeTraktActionMessage(e))) }
+            }
+        }
+    }
+
+    private fun safeTraktActionMessage(error: Exception): String {
+        val resource = when ((error as? com.nuvio.tv.core.trakt.TraktActionException)?.failure) {
+            com.nuvio.tv.core.trakt.TraktActionFailure.NETWORK_UNCERTAIN -> R.string.trakt_actions_network_uncertain
+            com.nuvio.tv.core.trakt.TraktActionFailure.STALE -> R.string.trakt_actions_viewer_changed
+            com.nuvio.tv.core.trakt.TraktActionFailure.DISCONNECTED -> R.string.trakt_actions_connect_first
+            com.nuvio.tv.core.trakt.TraktActionFailure.ITEM_NOT_FOUND -> R.string.trakt_actions_item_not_found
+            else -> R.string.trakt_actions_failed
+        }
+        return localizedContext.getString(resource)
     }
 
     private fun observeLibraryState() {

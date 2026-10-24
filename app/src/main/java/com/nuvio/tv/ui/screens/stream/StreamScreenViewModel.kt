@@ -96,6 +96,8 @@ class StreamScreenViewModel @Inject constructor(
     private val directDebridResolver: DirectDebridResolver,
     private val directDebridStreamPreparer: DirectDebridStreamPreparer,
     private val debridStreamPresentation: DebridStreamPresentation,
+    private val bitrateMetadata: com.nuvio.tv.core.debrid.DebridBitrateMetadataService,
+    private val bitrateSettingsStore: com.nuvio.tv.data.local.DebridSettingsDataStore,
     private val youTubeStreamResolver: YouTubeStreamResolver,
     private val externalPlaybackTracker: com.nuvio.tv.core.player.ExternalPlaybackTracker,
     private val subtitleRepository: com.nuvio.tv.domain.repository.SubtitleRepository,
@@ -122,6 +124,27 @@ class StreamScreenViewModel @Inject constructor(
     private var streamBadgePresentationRequestId = 0L
     private var badgedAddonNames: Set<String> = emptySet()
     private var playbackMetaVideos: List<Video>? = null
+    private var bitrateJob: Job? = null
+    @Volatile private var bitrateSettings: com.nuvio.tv.domain.model.DebridSettings? = null
+    private val nativeMetadataStreams = java.util.concurrent.ConcurrentHashMap<String,Stream>()
+    private var bitrateRequestKey: String? = null
+    private var lastSelectedBitrateStream: Stream? = null
+    @Volatile private var bitrateMetadataSelectionRevision = Long.MIN_VALUE
+    @Volatile private var bitrateMetadataCredentialRevision = Long.MIN_VALUE
+
+    private fun syncBitrateMetadataScope(): Boolean {
+        val selection = bitrateSettingsStore.activeProfileSelectionRevision
+        val credentials = bitrateSettingsStore.activeCredentialRevision
+        if (selection != bitrateMetadataSelectionRevision || credentials != bitrateMetadataCredentialRevision) {
+            bitrateJob?.cancel()
+            nativeMetadataStreams.clear()
+            lastSelectedBitrateStream = null
+            bitrateRequestKey = null
+            bitrateMetadataSelectionRevision = selection
+            bitrateMetadataCredentialRevision = credentials
+        }
+        return credentials >= 0L && bitrateSettingsStore.activeProfileId.value == playbackProfileId
+    }
 
     private val embeddedStreamGroupName: String by lazy {
         context.getString(R.string.stream_embedded_group)
@@ -259,7 +282,7 @@ class StreamScreenViewModel @Inject constructor(
                                 }
                             )
                         }
-                        val updatedAllStreams = updatedAddonStreams.flatMap { it.streams }
+                        val updatedAllStreams = rankBitrateStreams(updatedAddonStreams.flatMap { it.streams })
                         val currentFilter = state.selectedAddonFilter
                         val fullFiltered = if (currentFilter == null) {
                             updatedAllStreams
@@ -289,6 +312,22 @@ class StreamScreenViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            bitrateSettingsStore.settings.collectLatest { settings ->
+                if (bitrateSettingsStore.activeProfileId.value != playbackProfileId) {
+                    syncBitrateMetadataScope(); return@collectLatest
+                }
+                syncBitrateMetadataScope()
+                val previous = bitrateSettings
+                if(previous != null && (previous.activeResolverProviderId != settings.activeResolverProviderId ||
+                    previous.apiKeyFor(previous.activeResolverProviderId) != settings.apiKeyFor(settings.activeResolverProviderId))) {
+                    bitrateJob?.cancel(); nativeMetadataStreams.clear(); bitrateRequestKey = null
+                }
+                bitrateSettings = settings
+                refreshBitrateRanking()
+                scheduleBitrateMetadata()
+            }
+        }
+        viewModelScope.launch {
             _uiState
                 .map { state -> state.directAutoPlayMessage to state.directAutoPlayProgress }
                 .distinctUntilChanged()
@@ -316,6 +355,51 @@ class StreamScreenViewModel @Inject constructor(
         loadStreams()
     }
 
+    private fun rankBitrateStreams(streams: List<Stream>): List<Stream> {
+        syncBitrateMetadataScope()
+        val merged = streams.map { nativeMetadataStreams[it.stableKey(0)] ?: it }
+        return bitrateSettings?.let { debridStreamPresentation.rankAll(merged, it) } ?: merged
+    }
+
+    private fun refreshBitrateRanking() {
+        updateUiStateIfChanged { state ->
+            val all = rankBitrateStreams(state.addonStreams.flatMap { it.streams })
+            val filtered = if(state.selectedAddonFilter == null) all else all.filter { it.addonName == state.selectedAddonFilter }
+            streamFilterFullList = filtered
+            val end = state.filteredStreams.size.coerceAtLeast(STREAM_FILTER_PAGE_SIZE).coerceAtMost(filtered.size)
+            state.copy(allStreams = all, filteredStreams = filtered.take(end))
+        }
+    }
+
+    private fun scheduleBitrateMetadata(force: Boolean = false) {
+        if (!syncBitrateMetadataScope()) return
+        val selectionRevision = bitrateSettingsStore.activeProfileSelectionRevision
+        val credentialRevision = bitrateSettingsStore.activeCredentialRevision
+        if (credentialRevision < 0L) return
+        val state = _uiState.value
+        if (state.addonStreams.isEmpty()) return
+        val settings = bitrateSettings ?: return
+        val ordered = debridStreamPresentation.rankAll(state.addonStreams.flatMap { it.streams }, settings, enforceLimits = false)
+        val visible = (listOfNotNull(lastSelectedBitrateStream) + ordered).distinctBy { it.stableKey(0) }
+        val requestKey = visible.take(12).joinToString { it.stableKey(0) } + "|${state.bitrateDurationMillis}"
+        if(!force && requestKey == bitrateRequestKey) return
+        bitrateRequestKey = requestKey
+        bitrateJob?.cancel()
+        bitrateJob = viewModelScope.launch {
+            val changed = bitrateMetadata.enrichKnownFiles(visible, state.bitrateDurationMillis, state.bitrateDurationOrigin,
+                season, episode, playbackProfileId)
+            ensureActive()
+            if (bitrateSettingsStore.activeProfileId.value != playbackProfileId ||
+                bitrateSettingsStore.activeProfileSelectionRevision != selectionRevision ||
+                bitrateSettingsStore.activeCredentialRevision != credentialRevision) {
+                syncBitrateMetadataScope(); return@launch
+            }
+            changed.forEach { (original, enriched) -> nativeMetadataStreams[original.stableKey(0)] = enriched }
+            while(nativeMetadataStreams.size > 128) nativeMetadataStreams.remove(nativeMetadataStreams.keys.first())
+            refreshBitrateRanking()
+        }
+    }
+
     private fun SavedStateHandle.getOptionalString(key: String): String? {
         return get<String>(key)?.takeIf { it.isNotBlank() }
     }
@@ -324,6 +408,8 @@ class StreamScreenViewModel @Inject constructor(
         when (event) {
             is StreamScreenEvent.OnAddonFilterSelected -> filterByAddon(event.addonName)
             is StreamScreenEvent.OnStreamSelected -> {
+                lastSelectedBitrateStream = event.stream
+                bitrateJob?.cancel()
                 cancelStreamsLoad()
             }
             StreamScreenEvent.OnAutoPlayConsumed -> {
@@ -362,6 +448,7 @@ class StreamScreenViewModel @Inject constructor(
             StreamScreenEvent.OnRetry -> loadStreams()
             StreamScreenEvent.OnBackPress -> { /* Handle in screen */ }
             StreamScreenEvent.OnResume -> {
+                scheduleBitrateMetadata(force = true)
                 hostInForeground.value = true
                 if (!externalPlaybackTracker.isTracking) {
                     streamRepository.setLocalPluginSearchPaused(false)
@@ -406,6 +493,7 @@ class StreamScreenViewModel @Inject constructor(
         streamLoadScope = newScope
         streamLoadJob = newScope.launch {
             streamLoadCompleted = false
+            bitrateSettings = bitrateSettingsStore.settings.first()
             val playerSettings = playerSettingsDataStore.playerSettings.first()
             if (manualSelection) {
                 directAutoPlayModeInitializedForSession = true
@@ -570,7 +658,7 @@ class StreamScreenViewModel @Inject constructor(
                     }
                 }
 
-                val allStreams = mergedAddonStreams.flatMap { it.streams }
+                val allStreams = rankBitrateStreams(mergedAddonStreams.flatMap { it.streams })
                 val availableAddons = mergedAddonStreams.map { it.addonName }
 
                 // Early binge group match: if we have a persisted binge group, try to
@@ -692,6 +780,7 @@ class StreamScreenViewModel @Inject constructor(
                     )
                 }
                 scheduleStreamBadgePresentation(mergedAddonStreams)
+                scheduleBitrateMetadata()
             }
 
             if (shouldAttemptEmbeddedMetaStreamLookup()) {
@@ -757,9 +846,9 @@ class StreamScreenViewModel @Inject constructor(
                             if (updatedGroups == state.addonStreams) {
                                 state
                             } else {
-                                val updatedAllStreams = updatedGroups.flatMap { addonStreams ->
+                                val updatedAllStreams = rankBitrateStreams(updatedGroups.flatMap { addonStreams ->
                                     addonStreams.streams
-                                }
+                                })
                                 val currentFilter = state.selectedAddonFilter
                                 val fullFiltered = if (currentFilter == null) {
                                     updatedAllStreams
@@ -835,7 +924,7 @@ class StreamScreenViewModel @Inject constructor(
                                 val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(
                                     result.data, installedAddonOrder, preferredServerNames
                                 )
-                                val allStreams = orderedStreams.flatMap { it.streams }
+                                val allStreams = rankBitrateStreams(orderedStreams.flatMap { it.streams })
                                 val earlyMatch = StreamAutoPlaySelector.selectAutoPlayStream(
                                     streams = allStreams,
                                     mode = playerSettings.streamAutoPlayMode,
@@ -1214,6 +1303,15 @@ class StreamScreenViewModel @Inject constructor(
 
             val meta = result.data
             playbackMetaVideos = meta.videos
+            val exactRuntime = extractRuntimeMinutes(meta)?.takeIf { it > 0 }
+            val durationOrigin = when {
+                season != null && episode != null -> com.nuvio.tv.domain.model.StreamDurationOrigin.CATALOG_EPISODE
+                meta.apiType == "movie" -> com.nuvio.tv.domain.model.StreamDurationOrigin.CATALOG_MOVIE
+                else -> null
+            }
+            _uiState.update { it.copy(bitrateDurationMillis = exactRuntime?.toLong()?.times(60_000L),
+                bitrateDurationOrigin = durationOrigin.takeIf { exactRuntime != null }) }
+            scheduleBitrateMetadata()
             if (!requiresMetadataLookup) return@launch
             val metaGenres = meta.genres.takeIf { it.isNotEmpty() }
                 ?.joinToString(" • ") { localizedGenreLabel(context, it) }
@@ -1292,13 +1390,25 @@ class StreamScreenViewModel @Inject constructor(
         }
     }
 
+    suspend fun authorizePlaybackUrl(url: String): Boolean {
+        val allowed = directDebridResolver.isPlaybackAuthorized(url, playbackProfileId)
+        if (!allowed) showDirectDebridPlaybackError(com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE, false)
+        return allowed
+    }
+
     suspend fun resolveStreamForPlayback(stream: Stream, saveLastLink: Boolean = true): StreamPlaybackInfo? {
+        if (stream.serverTarget != null || stream.youTubeIdToResolve() != null) {
+            showDirectDebridPlaybackError(com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE, false)
+            return null
+        }
         stream.serverTarget?.let { target -> return prepareServerStream(stream, target) }
         if (stream.youTubeIdToResolve() != null) {
             return resolveYouTubeStreamForPlayback(stream)
         }
         if (!directDebridResolver.shouldResolveToPlayableStream(stream)) {
             Log.d(TAG, "resolveStreamForPlayback: no debrid resolve needed, using direct URL")
+            val direct = stream.getStreamUrl()
+            if (direct == null || !authorizePlaybackUrl(direct)) return null
             return getStreamForPlayback(stream, saveLastLink)
         }
 
@@ -1674,6 +1784,7 @@ class StreamScreenViewModel @Inject constructor(
         autoLaunch: Boolean = false,
         context: android.content.Context
     ) {
+        if (playbackInfo.isTorrent || !authorizePlaybackUrl(url)) return
         streamRepository.setLocalPluginSearchPaused(true)
         externalOverlayHideJob?.cancel()
         // Preserve the current message; blanking it made the card's Crossfade flash

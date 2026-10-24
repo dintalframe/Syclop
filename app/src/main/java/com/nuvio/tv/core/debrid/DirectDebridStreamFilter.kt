@@ -101,7 +101,8 @@ object DirectDebridStreamFilter {
     /** Same as [applyPreferences], but keeps each stream's facts so callers don't recompute them. */
     fun applyPreferencesWithFacts(
         streams: List<Stream>,
-        settings: DebridSettings
+        settings: DebridSettings,
+        enforceLimits: Boolean = true
     ): List<Pair<Stream, StreamFacts>> {
         val preferences = effectivePreferences(settings)
         val matchedStreams = streams.map { it to streamFacts(it, preferences) }
@@ -115,7 +116,7 @@ object DirectDebridStreamFilter {
             }
         }
 
-        return applyLimits(orderedStreams, preferences)
+        return if (enforceLimits) applyLimits(orderedStreams, preferences) else orderedStreams
     }
 
     fun facts(stream: Stream, settings: DebridSettings): StreamFacts =
@@ -233,6 +234,8 @@ object DirectDebridStreamFilter {
     ): Int {
         val direction = if (criterion.direction == DebridStreamSortDirection.ASC) 1 else -1
         return when (criterion.key) {
+            DebridStreamSortKey.BITRATE -> StreamBitrateFacts.compareNullable(left.estimatedBitrateBps, right.estimatedBitrateBps,
+                criterion.direction == DebridStreamSortDirection.DESC)
             DebridStreamSortKey.RESOLUTION -> left.resolutionRank.compareTo(right.resolutionRank) * -direction
             DebridStreamSortKey.QUALITY -> left.qualityRank.compareTo(right.qualityRank) * -direction
             DebridStreamSortKey.VISUAL_TAG -> left.visualRank.compareTo(right.visualRank) * -direction
@@ -269,6 +272,7 @@ object DirectDebridStreamFilter {
             languages = languages,
             releaseGroup = releaseGroup,
             size = streamSize(stream),
+            estimatedBitrateBps = StreamBitrateFacts.estimatedBitsPerSecond(stream),
             resolutionRank = rank(resolution, preferences.preferredResolutions),
             qualityRank = rank(quality, preferences.preferredQualities),
             visualRank = rankAny(visualTags, preferences.preferredVisualTags),
@@ -497,6 +501,7 @@ object DirectDebridStreamFilter {
         val audioRank: Int,
         val channelRank: Int,
         val encodeRank: Int,
-        val languageRank: Int
+        val languageRank: Int,
+        val estimatedBitrateBps: Long? = null
     )
 }
