@@ -1158,7 +1158,7 @@
   <string name="debrid_disconnect">Αποσύνδεση</string>
   <string name="debrid_device_auth_connected">Το %1$s είναι συνδεδεμένο σε αυτή τη συσκευή.</string>
   <string name="debrid_device_auth_starting">Εκκίνηση ασφαλούς σύνδεσης…</string>
-  <string name="debrid_device_auth_instructions">Σαρώστε το QR και εισάγετε αυτόν τον κωδικό για έγκριση του Nuvio.</string>
+  <string name="debrid_device_auth_instructions">Σαρώστε το QR και εισάγετε αυτόν τον κωδικό για έγκριση του Syclop.</string>
   <string name="debrid_device_auth_code_copied">Ο κωδικός αντιγράφηκε.</string>
   <string name="debrid_device_auth_waiting">Αναμονή για έγκριση…</string>
   <string name="debrid_device_auth_failed">Δεν ήταν δυνατή η εκκίνηση της σύνδεσης.</string>

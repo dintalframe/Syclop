@@ -1138,7 +1138,7 @@
     <string name="debrid_disconnect">Loskoppelen</string>
     <string name="debrid_device_auth_connected">%1$s is verbonden op dit apparaat.</string>
     <string name="debrid_device_auth_starting">Beveiligde aanmelding starten...</string>
-    <string name="debrid_device_auth_instructions">Scan de QR-code en voer deze code in om Nuvio goed te keuren.</string>
+    <string name="debrid_device_auth_instructions">Scan de QR-code en voer deze code in om Syclop goed te keuren.</string>
     <string name="debrid_device_auth_code_copied">Code gekopieerd.</string>
     <string name="debrid_device_auth_waiting">Wachten op goedkeuring...</string>
     <string name="debrid_device_auth_failed">Kon de aanmelding niet starten.</string>

@@ -1308,7 +1308,7 @@
     <string name="debrid_disconnect">Ngắt kết nối</string>
     <string name="debrid_device_auth_connected">%1$s đã được kết nối trên thiết bị này</string>
     <string name="debrid_device_auth_starting">Đang bắt đầu đăng nhập bảo mật…</string>
-    <string name="debrid_device_auth_instructions">Quét mã QR và nhập mã này để phê duyệt Nuvio.</string>
+    <string name="debrid_device_auth_instructions">Quét mã QR và nhập mã này để phê duyệt Syclop.</string>
     <string name="debrid_device_auth_code_copied">Đã sao chép mã</string>
     <string name="debrid_device_auth_waiting">Đang chờ phê duyệt…</string>
     <string name="debrid_device_auth_failed">Không thể đăng nhập.</string>

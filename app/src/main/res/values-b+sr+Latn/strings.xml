@@ -1163,7 +1163,7 @@
     <string name="debrid_disconnect">Prekini vezu</string>
     <string name="debrid_device_auth_connected">%1$s je povezan na ovom uređaju.</string>
     <string name="debrid_device_auth_starting">Pokretanje bezbedne prijave...</string>
-    <string name="debrid_device_auth_instructions">Skenirajte QR i unesite ovaj kod da biste odobrili Nuvio.</string>
+    <string name="debrid_device_auth_instructions">Skenirajte QR i unesite ovaj kod da biste odobrili Syclop.</string>
     <string name="debrid_device_auth_code_copied">Kod je kopiran.</string>
     <string name="debrid_device_auth_waiting">Čeka se odobrenje...</string>
     <string name="debrid_device_auth_failed">Nije moguće pokrenuti prijavu.</string>

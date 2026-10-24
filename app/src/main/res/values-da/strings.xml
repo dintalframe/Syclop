@@ -936,7 +936,7 @@
     <string name="debrid_disconnect">Afbryd</string>
     <string name="debrid_device_auth_connected">%1$s er tilknyttet på denne enhed.</string>
     <string name="debrid_device_auth_starting">Starter sikker login...</string>
-    <string name="debrid_device_auth_instructions">Scan QR-koden og indtast denne kode for at godkende Nuvio.</string>
+    <string name="debrid_device_auth_instructions">Scan QR-koden og indtast denne kode for at godkende Syclop.</string>
     <string name="debrid_device_auth_code_copied">Kode kopieret.</string>
     <string name="debrid_device_auth_waiting">Venter på godkendelse...</string>
     <string name="debrid_device_auth_failed">Kunne ikke starte login.</string>

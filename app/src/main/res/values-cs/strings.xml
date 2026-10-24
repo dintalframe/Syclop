@@ -1008,7 +1008,7 @@
     <string name="debrid_disconnect">Odpojit</string>
     <string name="debrid_device_auth_connected">%1$s je na tomto zařízení připojeno.</string>
     <string name="debrid_device_auth_starting">Spouštění bezpečného přihlášení...</string>
-    <string name="debrid_device_auth_instructions">Naskenujte QR kód a pro schválení Nuvio zadejte tento kód.</string>
+    <string name="debrid_device_auth_instructions">Naskenujte QR kód a pro schválení Syclop zadejte tento kód.</string>
     <string name="debrid_device_auth_code_copied">Kód zkopírován.</string>
     <string name="debrid_device_auth_waiting">Čekání na schválení...</string>
     <string name="debrid_device_auth_failed">Nepodařilo se spustit přihlášení.</string>

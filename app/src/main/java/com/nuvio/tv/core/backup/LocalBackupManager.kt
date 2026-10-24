@@ -40,6 +40,7 @@ class LocalBackupManager @Inject constructor(
     fun notice() = BackupRestoreBootstrap.notice(context)
 
     suspend fun export(destination: Uri? = null): String = lock.withLock { withContext(Dispatchers.IO) {
+        BackupRestoreBootstrap.requireNoProfileLocks(context)
         val archive = snapshot()
         val bytes = PortableBackupArchive.encode(archive)
         if (destination != null) {

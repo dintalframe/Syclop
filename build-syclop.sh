@@ -11,18 +11,38 @@ for option in "$@"; do
     --test) run_tests=1 ;;
     --release) variant=Release; variant_dir=release ;;
     --help|-h)
-      printf 'Usage: ./build-syclop.sh [--test] [--release]\nBuilds Syclop fullDebug by default; --release builds the optimized, non-debuggable fullRelease.\n--test runs the selected isolation, credential, debrid, Trakt, MAL, Express and log-redaction checks. No TV connection.\n'
+      printf 'Usage: ./build-syclop.sh [--test] [--release]\nBuilds Syclop fullDebug by default; --release builds the optimized, non-debuggable fullRelease.\n--test runs the selected isolation, credential, debrid, Trakt, MAL, Express, backup and log-redaction checks. No TV connection.\n'
       exit 0 ;;
     *) printf 'Unknown option: %s\n' "$option" >&2; exit 2 ;;
   esac
 done
-if [ ! -f "$workspace_dir/.toolchain/env.sh" ]; then
-  printf 'Missing workspace toolchain. Run ../bootstrap.sh first.\n' >&2
+if [ -f "$workspace_dir/.toolchain/env.sh" ]; then
+  source "$workspace_dir/.toolchain/env.sh"
+else
+  # A normal standalone clone can use an Android Studio/command-line SDK installation.
+  if [ -z "${JAVA_HOME:-}" ] || [ -z "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ]; then
+    printf 'Set JAVA_HOME to a JDK 17 installation and ANDROID_HOME (or ANDROID_SDK_ROOT) to your Android SDK. See SYCLOP_BUILD.md.\n' >&2
+    exit 1
+  fi
+  export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+  export ANDROID_SDK_ROOT="$ANDROID_HOME"
+fi
+if [ ! -x "$JAVA_HOME/bin/java" ] || [ ! -x "$JAVA_HOME/bin/keytool" ]; then
+  printf 'JAVA_HOME must identify a complete JDK with java and keytool.\n' >&2
   exit 1
 fi
-source "$workspace_dir/.toolchain/env.sh"
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'Python 3 is required to create the private local signing password.\n' >&2
+  exit 1
+fi
 if [ ! -f "$ANDROID_HOME/platforms/android-36/android.jar" ] || [ ! -x "$ANDROID_HOME/build-tools/36.0.0/aapt2" ]; then
-  "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-36' 'build-tools;36.0.0'
+  sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+  if [ ! -x "$sdkmanager" ]; then sdkmanager="$(command -v sdkmanager || true)"; fi
+  if [ -z "$sdkmanager" ] || [ ! -x "$sdkmanager" ]; then
+    printf 'Install Android SDK platform 36 and build-tools 36.0.0 using Android Studio SDK Manager, or put sdkmanager on PATH.\n' >&2
+    exit 1
+  fi
+  "$sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-36' 'build-tools;36.0.0'
 fi
 
 signing_dir="$workspace_dir/.toolchain/syclop-private"
@@ -55,6 +75,7 @@ if [ ! -f "$key_file" ]; then
     -keyalg RSA -keysize 3072 -validity 10000 > "$signing_dir/key-generation.log" 2>&1
 fi
 chmod 600 "$key_file"
+export CI_USE_DEBUG_SIGNING=false
 export NUVIO_RELEASE_STORE_FILE="$key_file"
 export NUVIO_RELEASE_KEY_ALIAS=syclop-local
 export NUVIO_RELEASE_STORE_PASSWORD="$(cat "$password_file")"
@@ -79,7 +100,11 @@ if [ "$run_tests" -eq 1 ]; then
     --tests 'com.nuvio.tv.core.tracking.TrackingLibrarySourceControllerTest' \
     --tests 'com.nuvio.tv.core.tracking.TrackingSourceMemoryTest' \
     --tests 'com.nuvio.tv.core.express.*' \
-    --tests 'com.nuvio.tv.core.backup.*' :app:assembleFull${variant}
+    --tests 'com.nuvio.tv.core.backup.*' \
+    --tests 'com.nuvio.tv.core.deeplink.DeepLinkParser*' \
+    --tests 'com.nuvio.tv.data.local.MDBListRatingCredentialStorage*' \
+    --tests 'com.nuvio.tv.ui.screens.settings.MDBListSettingsViewModel*' \
+    --tests 'com.nuvio.tv.data.repository.MDBListRepository*' :app:assembleFull${variant}
 else
   ./gradlew --no-daemon --console=plain --max-workers=2 \
     -Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8' \

@@ -913,7 +913,7 @@
     <string name="debrid_disconnect">Odpojiť</string>
     <string name="debrid_device_auth_connected">%1$s je pripojený na tomto zariadení.</string>
     <string name="debrid_device_auth_starting">Spúšťa sa bezpečné prihlásenie...</string>
-    <string name="debrid_device_auth_instructions">Naskenujte QR a zadajte tento kód na schválenie Nuvio.</string>
+    <string name="debrid_device_auth_instructions">Naskenujte QR a zadajte tento kód na schválenie Syclop.</string>
     <string name="debrid_device_auth_code_copied">Kód bol skopírovaný.</string>
     <string name="debrid_device_auth_waiting">Čaká sa na schválenie...</string>
     <string name="debrid_device_auth_failed">Nepodarilo sa spustiť prihlásenie.</string>

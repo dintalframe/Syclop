@@ -112,7 +112,7 @@ internal fun JsonElement.scalarString(): String? = takeIf { isJsonPrimitive }?.a
 
 internal fun expressTemplate(template: String, variables: Map<String, String>): String? {
     var missing = false
-    val result = Regex("\\{([A-Za-z][A-Za-z0-9]*)}").replace(template) { match ->
+    val result = Regex("\\{([A-Za-z][A-Za-z0-9]*)\\}").replace(template) { match ->
         variables[match.groupValues[1]] ?: run { missing = true; "" }
     }
     return result.takeUnless { missing || it.contains('{') || it.contains('}') }

@@ -1218,7 +1218,7 @@
     <string name="debrid_disconnect">断开连接</string>
     <string name="debrid_device_auth_connected">%1$s 已在此设备上连接。</string>
     <string name="debrid_device_auth_starting">正在启动安全登录…</string>
-    <string name="debrid_device_auth_instructions">扫描 QR 码并输入此代码以批准 Nuvio。</string>
+    <string name="debrid_device_auth_instructions">扫描 QR 码并输入此代码以批准 Syclop。</string>
     <string name="debrid_device_auth_code_copied">代码已复制。</string>
     <string name="debrid_device_auth_waiting">正在等待批准…</string>
     <string name="debrid_device_auth_failed">无法启动登录。</string>

@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.TextStyle
@@ -165,8 +168,8 @@ fun MDBListSettingsContent(
             currentValue = uiState.apiKey,
             viewModel = viewModel,
             onSaved = { showApiKeyDialog = false },
-            onClear = { viewModel.validateAndSaveApiKey("") {}; showApiKeyDialog = false },
-            onDismiss = { showApiKeyDialog = false }
+            onClear = { viewModel.validateAndSaveApiKey("") { showApiKeyDialog = false } },
+            onDismiss = { viewModel.cancelApiKeyValidation(); showApiKeyDialog = false }
         )
     }
 }
@@ -179,6 +182,7 @@ private fun MDBListApiKeyDialog(
     onClear: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    DisposableEffect(viewModel) { onDispose { viewModel.cancelApiKeyValidation() } }
     var value by remember(currentValue) { mutableStateOf(currentValue) }
     var isInputFocused by remember { mutableStateOf(false) }
     val inputFocusRequester = remember { FocusRequester() }
@@ -233,7 +237,12 @@ private fun MDBListApiKeyDialog(
                                 event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN
                         },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Done,
+                        keyboardType = KeyboardType.Password,
+                        autoCorrectEnabled = false
+                    ),
                     keyboardActions = KeyboardActions(
                         onDone = { keyboardController?.hide() }
                     ),

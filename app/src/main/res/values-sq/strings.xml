@@ -1047,7 +1047,7 @@
     <string name="debrid_disconnect">Shkëput</string>
     <string name="debrid_device_auth_connected">%1$s është i lidhur në këtë pajisje.</string>
     <string name="debrid_device_auth_starting">Duke nisur hyrjen e sigurt...</string>
-    <string name="debrid_device_auth_instructions">Skano QR-në dhe shkruaj këtë kod për të miratuar Nuvio.</string>
+    <string name="debrid_device_auth_instructions">Skano QR-në dhe shkruaj këtë kod për të miratuar Syclop.</string>
     <string name="debrid_device_auth_code_copied">Kodi u kopjua.</string>
     <string name="debrid_device_auth_waiting">Në pritje të miratimit...</string>
     <string name="debrid_device_auth_failed">Nuk mund të nisej hyrja.</string>

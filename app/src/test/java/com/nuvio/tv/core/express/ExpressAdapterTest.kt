@@ -205,6 +205,26 @@ class ExpressAdapterTest {
         }
     }
 
+
+    @Test
+    fun `malformed provider query does not cancel healthy sources`() = runTest {
+        MockWebServer().use { server ->
+            val bad = """{"name":"Broken definition","base_url":"${server.url("/unused")}","movie":{"query":"/?q={query}","keywords":{"unexpected":"object"}},"json_format":{"results":"streams","hash":"infoHash"}}"""
+            server.enqueue(json("""{"_manifest":{"name":"Mixed package"},"bad":$bad,"healthy":${jsonDefinition(server.url("/backend").toString())}}"""))
+            server.enqueue(json("""{"streams":[{"infoHash":"$HASH","fileIdx":2,"behaviorHints":{"filename":"Big.Buck.Bunny.2008.mkv"}}]}"""))
+            val adapter = adapter(server, ExpressMedia("movie", "Big Buck Bunny", "tt1254207", 2008, null, null))
+            val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
+            val result = withContext(Dispatchers.IO) {
+                adapter.search(addon, ExpressMediaRequest("movie", "tt1254207"))
+            } as NetworkResult.Success
+            assertEquals(1, result.data.size)
+            assertEquals(2, result.data.single().fileIdx)
+            assertEquals(1, adapter.lastReport(addon)?.failed)
+            assertEquals(1, adapter.lastReport(addon)?.completed)
+            assertEquals(2, server.requestCount)
+        }
+    }
+
     private fun adapter(server: MockWebServer, metadata: ExpressMedia = media()) =
         ExpressAddonAdapter(ExpressHttpClient(OkHttpClient(), true), ExpressMetadataSource { metadata }, System::currentTimeMillis)
 

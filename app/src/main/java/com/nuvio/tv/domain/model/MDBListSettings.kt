@@ -14,6 +14,8 @@ data class MDBListSettings(
     val showOnHero: Boolean = false,
     val ratingOrder: List<String> = DEFAULT_RATING_ORDER
 ) {
+    override fun toString() = "MDBListSettings(enabled=$enabled, apiKey=[redacted])"
+
     fun hasEnabledProviders(): Boolean =
         showTrakt || showImdb || showTmdb || showLetterboxd ||
             showTomatoes || showAudience || showMetacritic || showMal

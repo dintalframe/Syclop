@@ -1219,7 +1219,7 @@
     <string name="debrid_disconnect">সংযোগ বিচ্ছিন্ন করুন</string>
     <string name="debrid_device_auth_connected">%1$s এই ডিভাইসে সংযুক্ত আছে।</string>
     <string name="debrid_device_auth_starting">নিরাপদ সাইন ইন শুরু হচ্ছে…</string>
-    <string name="debrid_device_auth_instructions">Nuvio-কে অনুমোদন দিতে কিউআর স্ক্যান করুন এবং এই কোডটি লিখুন।</string>
+    <string name="debrid_device_auth_instructions">Syclop-কে অনুমোদন দিতে কিউআর স্ক্যান করুন এবং এই কোডটি লিখুন।</string>
     <string name="debrid_device_auth_code_copied">কোড কপি করা হয়েছে।</string>
     <string name="debrid_device_auth_waiting">অনুমোদনের অপেক্ষায়…</string>
     <string name="debrid_device_auth_failed">সাইন ইন শুরু করা যায়নি।</string>

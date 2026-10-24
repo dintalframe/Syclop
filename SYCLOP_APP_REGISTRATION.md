@@ -13,7 +13,7 @@ The values below are **public application identifiers and redirect URLs**, not u
 
 Trakt's owner completed its Production registration on 2026-10-24 (portal application 246234); the numeric portal application ID is distinct from the public Client ID above. No Client Secret was issued or is used. See [Trakt setup and current public-client contract](TRAKT_APP_SETUP.md).
 
-The owner reports successful MyAnimeList application registration and supplied its public Client ID. The [Syclop HTTPS return page](https://dintalframe.github.io/Syclop/mal/) is deployed and was verified live. Its exact trailing slash is part of the configured redirect. Registration/configuration has been supplied for the next release; a native OAuth/device round trip, list read and account write have **not** yet been verified. Publishing the page and receiving a Client ID do not establish those runtime behaviors.
+The owner reports successful MyAnimeList application registration and supplied its public Client ID. The [Syclop HTTPS return page](https://dintalframe.github.io/Syclop/mal/) is deployed and was verified live. Its exact trailing slash is part of the configured redirect. Registration/configuration is embedded in the installed first optimized release; a native MAL OAuth round trip, list read and account write have **not** yet been verified. Publishing the page and receiving a Client ID do not establish those runtime behaviors.
 
 ## Maintainer build fields
 
@@ -30,6 +30,8 @@ Gradle copies these public values into `BuildConfig`. MyAnimeList defaults are b
 
 Keep account passwords, temporary device/authorization codes, PKCE verifiers, access/refresh tokens, any private client secret, and signing material out of source, public documentation and issue reports. These flows use public/native clients; Syclop does not embed a client secret. Account tokens are encrypted locally and isolated by profile. See [backup scope](LOCAL_BACKUPS.md) for the distinction between exported public configuration and excluded private account state.
 
+Trakt device authorization has also been approved by the viewer and its Connected status inspected on the Shield. Playback scrobbling, real token refresh and list mutations remain separate acceptance checks.
+
 ## Normal viewer connection
 
 For Trakt, open **Settings → Tracking → Trakt → Connect**, scan the QR code or visit the displayed Trakt verification page, and approve Syclop's device code while signed into your own Trakt account. The TV polls Trakt directly and saves the resulting tokens to the initiating profile. The configured HTTPS redirect is application registration information; this device flow does not require a browser callback on the TV.
@@ -42,6 +44,4 @@ After connecting MAL, its native Home/search catalogs and five Library status li
 
 ## Build environment scope
 
-The currently exercised build workflow uses this shared TV workspace: `media-client/build-syclop.sh` depends on the sibling `.toolchain/env.sh` and workspace bootstrap described in [SYCLOP_BUILD.md](SYCLOP_BUILD.md). It builds and copies artifacts without installing on the TV.
-
-Standalone-checkout toolchain portability is still being finalized/validated. Do not assume that copying these four public properties makes a fresh clone's build script self-contained. This registration document does not supply SDK paths, signing configuration or other machine-specific setup, and it does not claim a tested standalone bootstrap.
+The build script supports an optional sibling `.toolchain/env.sh` for this TV workspace or a standalone checkout configured with JDK 17 and the Android SDK paths described in [SYCLOP_BUILD.md](SYCLOP_BUILD.md). It builds and copies artifacts without installing on the TV. A clean, separate-machine bootstrap has not yet been exercised. These four public properties do not supply SDK paths, signing material or other machine-specific setup.

@@ -1,5 +1,7 @@
 package com.nuvio.tv.core.express
 
+import android.util.Log
+
 import com.google.gson.JsonObject
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.domain.model.Addon
@@ -52,63 +54,78 @@ class ExpressAddonAdapter internal constructor(
         NetworkResult.Error((error as? ExpressException)?.message ?: "Express provider configuration is unavailable.")
     }
 
-    suspend fun search(addon: Addon, request: ExpressMediaRequest): NetworkResult<List<Stream>> = try {
-        val config = configuration(addon.baseUrl)
-        val media = metadata.resolve(request)
-        val all = config.packages.flatMap { it.providers }
-        val unsupported = AtomicInteger()
-        val missing = AtomicInteger()
-        val completed = AtomicInteger()
-        val failed = AtomicInteger()
-        val requests = AtomicInteger()
-        val streams = ConcurrentLinkedQueue<Stream>()
-        val finished = withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
-            coroutineScope {
-                all.map { (id, provider) -> async {
-                    if (!ExpressParser.supported(provider)) { unsupported.incrementAndGet(); return@async }
-                    val urls = providerQueries(provider, media)
-                    if (urls.isEmpty()) { missing.incrementAndGet(); return@async }
-                    var succeeded = false
-                    for (url in urls) {
-                        if (requests.incrementAndGet() > MAX_REQUESTS) break
+    suspend fun search(addon: Addon, request: ExpressMediaRequest): NetworkResult<List<Stream>> {
+        var stage = "configuration"
+        return try {
+            val config = configuration(addon.baseUrl)
+            stage = "metadata"
+            val media = metadata.resolve(request)
+            stage = "provider search"
+            val all = config.packages.flatMap { it.providers }
+            val unsupported = AtomicInteger()
+            val missing = AtomicInteger()
+            val completed = AtomicInteger()
+            val failed = AtomicInteger()
+            val requests = AtomicInteger()
+            val streams = ConcurrentLinkedQueue<Stream>()
+            val finished = withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
+                coroutineScope {
+                    all.map { (id, provider) -> async {
                         try {
-                            val document = http.get(url)
-                            val rows = ExpressParser.parse(provider, document.text)
-                            for (row in rows.take(MAX_ROWS)) {
-                                var resolved = row
-                                if (row.hash == null && row.url?.startsWith("magnet:", true) != true &&
-                                    provider.get("source_is_in_sub_page")?.asBoolean == true) {
-                                    val link = row.url?.let { document.url.toHttpUrl().resolve(it)?.toString() } ?: continue
-                                    if (requests.incrementAndGet() > MAX_REQUESTS) break
-                                    val page = http.get(link)
-                                    val magnets = Jsoup.parse(page.text).select("a[href]")
-                                        .map { it.attr("href") }.filter { it.startsWith("magnet:", true) }
-                                        .distinctBy { it.substringAfter("urn:btih:", "").substringBefore('&').lowercase() }
-                                    if (magnets.size != 1) continue
-                                    resolved = row.copy(url = magnets.single())
-                                }
-                                resolved.toStream(provider.string("name") ?: id)?.let(streams::add)
-                                if (streams.size >= MAX_RESULTS) break
+                            if (!ExpressParser.supported(provider)) { unsupported.incrementAndGet(); return@async }
+                            val urls = providerQueries(provider, media)
+                            if (urls.isEmpty()) { missing.incrementAndGet(); return@async }
+                            var succeeded = false
+                            for (url in urls) {
+                                if (requests.incrementAndGet() > MAX_REQUESTS) break
+                                try {
+                                    val document = http.get(url)
+                                    val rows = ExpressParser.parse(provider, document.text)
+                                    for (row in rows.take(MAX_ROWS)) {
+                                        var resolved = row
+                                        if (row.hash == null && row.url?.startsWith("magnet:", true) != true &&
+                                            provider.get("source_is_in_sub_page")?.asBoolean == true) {
+                                            val link = row.url?.let { document.url.toHttpUrl().resolve(it)?.toString() } ?: continue
+                                            if (requests.incrementAndGet() > MAX_REQUESTS) break
+                                            val page = http.get(link)
+                                            val magnets = Jsoup.parse(page.text).select("a[href]")
+                                                .map { it.attr("href") }.filter { it.startsWith("magnet:", true) }
+                                                .distinctBy { it.substringAfter("urn:btih:", "").substringBefore('&').lowercase() }
+                                            if (magnets.size != 1) continue
+                                            resolved = row.copy(url = magnets.single())
+                                        }
+                                        resolved.toStream(provider.string("name") ?: id)?.let(streams::add)
+                                        if (streams.size >= MAX_RESULTS) break
+                                    }
+                                    succeeded = true
+                            } catch (error: Exception) {
+                                if (error is CancellationException) throw error
                             }
-                            succeeded = true
+                        }
+                        if (succeeded) completed.incrementAndGet() else failed.incrementAndGet()
                         } catch (error: Exception) {
                             if (error is CancellationException) throw error
+                            failed.incrementAndGet()
+                            // Only a fixed stage and exception class; no provider/media URLs or payloads.
+                            Log.w("SyclopExpress", "Provider query/setup failed class=${error.javaClass.simpleName}")
                         }
-                    }
-                    if (succeeded) completed.incrementAndGet() else failed.incrementAndGet()
-                } }.awaitAll()
-            }
-            true
-        } ?: false
-        val unique = streams.distinctBy { listOf(it.infoHash, it.fileIdx, it.behaviorHints?.filename).joinToString("|") }.take(MAX_RESULTS)
-        val report = ExpressSearchReport(all.size, completed.get(), failed.get(), unsupported.get(), missing.get(), unique.size, !finished)
-        reports[addon.id] = report
-        if (unique.isEmpty() && (report.failed > 0 || report.unsupported > 0 || report.missingMetadata > 0 || report.timedOut)) {
-            NetworkResult.Error(report.summary())
-        } else NetworkResult.Success(unique)
-    } catch (error: Exception) {
-        if (error is CancellationException) throw error
-        NetworkResult.Error((error as? ExpressException)?.message ?: "Express source search failed.")
+                    } }.awaitAll()
+                }
+                true
+            } ?: false
+            stage = "results"
+            val unique = streams.distinctBy { listOf(it.infoHash, it.fileIdx, it.behaviorHints?.filename).joinToString("|") }.take(MAX_RESULTS)
+            val report = ExpressSearchReport(all.size, completed.get(), failed.get(), unsupported.get(), missing.get(), unique.size, !finished)
+            reports[addon.id] = report
+            if (unique.isEmpty() && (report.failed > 0 || report.unsupported > 0 || report.missingMetadata > 0 || report.timedOut)) {
+                NetworkResult.Error(report.summary())
+            } else NetworkResult.Success(unique)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            // Avoid Throwable.toString()/message: either can contain a credential-bearing URL.
+            Log.w("SyclopExpress", "Source search failed stage=$stage class=${error.javaClass.simpleName}")
+            NetworkResult.Error((error as? ExpressException)?.message ?: "Express source search failed.")
+        }
     }
 
     private suspend fun configuration(enteredUrl: String): Configuration {
@@ -187,9 +204,18 @@ class ExpressAddonAdapter internal constructor(
         }
         return scopes.flatMap { scope ->
             val config = provider.get(scope)?.takeIf { it.isJsonObject }?.asJsonObject ?: return@flatMap emptyList()
-            val query = config.string("query") ?: return@flatMap emptyList()
-            val raw = config.get("keywords") ?: return@flatMap emptyList()
-            val keywords = if (raw.isJsonArray) raw.asJsonArray.mapNotNull { it.scalarString() } else listOfNotNull(raw.scalarString())
+            val queryValue = config.get("query")
+            if (queryValue == null || !queryValue.isJsonPrimitive || !queryValue.asJsonPrimitive.isString) {
+                throw ExpressException("Provider query configuration is invalid.")
+            }
+            val query = queryValue.asString
+            val raw = config.get("keywords")
+                ?: throw ExpressException("Provider query configuration is invalid.")
+            val keywordValues = if (raw.isJsonArray) raw.asJsonArray.toList() else listOf(raw)
+            if (keywordValues.any { !it.isJsonPrimitive || !it.asJsonPrimitive.isString }) {
+                throw ExpressException("Provider query configuration is invalid.")
+            }
+            val keywords = keywordValues.map { it.asString }
             keywords.take(3).mapNotNull { keyword ->
                 val search = expressTemplate(keyword, variables) ?: return@mapNotNull null
                 val path = expressTemplate(query, variables.mapValues { expressEncode(it.value) } + ("query" to expressEncode(search))) ?: return@mapNotNull null

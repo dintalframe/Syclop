@@ -1132,7 +1132,7 @@
 <string name="debrid_disconnect">Scollega</string>
 <string name="debrid_device_auth_connected">%1$s è collegato su questo dispositivo.</string>
 <string name="debrid_device_auth_starting">Avvio accesso sicuro...</string>
-<string name="debrid_device_auth_instructions">Scansiona il QR e inserisci questo codice per autorizzare Nuvio.</string>
+<string name="debrid_device_auth_instructions">Scansiona il QR e inserisci questo codice per autorizzare Syclop.</string>
 <string name="debrid_device_auth_code_copied">Codice copiato.</string>
 <string name="debrid_device_auth_waiting">In attesa di autorizzazione...</string>
 <string name="debrid_device_auth_failed">Impossibile avviare l\'accesso.</string>

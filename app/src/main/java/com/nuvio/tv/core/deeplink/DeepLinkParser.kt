@@ -18,7 +18,9 @@ object DeepLinkParser {
                 null
             }
         }
-        if (scheme != "nuvio") return null
+        // Keep legacy links readable when explicitly handed to Syclop, without
+        // registering Nuvio's scheme or generating links for the upstream app.
+        if (scheme != "syclop" && scheme != "nuvio") return null
 
         val host = parsedUrl.host?.lowercase().orEmpty()
         val pathSegments = parsedUrl.rawPath

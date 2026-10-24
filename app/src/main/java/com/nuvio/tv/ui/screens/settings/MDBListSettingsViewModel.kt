@@ -16,6 +16,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import javax.inject.Inject
 
 @HiltViewModel
@@ -34,10 +39,20 @@ class MDBListSettingsViewModel @Inject constructor(
     private val _validationError = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val validationError: SharedFlow<Unit> = _validationError.asSharedFlow()
 
+    private var validationJob: Job? = null
+    private var validationGeneration = 0L
+
     init {
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            dataStore.activeProfileId.collectLatest {
+                cancelApiKeyValidation()
+                _uiState.value = MDBListSettingsUiState()
+            }
+        }
         viewModelScope.launch {
-            combine(dataStore.settings, authStore.state) { settings, auth ->
-                MDBListSettingsUiState(isConnected = auth.isAuthenticated).fromSettings(settings)
+            combine(dataStore.scopedSettings, authStore.state, dataStore.activeProfileId) { snapshot, auth, profileId ->
+                if (snapshot.profileId != profileId || auth.scope.profileId != profileId) MDBListSettingsUiState()
+                else MDBListSettingsUiState(isConnected = auth.isAuthenticated).fromSettings(snapshot.settings)
             }.collectLatest { state ->
                 _uiState.value = state
             }
@@ -62,25 +77,42 @@ class MDBListSettingsViewModel @Inject constructor(
     }
 
     fun validateAndSaveApiKey(value: String, onSuccess: () -> Unit) {
+        if (_validating.value) return
         val trimmed = value.trim()
-        if (trimmed.isBlank()) {
-            viewModelScope.launch { dataStore.setApiKey("") }
-            onSuccess()
-            return
-        }
-        viewModelScope.launch {
-            _validating.value = true
-            val valid = try {
-                mdbListApi.getUser(trimmed).isSuccessful
-            } catch (e: Exception) { false }
-            _validating.value = false
-            if (valid) {
-                dataStore.setApiKey(trimmed)
-                onSuccess()
-            } else {
-                _validationError.tryEmit(Unit)
+        val credentialScope = dataStore.captureCredentialScope()
+        val generation = ++validationGeneration
+        _validating.value = true
+        validationJob = viewModelScope.launch {
+            fun stillCurrent() = generation == validationGeneration && dataStore.isCredentialScopeCurrent(credentialScope)
+            try {
+                // Explicit clearing does not need to decrypt/migrate a key or contact the service.
+                val expected = if (trimmed.isBlank()) null else dataStore.credentialForProfile(credentialScope.profileId)
+                currentCoroutineContext().ensureActive()
+                if (!stillCurrent()) return@launch
+                val valid = trimmed.isBlank() || mdbListApi.getUser(trimmed).isSuccessful
+                currentCoroutineContext().ensureActive()
+                if (!stillCurrent()) return@launch
+                if (valid && dataStore.setApiKeyForScope(credentialScope, trimmed, expected)) {
+                    if (stillCurrent()) onSuccess()
+                } else if (stillCurrent()) _validationError.tryEmit(Unit)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (stillCurrent()) _validationError.tryEmit(Unit)
+            } finally {
+                if (generation == validationGeneration) {
+                    _validating.value = false
+                    validationJob = null
+                }
             }
         }
+    }
+
+    fun cancelApiKeyValidation() {
+        validationGeneration += 1
+        validationJob?.cancel()
+        validationJob = null
+        _validating.value = false
     }
 
     private fun update(action: suspend () -> Unit) {
@@ -114,6 +146,8 @@ data class MDBListSettingsUiState(
     val showOnHero: Boolean = false,
     val ratingOrder: List<String> = com.nuvio.tv.domain.model.MDBListSettings.DEFAULT_RATING_ORDER
 ) {
+    override fun toString() = "MDBListSettingsUiState(enabled=$enabled, apiKey=[redacted], isConnected=$isConnected)"
+
     fun fromSettings(settings: MDBListSettings): MDBListSettingsUiState = copy(
         enabled = settings.enabled,
         apiKey = settings.apiKey,

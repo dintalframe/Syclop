@@ -87,13 +87,10 @@ object BackupRestoreBootstrap {
     fun cancelPending(context: Context) {
         queue(context).cancel()
     }
-    private fun requireNoProfileLocks(context: Context) {
+    internal fun requireNoProfileLocks(context: Context) {
         val file = File(context.filesDir, "datastore/profile_lock_state.preferences_pb")
         val preferences = if (file.exists()) readPreferences(file) else emptyPreferences()
-        val value = preferences[stringPreferencesKey("pin_enabled_map")].orEmpty()
-        require(!value.split(',').any { it.substringAfter(':', "").equals("true", ignoreCase = true) }) {
-            "Turn off profile PIN locks in Syclop before restoring. Backup files never remove or bypass a PIN lock."
-        }
+        BackupProfileLockPolicy.requireUnlocked(preferences[stringPreferencesKey("pin_enabled_map")])
     }
     private fun prepare(context: Context, backup: PortableBackup): File {
         val candidate = File(root(context), "prepare-${UUID.randomUUID()}").apply { check(mkdir()) }

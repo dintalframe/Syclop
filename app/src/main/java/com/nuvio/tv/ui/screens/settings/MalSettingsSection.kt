@@ -25,8 +25,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
@@ -36,10 +40,13 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.Text
 import com.nuvio.tv.R
 import com.nuvio.tv.core.qr.QrCodeGenerator
 import com.nuvio.tv.data.mal.MalAnime
+import com.nuvio.tv.data.mal.MalAuthorizationSession
 import com.nuvio.tv.data.mal.MalListStatus
 import com.nuvio.tv.data.mal.MalListEdit
 import com.nuvio.tv.ui.components.NuvioDialog
@@ -67,16 +74,19 @@ private fun MalAccountDialog(state: MalSettingsUiState, viewModel: MalSettingsVi
     var redirect by remember(state.account.configuration.redirectUri) {
         mutableStateOf(state.account.configuration.redirectUri.ifBlank(viewModel::suggestedRedirect))
     }
-    var callback by remember(state.session?.authorizationUrl) { mutableStateOf("") }
     var query by remember(state.account.scope) { mutableStateOf("") }
     var editing by remember(state.account.scope) { mutableStateOf<MalAnime?>(null) }
     val visibleItems = state.searchResults ?: state.library.items
     DisposableEffect(Unit) { onDispose { viewModel.close() } }
     LaunchedEffect(state.account.connected) { if (state.account.connected) viewModel.refresh() }
 
-    NuvioDialog(onDismiss = dismiss, title = "MyAnimeList", subtitle = state.account.username
+    NuvioDialog(onDismiss = dismiss, title = "MyAnimeList", subtitle = if (state.session != null)
+        "Connect your account with your phone." else state.account.username
         ?: stringResource(R.string.syclop_mal_dialog_summary), width = 780.dp, suppressFirstKeyUp = false) {
-        LazyColumn(
+        val authorization = state.session
+        if (authorization != null) {
+            MalAuthorizationPane(authorization, state, viewModel)
+        } else LazyColumn(
             modifier = Modifier.fillMaxWidth().heightIn(max = 370.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -89,27 +99,7 @@ private fun MalAccountDialog(state: MalSettingsUiState, viewModel: MalSettingsVi
                 val message = state.library.message ?: state.notice
                 message?.let { Text(it, color = NuvioTheme.colors.TextSecondary, style = NuvioTheme.textStyles.bodyCompact) }
             }
-            val session = state.session
-            if (session != null) {
-                item("authorization") {
-                    val qr = remember(session.authorizationUrl) { QrCodeGenerator.generate(session.authorizationUrl, 512) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Image(qr.asImageBitmap(), "MyAnimeList sign-in QR code", modifier = Modifier.size(172.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.syclop_mal_scan), style = NuvioTheme.textStyles.body)
-                            Text(if (session.localCallbackListening) stringResource(R.string.syclop_mal_callback_active)
-                                else stringResource(R.string.syclop_mal_callback_manual),
-                                color = NuvioTheme.colors.TextSecondary, style = NuvioTheme.textStyles.bodyCompact)
-                            SettingsDialogActionButton("Cancel connection", viewModel::cancelConnection)
-                        }
-                    }
-                }
-                item("manual_callback") {
-                    MalTextField("Returned callback URL (fallback)", callback, { callback = it }, sensitive = true)
-                    SettingsDialogActionButton(if (session.completing) "Completing…" else "Use callback URL",
-                        { viewModel.submitCallback(callback) }, enabled = !state.busy && !session.completing && callback.isNotBlank())
-                }
-            } else if (!state.account.connected) {
+            if (!state.account.connected) {
                 item("connect") {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (state.account.configuration.clientId.isBlank()) {
@@ -177,6 +167,77 @@ private fun MalAccountDialog(state: MalSettingsUiState, viewModel: MalSettingsVi
         MalProgressDialog(anime, state.busy, onSave = { edit ->
             viewModel.update(anime, edit, state.account.scope) { editing = null }
         }, onDismiss = { editing = null })
+    }
+}
+
+/** A fixed pane keeps the entire QR visible; no lazy-list focus can scroll it away. */
+@Composable
+private fun MalAuthorizationPane(
+    session: MalAuthorizationSession,
+    state: MalSettingsUiState,
+    viewModel: MalSettingsViewModel
+) {
+    var manual by remember(session.authorizationUrl) { mutableStateOf(false) }
+    var callback by remember(session.authorizationUrl) { mutableStateOf("") }
+    val firstAction = remember(session.authorizationUrl) { FocusRequester() }
+    val secondAction = remember(session.authorizationUrl) { FocusRequester() }
+    val qr = remember(session.authorizationUrl) { QrCodeGenerator.generate(session.authorizationUrl, 512) }
+
+    LaunchedEffect(session.authorizationUrl, manual) {
+        // Wait until the replacement pane's focus targets have been attached.
+        withFrameNanos { }
+        firstAction.requestFocus()
+    }
+
+    Column(Modifier.fillMaxWidth().heightIn(max = 370.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (!manual) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Image(qr.asImageBitmap(), "MyAnimeList sign-in QR code", modifier = Modifier.size(172.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Scan with your phone, sign in, and approve Syclop.", style = NuvioTheme.textStyles.bodyCompact)
+                    Text(if (session.localCallbackListening)
+                        "Use the same home network. On your phone, tap Return to Syclop after approval."
+                        else "After approval, choose Manual fallback to enter the returned link.",
+                        style = NuvioTheme.textStyles.bodyCompact, color = NuvioTheme.colors.TextSecondary)
+                }
+            }
+            Text(if (session.completing) "Completing connection…" else "Keep this screen open. The code expires after five minutes.",
+                style = NuvioTheme.textStyles.bodyCompact, color = NuvioTheme.colors.TextSecondary)
+        } else {
+            Text("Copy the complete authorization link from your phone's return page, then enter it below.",
+                style = NuvioTheme.textStyles.bodyCompact, color = NuvioTheme.colors.TextSecondary)
+            MalTextField("Returned callback URL", callback, { callback = it }, sensitive = true)
+            SettingsDialogActionButton(if (session.completing) "Completing…" else "Use callback URL",
+                { viewModel.submitCallback(callback) }, enabled = !state.busy && !session.completing && callback.isNotBlank())
+        }
+        state.error?.let {
+            Text(it, color = NuvioTheme.colors.Error, style = NuvioTheme.textStyles.bodyCompact, maxLines = 2)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MalAuthorizationAction(if (manual) "Back to QR code" else "Cancel", {
+                if (manual) manual = false else viewModel.cancelConnection()
+            }, Modifier.focusRequester(firstAction).focusProperties {
+                left = firstAction
+                right = secondAction
+                if (!manual) { up = firstAction; down = firstAction }
+            })
+            MalAuthorizationAction(if (manual) "Cancel" else "Manual fallback", {
+                if (manual) viewModel.cancelConnection() else manual = true
+            }, Modifier.focusRequester(secondAction).focusProperties {
+                left = firstAction
+                right = secondAction
+                if (!manual) { up = secondAction; down = secondAction }
+            })
+        }
+    }
+}
+
+@Composable
+private fun MalAuthorizationAction(text: String, onClick: () -> Unit, modifier: Modifier) {
+    Button(onClick = onClick, modifier = modifier,
+        colors = ButtonDefaults.colors(containerColor = NuvioTheme.colors.BackgroundCard,
+            contentColor = NuvioTheme.colors.TextPrimary)) {
+        Text(text, maxLines = 1)
     }
 }
 

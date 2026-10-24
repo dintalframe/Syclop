@@ -1308,7 +1308,7 @@
     <string name="debrid_disconnect">Disconnect</string>
     <string name="debrid_device_auth_connected">%1$s is connected on this device.</string>
     <string name="debrid_device_auth_starting">Starting secure sign-in...</string>
-    <string name="debrid_device_auth_instructions">Scan the QR and enter this code to approve Nuvio.</string>
+    <string name="debrid_device_auth_instructions">Scan the QR and enter this code to approve Syclop.</string>
     <string name="debrid_device_auth_code_copied">Code copied.</string>
     <string name="debrid_device_auth_waiting">Waiting for approval...</string>
     <string name="debrid_device_auth_failed">Could not start sign-in.</string>

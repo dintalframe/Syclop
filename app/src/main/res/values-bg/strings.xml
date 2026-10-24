@@ -928,7 +928,7 @@
     <string name="debrid_disconnect">Прекъсни</string>
     <string name="debrid_device_auth_connected">%1$s е свързан на това устройство.</string>
     <string name="debrid_device_auth_starting">Стартиране на сигурно вписване...</string>
-    <string name="debrid_device_auth_instructions">Сканирай QR кода и въведи този код, за да одобриш Nuvio.</string>
+    <string name="debrid_device_auth_instructions">Сканирай QR кода и въведи този код, за да одобриш Syclop.</string>
     <string name="debrid_device_auth_code_copied">Кодът е копиран.</string>
     <string name="debrid_device_auth_waiting">Изчакване на одобрение...</string>
     <string name="debrid_device_auth_failed">Не можахме да стартираме вписването.</string>

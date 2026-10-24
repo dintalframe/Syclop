@@ -1300,7 +1300,7 @@
     <string name="debrid_disconnect">Bağlantıyı Kes</string>
     <string name="debrid_device_auth_connected">%1$s bu cihaza bağlandı.</string>
     <string name="debrid_device_auth_starting">Güvenli giriş başlatılıyor...</string>
-    <string name="debrid_device_auth_instructions">Nuvio\'yu onaylamak için QR kodu taratın ve bu kodu girin.</string>
+    <string name="debrid_device_auth_instructions">Syclop\'yu onaylamak için QR kodu taratın ve bu kodu girin.</string>
     <string name="debrid_device_auth_code_copied">Kod kopyalandı.</string>
     <string name="debrid_device_auth_waiting">Onay bekleniyor...</string>
     <string name="debrid_device_auth_failed">Giriş başlatıladı.</string>

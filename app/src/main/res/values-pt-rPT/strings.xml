@@ -914,7 +914,7 @@
     <string name="debrid_disconnect">Desligar</string>
     <string name="debrid_device_auth_connected">O %1$s está ligado neste dispositivo.</string>
     <string name="debrid_device_auth_starting">A iniciar sessão segura...</string>
-    <string name="debrid_device_auth_instructions">Escanear o QR e introduzir este código para autorizar o Nuvio.</string>
+    <string name="debrid_device_auth_instructions">Escanear o QR e introduzir este código para autorizar o Syclop.</string>
     <string name="debrid_device_auth_code_copied">Código copiado.</string>
     <string name="debrid_device_auth_waiting">A aguardar autorização...</string>
     <string name="debrid_device_auth_failed">Não foi possível iniciar a sessão.</string>

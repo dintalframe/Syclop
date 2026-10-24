@@ -1295,7 +1295,7 @@
     <string name="debrid_disconnect">Déconnecter</string>
     <string name="debrid_device_auth_connected">%1$s est connecté sur cet appareil.</string>
     <string name="debrid_device_auth_starting">Démarrage de la connexion sécurisée…</string>
-    <string name="debrid_device_auth_instructions">Scannez le code QR et saisissez ce code pour autoriser Nuvio.</string>
+    <string name="debrid_device_auth_instructions">Scannez le code QR et saisissez ce code pour autoriser Syclop.</string>
     <string name="debrid_device_auth_code_copied">Code copié.</string>
     <string name="debrid_device_auth_waiting">En attente d’approbation…</string>
     <string name="debrid_device_auth_failed">Impossible de démarrer la connexion.</string>

@@ -701,7 +701,7 @@ class PartyRepository @Inject constructor(
             maxMembers = info.maxMembers,
             connected = false,
             hostOnly = info.hostOnly,
-            inviteLink = if (serverConfiguration.isCustom) "nuvio://party/${info.code}" else "https://nuvio.tv/party/${info.code}",
+            inviteLink = "syclop://party/${info.code}",
         )
     }
 

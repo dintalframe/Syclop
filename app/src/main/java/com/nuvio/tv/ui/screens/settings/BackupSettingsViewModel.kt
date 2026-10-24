@@ -51,7 +51,7 @@ class BackupSettingsViewModel @Inject constructor(private val manager: LocalBack
         mutableState.update { it.copy(busy = true, error = null) }
         viewModelScope.launch {
             try { work() } catch (failure: Exception) {
-                mutableState.update { it.copy(error = "The local backup operation could not complete. Use a valid Syclop backup on this TV or attached storage. Restore requires profile PIN locks to be off and enough free space for a private Undo snapshot. No queued restore was applied while the app is open.") }
+                mutableState.update { it.copy(error = "The local backup operation could not complete. Use a valid Syclop backup on this TV or attached storage. Backup and restore require profile PIN locks to be off and enough free space for a private Undo snapshot. No queued restore was applied while the app is open.") }
             } finally { mutableState.update { it.copy(busy = false) } }
         }
     }

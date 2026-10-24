@@ -1298,7 +1298,7 @@
     <string name="debrid_disconnect">Leválasztás</string>
     <string name="debrid_device_auth_connected">A %1$s csatlakoztatva van ezen az eszközön.</string>
     <string name="debrid_device_auth_starting">Biztonságos bejelentkezés indítása...</string>
-    <string name="debrid_device_auth_instructions">Olvasd be a QR-kódot, és írd be ezt a kódot a Nuvio jóváhagyásához.</string>
+    <string name="debrid_device_auth_instructions">Olvasd be a QR-kódot, és írd be ezt a kódot a Syclop jóváhagyásához.</string>
     <string name="debrid_device_auth_code_copied">Kód másolva.</string>
     <string name="debrid_device_auth_waiting">Várakozás a jóváhagyásra...</string>
     <string name="debrid_device_auth_failed">Nem sikerült elindítani a bejelentkezést.</string>

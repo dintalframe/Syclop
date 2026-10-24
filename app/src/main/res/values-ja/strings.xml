@@ -939,7 +939,7 @@
     <string name="debrid_disconnect">切断</string>
     <string name="debrid_device_auth_connected">%1$sがこのデバイスに接続されています。</string>
     <string name="debrid_device_auth_starting">セキュアサインインを開始中…</string>
-    <string name="debrid_device_auth_instructions">QRをスキャンし、このコードを入力してNuvioを承認してください。</string>
+    <string name="debrid_device_auth_instructions">QRをスキャンし、このコードを入力してSyclopを承認してください。</string>
     <string name="debrid_device_auth_code_copied">コードをコピーしました。</string>
     <string name="debrid_device_auth_waiting">承認待ち…</string>
     <string name="debrid_device_auth_failed">サインインを開始できませんでした。</string>
