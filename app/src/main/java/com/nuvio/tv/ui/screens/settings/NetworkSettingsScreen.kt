@@ -433,6 +433,12 @@ fun AdvancedSettingsContent(
             }
         }
 
+        item(key = "syclop_local_backup") {
+            SettingsGroupCard(modifier = Modifier.fillMaxWidth(), title = "Local data") {
+                BackupSettingsSection()
+            }
+        }
+
         item(key = "performance_settings") {
             SettingsGroupCard(
                 modifier = Modifier.fillMaxWidth(),

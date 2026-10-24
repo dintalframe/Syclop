@@ -85,7 +85,7 @@ class TorboxDirectDebridResolver @Inject constructor(
             )
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            Log.w(TAG, "resolve: failed with ${error::class.simpleName}: ${error.message}")
+            Log.w(TAG, "resolve: failed with ${error.javaClass.simpleName}")
             DirectDebridResolveResult.Error
         }
     }

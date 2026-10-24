@@ -12,6 +12,7 @@ import com.nuvio.tv.R
 import com.nuvio.tv.domain.model.AppFont
 
 val DMSansFamily = FontFamily(
+    Font(R.font.dm_sans_variable, FontWeight.Light),
     Font(R.font.dm_sans_variable, FontWeight.Normal),
     Font(R.font.dm_sans_variable, FontWeight.Medium),
     Font(R.font.dm_sans_variable, FontWeight.SemiBold),
@@ -19,6 +20,7 @@ val DMSansFamily = FontFamily(
 )
 
 val InterFamily = FontFamily(
+    Font(R.font.inter_variable, FontWeight.Light),
     Font(R.font.inter_variable, FontWeight.Normal),
     Font(R.font.inter_variable, FontWeight.Medium),
     Font(R.font.inter_variable, FontWeight.SemiBold),
@@ -26,6 +28,7 @@ val InterFamily = FontFamily(
 )
 
 val OpenSansFamily = FontFamily(
+    Font(R.font.opensans_variable, FontWeight.Light),
     Font(R.font.opensans_variable, FontWeight.Normal),
     Font(R.font.opensans_variable, FontWeight.Medium),
     Font(R.font.opensans_variable, FontWeight.SemiBold),
@@ -59,28 +62,28 @@ data class NuvioTextStyleTokens(
 fun buildNuvioTypography(fontFamily: FontFamily): Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = fontFamily,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.Light,
         fontSize = 48.sp,
         lineHeight = 56.sp,
         letterSpacing = (-0.5).sp
     ),
     displayMedium = TextStyle(
         fontFamily = fontFamily,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.Light,
         fontSize = 36.sp,
         lineHeight = 44.sp,
         letterSpacing = 0.sp
     ),
     headlineLarge = TextStyle(
         fontFamily = fontFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Normal,
         fontSize = 28.sp,
         lineHeight = 36.sp,
         letterSpacing = 0.sp
     ),
     headlineMedium = TextStyle(
         fontFamily = fontFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Normal,
         fontSize = 24.sp,
         lineHeight = 32.sp,
         letterSpacing = 0.sp

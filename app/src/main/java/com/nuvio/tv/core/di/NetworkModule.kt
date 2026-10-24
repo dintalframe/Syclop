@@ -3,7 +3,11 @@ package com.nuvio.tv.core.di
 import android.content.Context
 import android.util.Log
 import com.nuvio.tv.BuildConfig
+import com.nuvio.tv.core.trakt.TraktAppRegistrationStore
+import com.nuvio.tv.core.logging.urlForLog
 import com.nuvio.tv.core.network.NoDelaySocketFactory
+import com.nuvio.tv.core.network.SyclopCloudGuardInterceptor
+import com.nuvio.tv.core.network.SYCLOP_DISABLED_CLOUD_URL
 import com.nuvio.tv.data.remote.api.AddonApi
 import com.nuvio.tv.data.remote.api.AniSkipApi
 import com.nuvio.tv.data.remote.api.AnimeSkipApi
@@ -19,6 +23,11 @@ import com.nuvio.tv.data.remote.api.ParentalGuideApi
 import com.nuvio.tv.data.remote.api.PlaybackIssueReportApi
 import com.nuvio.tv.data.remote.api.PremiumizeApi
 import com.nuvio.tv.data.remote.api.RealDebridApi
+import com.nuvio.tv.data.remote.api.RealDebridOAuthApi
+import com.nuvio.tv.data.remote.api.AllDebridAuthApi
+import com.nuvio.tv.core.debrid.RealDebridTokenManager
+import com.nuvio.tv.core.debrid.RealDebridAuthorizationInterceptor
+import com.nuvio.tv.data.remote.api.AllDebridApi
 import com.nuvio.tv.data.remote.api.SeriesGraphApi
 import com.nuvio.tv.data.remote.api.TmdbApi
 import com.nuvio.tv.data.remote.api.TorboxApi
@@ -103,6 +112,7 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(@ApplicationContext context: Context): OkHttpClient {
         return OkHttpClient.Builder()
+            .addInterceptor(SyclopCloudGuardInterceptor())
             .dns(IPv4FirstDns())
             .socketFactory(NoDelaySocketFactory)
             // Keep separate from the old trust-all cache. Cached responses bypass a new TLS handshake.
@@ -112,7 +122,7 @@ object NetworkModule {
             .addInterceptor { chain ->
                 val version = BuildConfig.VERSION_NAME.ifBlank { "dev" }
                 val request = chain.request().newBuilder()
-                    .header("User-Agent", "Nuvio/$version")
+                    .header("User-Agent", "Syclop/$version")
                     .header("Accept-Language", buildAcceptLanguageHeader())
                     .build()
                 chain.proceed(request)
@@ -130,8 +140,7 @@ object NetworkModule {
                 }
             }
             .addInterceptor(HttpLoggingInterceptor().apply {
-                level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
-                        else HttpLoggingInterceptor.Level.NONE
+                level = HttpLoggingInterceptor.Level.NONE
             })
             .build()
     }
@@ -168,6 +177,7 @@ object NetworkModule {
     @Singleton
     @Named("customServerAuth")
     fun provideCustomServerAuthHttpClient(): OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(SyclopCloudGuardInterceptor())
         .dns(IPv4FirstDns())
         .socketFactory(NoDelaySocketFactory)
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -175,14 +185,13 @@ object NetworkModule {
         .addInterceptor { chain ->
             val version = BuildConfig.VERSION_NAME.ifBlank { "dev" }
             val request = chain.request().newBuilder()
-                .header("User-Agent", "Nuvio/$version")
+                .header("User-Agent", "Syclop/$version")
                 .header("Accept-Language", buildAcceptLanguageHeader())
                 .build()
             chain.proceed(request)
         }
         .addInterceptor(HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
-            else HttpLoggingInterceptor.Level.NONE
+            level = HttpLoggingInterceptor.Level.NONE
         })
         .build()
 
@@ -198,7 +207,7 @@ object NetworkModule {
             .addInterceptor { chain ->
                 val version = BuildConfig.VERSION_NAME.ifBlank { "dev" }
                 val request = chain.request().newBuilder()
-                    .header("User-Agent", "Nuvio/$version")
+                    .header("User-Agent", "Syclop/$version")
                     .header("Accept-Language", buildAcceptLanguageHeader())
                     .build()
                 chain.proceed(request)
@@ -243,15 +252,16 @@ object NetworkModule {
     @Singleton
     @Named("trakt")
     fun provideTraktOkHttpClient(
-        okHttpClient: OkHttpClient
+        okHttpClient: OkHttpClient,
+        appRegistrationStore: TraktAppRegistrationStore
     ): OkHttpClient = okHttpClient.newBuilder()
         .addInterceptor { chain ->
             val request = chain.request()
             val version = BuildConfig.VERSION_NAME.ifBlank { "dev" }
             val newRequest = request.newBuilder()
                 .header("Content-Type", "application/json")
-                .header("User-Agent", "Nuvio/$version")
-                .header("trakt-api-key", BuildConfig.TRAKT_CLIENT_ID)
+                .header("User-Agent", "Syclop/$version")
+                .header("trakt-api-key", appRegistrationStore.current().clientId)
                 .header("trakt-api-version", "2")
                 .build()
 
@@ -260,13 +270,7 @@ object NetworkModule {
             }
 
             val requestId = TraktHttpTrace.nextRequestId()
-            val target = buildString {
-                append(newRequest.url.encodedPath)
-                newRequest.url.encodedQuery?.let { query ->
-                    append('?')
-                    append(query)
-                }
-            }
+            val target = newRequest.url.toString().urlForLog()
             val startNs = System.nanoTime()
             Log.d("TraktHttp", "REQ #$requestId ${newRequest.method} $target")
 
@@ -293,7 +297,7 @@ object NetworkModule {
                 val durationMs = (System.nanoTime() - startNs) / 1_000_000L
                 Log.w(
                     "TraktHttp",
-                    "ERR #$requestId ${newRequest.method} $target ${durationMs}ms ${error.javaClass.simpleName}: ${error.message}"
+                    "ERR #$requestId ${newRequest.method} $target ${durationMs}ms ${error.javaClass.simpleName}"
                 )
                 throw error
             }
@@ -360,9 +364,50 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @Named("debridAuth")
+    fun provideDebridAuthClient(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(20, TimeUnit.SECONDS)
+        .followRedirects(false).followSslRedirects(false)
+        .addInterceptor { chain -> chain.proceed(chain.request().newBuilder()
+            .header("User-Agent", "Syclop/${BuildConfig.VERSION_NAME}").build()) }
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideRealDebridOAuthApi(@Named("debridAuth") client: OkHttpClient, moshi: Moshi): RealDebridOAuthApi =
+        Retrofit.Builder().baseUrl("https://api.real-debrid.com/oauth/v2/").client(client)
+            .addConverterFactory(MoshiConverterFactory.create(moshi)).build().create(RealDebridOAuthApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideAllDebridAuthApi(@Named("debridAuth") client: OkHttpClient, moshi: Moshi): AllDebridAuthApi =
+        Retrofit.Builder().baseUrl("https://api.alldebrid.com/").client(client)
+            .addConverterFactory(MoshiConverterFactory.create(moshi)).build().create(AllDebridAuthApi::class.java)
+
+    /** New/manual keys are validated before saving; they are not yet a viewer's REST credential. */
+    @Provides
+    @Singleton
+    @Named("realDebridValidation")
+    fun provideRealDebridValidationApi(@Named("debridAuth") client: OkHttpClient, moshi: Moshi): RealDebridApi =
+        Retrofit.Builder().baseUrl("https://api.real-debrid.com/rest/1.0/").client(client)
+            .addConverterFactory(MoshiConverterFactory.create(moshi)).build().create(RealDebridApi::class.java)
+
+    @Provides
+    @Singleton
+    @Named("realDebridRest")
+    fun provideRealDebridRestClient(
+        @Named("debridAuth") client: OkHttpClient, tokens: RealDebridTokenManager
+    ): OkHttpClient = client.newBuilder()
+        // Blocking REST interceptors must not occupy the OAuth client's per-host queue.
+        .dispatcher(okhttp3.Dispatcher())
+        .addInterceptor(RealDebridAuthorizationInterceptor(tokens)).build()
+
+    @Provides
+    @Singleton
     @Named("realdebrid")
     fun provideRealDebridRetrofit(
-        @Named("directDebrid") okHttpClient: OkHttpClient,
+        @Named("realDebridRest") okHttpClient: OkHttpClient,
         moshi: Moshi
     ): Retrofit =
         Retrofit.Builder()
@@ -375,6 +420,23 @@ object NetworkModule {
     @Singleton
     fun provideRealDebridApi(@Named("realdebrid") retrofit: Retrofit): RealDebridApi =
         retrofit.create(RealDebridApi::class.java)
+
+    @Provides
+    @Singleton
+    @Named("alldebrid")
+    fun provideAllDebridRetrofit(
+        @Named("directDebrid") okHttpClient: OkHttpClient,
+        moshi: Moshi
+    ): Retrofit = Retrofit.Builder()
+        .baseUrl("https://api.alldebrid.com/")
+        .client(okHttpClient)
+        .addConverterFactory(MoshiConverterFactory.create(moshi))
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideAllDebridApi(@Named("alldebrid") retrofit: Retrofit): AllDebridApi =
+        retrofit.create(AllDebridApi::class.java)
 
     @Provides
     @Singleton
@@ -426,7 +488,7 @@ object NetworkModule {
     @Named("introDb")
     fun provideIntroDbRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit =
         Retrofit.Builder()
-            .baseUrl(BuildConfig.INTRODB_API_URL.ifEmpty { "https://localhost/" })
+            .baseUrl(BuildConfig.INTRODB_API_URL.ifEmpty { "$SYCLOP_DISABLED_CLOUD_URL/" })
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
@@ -494,7 +556,7 @@ object NetworkModule {
     @Named("uniqueContributions")
     fun provideUniqueContributionsRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit =
         Retrofit.Builder()
-            .baseUrl(normalizedBaseUrl(BuildConfig.UNIQUE_CONTRIBUTIONS_BASE_URL, "https://localhost/"))
+            .baseUrl(normalizedBaseUrl(BuildConfig.UNIQUE_CONTRIBUTIONS_BASE_URL, "$SYCLOP_DISABLED_CLOUD_URL/"))
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
@@ -524,7 +586,7 @@ object NetworkModule {
     @Named("playbackReports")
     fun providePlaybackReportsRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit =
         Retrofit.Builder()
-            .baseUrl(normalizedBaseUrl(BuildConfig.PLAYBACK_REPORTS_BASE_URL, "https://localhost/"))
+            .baseUrl(normalizedBaseUrl(BuildConfig.PLAYBACK_REPORTS_BASE_URL, "$SYCLOP_DISABLED_CLOUD_URL/"))
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
@@ -546,7 +608,7 @@ object NetworkModule {
     @Named("trailer")
     fun provideTrailerRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit =
         Retrofit.Builder()
-            .baseUrl(BuildConfig.TRAILER_API_URL.ifEmpty { "https://localhost/" })
+            .baseUrl(BuildConfig.TRAILER_API_URL.ifEmpty { "$SYCLOP_DISABLED_CLOUD_URL/" })
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
@@ -583,7 +645,7 @@ object NetworkModule {
         val normalizedBaseUrl = if (rawBaseUrl.isNotBlank()) {
             if (rawBaseUrl.endsWith('/')) rawBaseUrl else "$rawBaseUrl/"
         } else {
-            "http://localhost/"
+            "$SYCLOP_DISABLED_CLOUD_URL/"
         }
         return Retrofit.Builder()
             .baseUrl(normalizedBaseUrl)
@@ -605,7 +667,7 @@ object NetworkModule {
         val normalizedBaseUrl = if (rawBaseUrl.isNotBlank()) {
             if (rawBaseUrl.endsWith('/')) rawBaseUrl else "$rawBaseUrl/"
         } else {
-            "http://localhost/"
+            "$SYCLOP_DISABLED_CLOUD_URL/"
         }
         return Retrofit.Builder()
             .baseUrl(normalizedBaseUrl)

@@ -78,6 +78,11 @@ internal fun TraktAccountDialog(
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    var showApplicationSetup by remember { mutableStateOf(false) }
+    if (showApplicationSetup) {
+        TraktApplicationSetupDialog(onDismiss = { showApplicationSetup = false })
+        return
+    }
     val logo = painterResource(R.drawable.trakt_logo_wordmark)
     if (state.mode == TraktConnectionMode.CONNECTED) {
         val glyph = rememberRawSvgPainter(R.raw.trakt_tv_favicon, 150.dp)
@@ -118,7 +123,7 @@ internal fun TraktAccountDialog(
             suppressFirstKeyUp = false
         ) {
             val displayUrl = state.verificationUrl ?: TRAKT_ACTIVATION_URL
-            val qrUrl = state.deviceUserCode?.let { "$TRAKT_ACTIVATION_URL/$it" } ?: displayUrl
+            val qrUrl = displayUrl // Use Trakt's returned verification URL; show the approval code separately.
             TrackingDeviceAuthContent(
                 providerName = stringResource(R.string.trakt_name),
                 logo = logo,
@@ -134,11 +139,19 @@ internal fun TraktAccountDialog(
                 credentialsConfigured = state.credentialsConfigured,
                 statusMessage = state.statusMessage,
                 errorMessage = state.errorMessage,
-                missingCredentialsMessage = stringResource(R.string.trakt_missing_credentials),
+                missingCredentialsMessage = stringResource(R.string.syclop_trakt_registration_missing),
                 onStartConnection = onStartConnection,
                 onRetryPolling = onRetryPolling,
                 onDismiss = onDismiss
             )
+            if (state.mode == TraktConnectionMode.DISCONNECTED && !state.isLoading) {
+                SettingsDialogActionRow(horizontalAlignment = Alignment.CenterHorizontally) {
+                    SettingsDialogActionButton(
+                        text = stringResource(R.string.syclop_trakt_advanced_application_setup),
+                        onClick = { showApplicationSetup = true }
+                    )
+                }
+            }
         }
     }
 }
@@ -933,7 +946,7 @@ internal fun formatTrackingDuration(valueMs: Long): String {
     }
 }
 
-private const val TRAKT_ACTIVATION_URL = "https://trakt.tv/activate"
+private const val TRAKT_ACTIVATION_URL = "https://auth.trakt.tv/activate"
 private const val SIMKL_WEBSITE_URL = "https://simkl.com"
 private const val SIMKL_SYNC_GUIDE_URL = "https://api.simkl.org/guides/sync"
 private val TrackingBrandButtonContent = Color(0xFF171717)

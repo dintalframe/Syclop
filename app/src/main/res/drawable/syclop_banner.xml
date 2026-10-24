@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path android:fillColor="#000000" android:pathData="M0,0H320V180H0Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#F2F2F7"
+        android:strokeWidth="2.3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M127,66C135,53.5 146,46.5 160,46.5C174,46.5 185,53.5 193,66C185,78.5 174,85.5 160,85.5C146,85.5 135,78.5 127,66Z" />
+    <path
+        android:fillColor="#F2F2F7"
+        android:pathData="M160,50A16,16 0,1 0,160 82A16,16 0,1 0,160 50Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#000000"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:pathData="M165.8,57.2C164,55.8 161.8,55.3 159.6,55.3C152.9,55.3 151.1,61.6 156.4,64.1L162.7,67C168.9,69.8 166.2,76.7 159.6,76.7C156.9,76.7 154.2,75.8 152.4,74" />
+    <!-- Original geometric letter paths: SYCLOP. No runtime font or bitmap dependency. -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#F2F2F7"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M94,110C91,107 87,106.5 84,106.5C72,106.5 71,117 81,119.5L88,121.5C99,124.5 95,134 84,134C80,134 76,132.5 73,129.5M105,107L115,120L125,107M115,120V134M155,111C152,107.5 149,106.5 145,106.5C130,106.5 130,134 145,134C149,134 152,133 155,129.5M166,107V134H184M204,106.5C189,106.5 189,134 204,134C219,134 219,106.5 204,106.5ZM226,134V107H236C251,107 251,122 236,122H226" />
+</vector>

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
+import com.nuvio.tv.core.trakt.TraktAppRegistrationStore
 import com.nuvio.tv.data.local.AuthSessionNoticeDataStore
 import com.nuvio.tv.data.local.TraktAuthDataStore
 import com.nuvio.tv.data.local.TraktAuthState
@@ -39,7 +40,8 @@ class TraktAuthService @Inject constructor(
     @ApplicationContext private val context: Context,
     private val traktApi: TraktApi,
     private val traktAuthDataStore: TraktAuthDataStore,
-    private val authSessionNoticeDataStore: AuthSessionNoticeDataStore
+    private val authSessionNoticeDataStore: AuthSessionNoticeDataStore,
+    private val appRegistrationStore: TraktAppRegistrationStore
 ) {
     private val refreshLeewaySeconds = 60L
     private val writeRequestMutex = Mutex()
@@ -113,19 +115,23 @@ class TraktAuthService @Inject constructor(
         }
     }
 
-    private fun traktRedirectUri(): String {
-        return BuildConfig.TRAKT_REDIRECT_URI.ifBlank { "urn:ietf:wg:oauth:2.0:oob" }
-    }
-
     fun hasRequiredCredentials(): Boolean {
-        return BuildConfig.TRAKT_CLIENT_ID.isNotBlank() && BuildConfig.TRAKT_CLIENT_SECRET.isNotBlank()
+        return appRegistrationStore.current().isConfigured
     }
 
-    suspend fun getCurrentAuthState(): TraktAuthState = traktAuthDataStore.getCurrentState()
+    suspend fun getCurrentAuthState(): TraktAuthState {
+        val state = traktAuthDataStore.getCurrentState()
+        if (state.registrationClientId != null && state.registrationClientId != appRegistrationStore.current().clientId) {
+            traktAuthDataStore.clearAuthForProfile(state.profileId)
+            return TraktAuthState(profileId = state.profileId)
+        }
+        return state
+    }
 
     suspend fun startDeviceAuth(): Result<TraktDeviceCodeResponseDto> {
-        if (!hasRequiredCredentials()) {
-            return Result.failure(IllegalStateException(context.getString(R.string.trakt_error_missing_credentials)))
+        val registration = appRegistrationStore.current()
+        if (!registration.isConfigured) {
+            return Result.failure(IllegalStateException(context.getString(R.string.syclop_trakt_registration_missing)))
         }
 
         // Reuse an existing, still-valid device flow if one is already active.
@@ -157,7 +163,7 @@ class TraktAuthService @Inject constructor(
         // Retry-After header when the server supplies a short back-off.
         suspend fun requestOnce(): Response<TraktDeviceCodeResponseDto> =
             traktApi.requestDeviceCode(
-                TraktDeviceCodeRequestDto(clientId = BuildConfig.TRAKT_CLIENT_ID)
+                TraktDeviceCodeRequestDto(clientId = registration.clientId)
             )
 
         var response = try {
@@ -180,7 +186,7 @@ class TraktAuthService @Inject constructor(
 
         val body = response.body()
         if (response.isSuccessful && body != null) {
-            traktAuthDataStore.saveDeviceFlow(body)
+            traktAuthDataStore.saveDeviceFlow(body, state.profileId, registration.clientId)
             return Result.success(body)
         }
 
@@ -198,8 +204,9 @@ class TraktAuthService @Inject constructor(
     }
 
     suspend fun pollDeviceToken(): TraktTokenPollResult {
-        if (!hasRequiredCredentials()) {
-            return TraktTokenPollResult.Failed(context.getString(R.string.trakt_error_missing_credentials))
+        val registration = appRegistrationStore.current()
+        if (!registration.isConfigured) {
+            return TraktTokenPollResult.Failed(context.getString(R.string.syclop_trakt_registration_missing))
         }
 
         val state = getCurrentAuthState()
@@ -212,8 +219,7 @@ class TraktAuthService @Inject constructor(
             traktApi.requestDeviceToken(
                 TraktDeviceTokenRequestDto(
                     code = deviceCode,
-                    clientId = BuildConfig.TRAKT_CLIENT_ID,
-                    clientSecret = BuildConfig.TRAKT_CLIENT_SECRET
+                    clientId = registration.clientId
                 )
             )
         } catch (e: IOException) {
@@ -222,10 +228,10 @@ class TraktAuthService @Inject constructor(
 
         val tokenBody = response.body()
         if (response.isSuccessful && tokenBody != null) {
-            traktAuthDataStore.saveToken(tokenBody)
+            traktAuthDataStore.saveToken(tokenBody, state.profileId, registration.clientId)
             authSessionNoticeDataStore.markTraktAuthenticated()
             resetCircuit()
-            traktAuthDataStore.clearDeviceFlow()
+            traktAuthDataStore.clearDeviceFlowForProfile(state.profileId)
             val user = fetchUserSettings()
             return TraktTokenPollResult.Approved(user)
         }
@@ -233,24 +239,24 @@ class TraktAuthService @Inject constructor(
         return when (response.code()) {
             400 -> TraktTokenPollResult.Pending
             409 -> {
-                traktAuthDataStore.clearDeviceFlow()
+                traktAuthDataStore.clearDeviceFlowForProfile(state.profileId)
                 TraktTokenPollResult.AlreadyUsed
             }
             404 -> {
-                traktAuthDataStore.clearDeviceFlow()
+                traktAuthDataStore.clearDeviceFlowForProfile(state.profileId)
                 TraktTokenPollResult.Failed(context.getString(R.string.trakt_error_invalid_device_code))
             }
             410 -> {
-                traktAuthDataStore.clearDeviceFlow()
+                traktAuthDataStore.clearDeviceFlowForProfile(state.profileId)
                 TraktTokenPollResult.Expired
             }
             418 -> {
-                traktAuthDataStore.clearDeviceFlow()
+                traktAuthDataStore.clearDeviceFlowForProfile(state.profileId)
                 TraktTokenPollResult.Denied
             }
             429 -> {
                 val nextInterval = ((state.pollInterval ?: 5) + 5).coerceAtMost(60)
-                traktAuthDataStore.updatePollInterval(nextInterval)
+                traktAuthDataStore.updatePollInterval(nextInterval, state.profileId)
                 TraktTokenPollResult.SlowDown(nextInterval)
             }
             else -> TraktTokenPollResult.Failed(
@@ -260,7 +266,8 @@ class TraktAuthService @Inject constructor(
     }
 
     suspend fun refreshTokenIfNeeded(force: Boolean = false): Boolean {
-        if (!hasRequiredCredentials()) return false
+        val registration = appRegistrationStore.current()
+        if (!registration.isConfigured) return false
 
         return tokenRefreshMutex.withLock {
             val state = getCurrentAuthState()
@@ -275,13 +282,12 @@ class TraktAuthService @Inject constructor(
                 traktApi.refreshToken(
                     TraktRefreshTokenRequestDto(
                         refreshToken = refreshToken,
-                        clientId = BuildConfig.TRAKT_CLIENT_ID,
-                        clientSecret = BuildConfig.TRAKT_CLIENT_SECRET,
-                        redirectUri = traktRedirectUri()
+                        clientId = registration.clientId,
+                        redirectUri = registration.redirectUri
                     )
                 )
             } catch (e: IOException) {
-                Log.w("TraktAuthService", "Network error while refreshing token", e)
+                Log.w("TraktAuthService", "Network error while refreshing token")
                 return@withLock false
             }
 
@@ -289,12 +295,12 @@ class TraktAuthService @Inject constructor(
             if (!response.isSuccessful || tokenBody == null) {
                 trace("refreshTokenIfNeeded: failed code=${response.code()}")
                 if (response.code() == 400 || response.code() == 401 || response.code() == 403) {
-                    invalidateCredentials(response.code())
+                    invalidateCredentials(response.code(), state.profileId)
                 }
                 return@withLock false
             }
 
-            traktAuthDataStore.saveToken(tokenBody)
+            traktAuthDataStore.saveToken(tokenBody, state.profileId, registration.clientId)
             authSessionNoticeDataStore.markTraktAuthenticated()
             resetCircuit()
             trace("refreshTokenIfNeeded: success")
@@ -303,25 +309,26 @@ class TraktAuthService @Inject constructor(
     }
 
     suspend fun revokeAndLogout() {
+        val registration = appRegistrationStore.current()
         val state = getCurrentAuthState()
-        if (hasRequiredCredentials()) {
+        if (registration.isConfigured) {
             state.accessToken?.let { accessToken ->
                 runCatching {
                     traktApi.revokeToken(
                         TraktRevokeRequestDto(
                             token = accessToken,
-                            clientId = BuildConfig.TRAKT_CLIENT_ID,
-                            clientSecret = BuildConfig.TRAKT_CLIENT_SECRET
+                            clientId = registration.clientId
                         )
                     )
                 }
             }
         }
         authSessionNoticeDataStore.markTraktExplicitLogout()
-        traktAuthDataStore.clearAuth()
+        traktAuthDataStore.clearAuthForProfile(state.profileId)
     }
 
     suspend fun fetchUserSettings(): String? {
+        val profileId = getCurrentAuthState().profileId
         val response = executeAuthorizedRequest { authHeader ->
             traktApi.getUserSettings(authorization = authHeader)
         } ?: return null
@@ -330,7 +337,7 @@ class TraktAuthService @Inject constructor(
 
         val username = response.body()?.user?.username
         val slug = response.body()?.user?.ids?.slug
-        traktAuthDataStore.saveUser(username = username, userSlug = slug)
+        traktAuthDataStore.saveUser(username = username, userSlug = slug, profileId = profileId)
         return username
     }
 
@@ -360,7 +367,7 @@ class TraktAuthService @Inject constructor(
                     retriedNetwork = true
                     continue
                 }
-                Log.w("TraktAuthService", "Network error during authorized request", e)
+                Log.w("TraktAuthService", "Network error during authorized request")
                 return null
             }
 
@@ -419,6 +426,7 @@ class TraktAuthService @Inject constructor(
     suspend fun <T> executePublicRequest(
         call: suspend () -> Response<T>
     ): Response<T>? {
+        if (!hasRequiredCredentials()) return null
         if (isCircuitOpen()) {
             trace("public request: circuit breaker is OPEN, skipping request")
             return null
@@ -440,7 +448,7 @@ class TraktAuthService @Inject constructor(
                     retriedNetwork = true
                     continue
                 }
-                Log.w("TraktAuthService", "Network error during public request", e)
+                Log.w("TraktAuthService", "Network error during public request")
                 return null
             }
 
@@ -523,18 +531,12 @@ class TraktAuthService @Inject constructor(
 
     private fun responseTarget(response: Response<*>): String {
         val requestUrl = response.raw().request.url
-        return buildString {
-            append(requestUrl.encodedPath)
-            requestUrl.encodedQuery?.let {
-                append('?')
-                append(it)
-            }
-        }
+        return requestUrl.host // Never log tokens, account paths, query strings or response bodies.
     }
 
-    private suspend fun invalidateCredentials(statusCode: Int) {
+    private suspend fun invalidateCredentials(statusCode: Int, profileId: Int) {
         authSessionNoticeDataStore.markTraktReconnectRequired()
-        traktAuthDataStore.clearAuth()
+        traktAuthDataStore.clearAuthForProfile(profileId)
         tripCircuit("Token refresh returned $statusCode")
     }
 }

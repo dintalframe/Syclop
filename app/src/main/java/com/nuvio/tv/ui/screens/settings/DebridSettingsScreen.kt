@@ -49,6 +49,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextDirection
@@ -63,6 +65,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.R
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.debrid.DebridDeviceAuthorization
 import com.nuvio.tv.core.debrid.DebridDeviceAuthorizationTokenResult
 import com.nuvio.tv.core.debrid.DebridProvider
@@ -201,10 +204,13 @@ fun DebridSettingsContent(
                     }
 
                     DebridProviders.visible().forEachIndexed { providerIndex, provider ->
+                        // A viewer's personal API key remains usable before Syclop has an OAuth app registration.
+                        val useDeviceAuth = provider.authMethod == DebridProviderAuthMethod.DeviceCode &&
+                            (provider.id != DebridProviders.PREMIUMIZE_ID || BuildConfig.PREMIUMIZE_CLIENT_ID.isNotBlank())
                         item(key = "debrid_${provider.id}_api_key") {
                             SettingsActionRow(
                                 title = provider.displayName,
-                                subtitle = if (provider.authMethod == DebridProviderAuthMethod.DeviceCode) {
+                                subtitle = if (useDeviceAuth) {
                                     stringResource(R.string.debrid_provider_device_description, provider.displayName)
                                 } else {
                                     stringResource(R.string.debrid_provider_description, provider.displayName)
@@ -216,10 +222,8 @@ fun DebridSettingsContent(
                                     connectedLabel = stringResource(R.string.debrid_connected)
                                 ),
                                 onClick = {
-                                    when (provider.authMethod) {
-                                        DebridProviderAuthMethod.DeviceCode -> activeDeviceAuthDialog = provider.id
-                                        DebridProviderAuthMethod.ApiKey -> activeApiKeyDialog = provider.id
-                                    }
+                                    if (useDeviceAuth) activeDeviceAuthDialog = provider.id
+                                    else activeApiKeyDialog = provider.id
                                 },
                                 modifier = if (
                                     initialFocusRequester != null &&
@@ -365,7 +369,11 @@ fun DebridSettingsContent(
         DebridProviders.byId(providerId)?.let { provider ->
             DebridApiKeyDialog(
                 title = stringResource(R.string.debrid_api_key_dialog_title, provider.displayName),
-                subtitle = stringResource(R.string.debrid_api_key_dialog_subtitle, provider.displayName),
+                subtitle = when (provider.id) {
+                    DebridProviders.REAL_DEBRID_ID -> stringResource(R.string.debrid_real_debrid_key_help)
+                    DebridProviders.ALL_DEBRID_ID -> stringResource(R.string.debrid_all_debrid_key_help)
+                    else -> stringResource(R.string.debrid_api_key_dialog_subtitle, provider.displayName)
+                },
                 placeholder = stringResource(R.string.debrid_api_key_dialog_placeholder, provider.displayName),
                 currentValue = uiState.apiKeyFor(provider.id),
                 viewModel = viewModel,
@@ -386,7 +394,10 @@ fun DebridSettingsContent(
                 provider = provider,
                 currentValue = uiState.apiKeyFor(provider.id),
                 viewModel = viewModel,
-                onConnected = { token -> viewModel.saveProviderCredential(provider.id, token) },
+                onUseManualKey = {
+                    activeDeviceAuthDialog = null
+                    activeApiKeyDialog = provider.id
+                },
                 onDisconnect = { viewModel.saveProviderCredential(provider.id, "") },
                 onDismiss = { activeDeviceAuthDialog = null }
             )
@@ -1217,11 +1228,15 @@ private fun DebridDeviceAuthDialog(
     provider: DebridProvider,
     currentValue: String,
     viewModel: DebridSettingsViewModel,
-    onConnected: (String) -> Unit,
+    onUseManualKey: () -> Unit,
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val isConnected = currentValue.isNotBlank()
+    val startingProfileId = remember(provider.id) { viewModel.activeProfileId.value }
+    val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+    LaunchedEffect(activeProfileId) { if (activeProfileId != startingProfileId) onDismiss() }
+    var replacingConnection by remember(provider.id) { mutableStateOf(false) }
+    val isConnected = currentValue.isNotBlank() && !replacingConnection
     var restartNonce by remember(provider.id) { mutableStateOf(0) }
     var session by remember(provider.id, restartNonce, isConnected) { mutableStateOf<DebridDeviceAuthorization?>(null) }
     var isStarting by remember(provider.id, restartNonce, isConnected) { mutableStateOf(!isConnected) }
@@ -1264,11 +1279,12 @@ private fun DebridDeviceAuthDialog(
     LaunchedEffect(session?.deviceCode, restartNonce, isConnected) {
         if (isConnected) return@LaunchedEffect
         val activeSession = session ?: return@LaunchedEffect
+        var pollInterval = activeSession.intervalSeconds.coerceAtLeast(5)
         while (true) {
-            delay(activeSession.intervalSeconds.coerceAtLeast(1) * 1_000L)
+            delay(pollInterval * 1_000L)
             isPolling = true
             val result = runCatching {
-                viewModel.redeemDeviceAuthorization(provider.id, activeSession.deviceCode)
+                viewModel.redeemDeviceAuthorization(provider.id, activeSession)
             }.getOrElse { error ->
                 if (error is CancellationException) throw error
                 if (error.isCancelledHttpRequest()) {
@@ -1280,8 +1296,12 @@ private fun DebridDeviceAuthDialog(
             isPolling = false
             when (result) {
                 is DebridDeviceAuthorizationTokenResult.Authorized -> {
-                    onConnected(result.accessToken)
-                    onDismiss()
+                    val saved = runCatching { viewModel.completeDeviceAuthorization(activeSession, result) }
+                        .getOrElse { error -> if (error is CancellationException) throw error else false }
+                    if (saved) onDismiss() else {
+                        statusMessage = failedMessage
+                        session = null
+                    }
                     return@LaunchedEffect
                 }
                 DebridDeviceAuthorizationTokenResult.Pending -> {
@@ -1289,14 +1309,26 @@ private fun DebridDeviceAuthDialog(
                 }
                 DebridDeviceAuthorizationTokenResult.Expired -> {
                     statusMessage = expiredMessage
+                    session = null
+                    return@LaunchedEffect
+                }
+                DebridDeviceAuthorizationTokenResult.SlowDown -> {
+                    pollInterval = (pollInterval + 5).coerceAtMost(60)
+                    statusMessage = waitingMessage
+                }
+                DebridDeviceAuthorizationTokenResult.Denied -> {
+                    statusMessage = failedMessage
+                    session = null
                     return@LaunchedEffect
                 }
                 is DebridDeviceAuthorizationTokenResult.Failed -> {
                     statusMessage = result.message.toDeviceAuthStatusMessage(failedMessage)
+                    session = null
                     return@LaunchedEffect
                 }
                 DebridDeviceAuthorizationTokenResult.Unsupported -> {
                     statusMessage = failedMessage
+                    session = null
                     return@LaunchedEffect
                 }
             }
@@ -1390,7 +1422,15 @@ private fun DebridDeviceAuthDialog(
                 text = stringResource(R.string.action_cancel),
                 onClick = onDismiss
             )
+            SettingsDialogActionButton(
+                text = stringResource(R.string.debrid_use_api_key),
+                onClick = onUseManualKey
+            )
             if (isConnected) {
+                SettingsDialogActionButton(
+                    text = stringResource(R.string.debrid_connect_another_account),
+                    onClick = { replacingConnection = true }
+                )
                 SettingsDialogActionButton(
                     text = stringResource(R.string.debrid_disconnect),
                     onClick = {
@@ -1544,7 +1584,12 @@ private fun DebridApiKeyDialog(
                             }
                         },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Done,
+                        keyboardType = KeyboardType.Password,
+                        autoCorrectEnabled = false
+                    ),
                     keyboardActions = KeyboardActions(
                         onDone = { submit() }
                     ),
@@ -1589,7 +1634,7 @@ private fun DebridApiKeyDialog(
 private fun maskDebridApiKey(key: String, notSetLabel: String): String {
     val trimmed = key.trim()
     if (trimmed.isBlank()) return notSetLabel
-    return if (trimmed.length <= 4) "****" else "******${trimmed.takeLast(4)}"
+    return "••••••••"
 }
 
 private fun providerCredentialStatus(

@@ -10,6 +10,9 @@ import com.nuvio.tv.core.debrid.DebridDeviceAuthorization
 import com.nuvio.tv.core.debrid.DebridDeviceAuthorizationTokenResult
 import com.nuvio.tv.core.debrid.DebridProviderCapability
 import com.nuvio.tv.core.debrid.DebridProviders
+import com.nuvio.tv.core.debrid.DebridAccountValidator
+import com.nuvio.tv.core.debrid.DebridNativeDeviceAuth
+import com.nuvio.tv.core.debrid.DebridAuthProfileGuard
 import com.nuvio.tv.core.debrid.supports
 import com.nuvio.tv.core.qr.QrCodeGenerator
 import com.nuvio.tv.core.server.DebridFormatterConfigServer
@@ -40,6 +43,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 
 @HiltViewModel
@@ -47,8 +51,12 @@ class DebridSettingsViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val dataStore: DebridSettingsDataStore,
     private val torboxApi: TorboxApi,
-    private val premiumizeApi: PremiumizeApi
+    private val premiumizeApi: PremiumizeApi,
+    private val accountValidator: DebridAccountValidator,
+    private val nativeDeviceAuth: DebridNativeDeviceAuth
 ) : ViewModel() {
+    val activeProfileId = dataStore.activeProfileId
+    private val authProfileGuard = DebridAuthProfileGuard(activeProfileId.value)
     private var formatterServer: DebridFormatterConfigServer? = null
     private var logoBytes: ByteArray? = null
 
@@ -62,6 +70,7 @@ class DebridSettingsViewModel @Inject constructor(
     val validationError: SharedFlow<String> = _validationError.asSharedFlow()
 
     init {
+        viewModelScope.launch { activeProfileId.collectLatest { authProfileGuard.observe(it) } }
         loadLogoBytes()
         viewModelScope.launch {
             dataStore.settings.collectLatest { settings ->
@@ -200,7 +209,12 @@ class DebridSettingsViewModel @Inject constructor(
     }
 
     fun saveProviderCredential(providerId: String, value: String) {
-        update { dataStore.setProviderApiKey(providerId, value.trim()) }
+        val ticket = authProfileGuard.capture(activeProfileId.value)
+        update {
+            if (authProfileGuard.valid(ticket, activeProfileId.value)) {
+                dataStore.setProviderApiKeyForProfile(ticket.profileId, providerId, value.trim())
+            }
+        }
     }
 
     fun validateAndSaveTorboxApiKey(value: String, onSuccess: () -> Unit) {
@@ -209,20 +223,24 @@ class DebridSettingsViewModel @Inject constructor(
 
     fun validateAndSaveProviderApiKey(providerId: String, value: String, onSuccess: () -> Unit) {
         val trimmed = value.trim()
-        if (trimmed.isBlank()) {
-            viewModelScope.launch { dataStore.setProviderApiKey(providerId, "") }
-            onSuccess()
-            return
-        }
+        val ticket = authProfileGuard.capture(activeProfileId.value)
+        if (_validating.value) return
         viewModelScope.launch {
             _validating.value = true
-            val valid = validateProviderApiKey(providerId, trimmed)
-            _validating.value = false
-            if (valid) {
-                dataStore.setProviderApiKey(providerId, trimmed)
-                onSuccess()
-            } else {
+            try {
+                val expected = dataStore.credentialForProfile(ticket.profileId, providerId)
+                if (trimmed.isBlank() || validateProviderApiKey(providerId, trimmed)) {
+                    if (authProfileGuard.valid(ticket, activeProfileId.value) &&
+                        dataStore.setProviderApiKeyForProfile(ticket.profileId, providerId, trimmed, expected)) onSuccess()
+                    else _validationError.tryEmit(context.getString(R.string.debrid_auth_profile_changed))
+                } else {
+                    _validationError.tryEmit(context.getString(R.string.debrid_key_invalid))
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 _validationError.tryEmit(context.getString(R.string.debrid_key_invalid))
+            } finally {
+                _validating.value = false
             }
         }
     }
@@ -239,19 +257,25 @@ class DebridSettingsViewModel @Inject constructor(
                 DebridProviders.PREMIUMIZE_ID -> {
                     val response = premiumizeApi.accountInfo("Bearer $apiKey")
                     response.errorBody()?.close()
-                    response.isSuccessful && !response.body()?.status.equals("error", ignoreCase = true)
+                    response.isSuccessful && response.body()?.status.equals("success", ignoreCase = true)
                 }
+                DebridProviders.REAL_DEBRID_ID, DebridProviders.ALL_DEBRID_ID ->
+                    accountValidator.validate(providerId, apiKey)
                 else -> false
             }
         } catch (error: Exception) {
+            if (error is CancellationException) throw error
             false
         }
     }
 
     suspend fun startDeviceAuthorization(providerId: String): DebridDeviceAuthorization? {
-        return when (DebridProviders.byId(providerId)?.id) {
+        val ticket = authProfileGuard.capture(activeProfileId.value)
+        val expected = dataStore.credentialForProfile(ticket.profileId, providerId)
+        val result = when (DebridProviders.byId(providerId)?.id) {
+            DebridProviders.REAL_DEBRID_ID, DebridProviders.ALL_DEBRID_ID -> nativeDeviceAuth.start(providerId)
             DebridProviders.TORBOX_ID -> {
-                val response = torboxApi.startDeviceAuthorization("Nuvio")
+                val response = torboxApi.startDeviceAuthorization("Syclop")
                 val data = response.body()?.takeIf { response.isSuccessful && it.success != false }?.data
                     ?: return null
                 val deviceCode = data.deviceCode?.takeIf { it.isNotBlank() } ?: return null
@@ -286,12 +310,32 @@ class DebridSettingsViewModel @Inject constructor(
             }
             else -> null
         }
+        if (!authProfileGuard.valid(ticket, activeProfileId.value)) return null
+        return result?.copy(profileId = ticket.profileId, profileRevision = ticket.revision, expectedCredential = expected)
     }
 
-    suspend fun redeemDeviceAuthorization(providerId: String, deviceCode: String): DebridDeviceAuthorizationTokenResult {
-        val normalized = deviceCode.trim()
+    fun isCurrentDeviceSession(session: DebridDeviceAuthorization): Boolean {
+        val profile = session.profileId ?: return false
+        val revision = session.profileRevision ?: return false
+        return authProfileGuard.valid(DebridAuthProfileGuard.Ticket(profile, revision), activeProfileId.value)
+    }
+
+    suspend fun completeDeviceAuthorization(session: DebridDeviceAuthorization,
+        result: DebridDeviceAuthorizationTokenResult.Authorized): Boolean {
+        if (!isCurrentDeviceSession(session) || nativeDeviceAuth.expired(session)) return false
+        if (!validateProviderApiKey(session.providerId, result.accessToken)) return false
+        if (!isCurrentDeviceSession(session) || nativeDeviceAuth.expired(session)) return false
+        return dataStore.setProviderApiKeyForProfile(session.profileId!!, session.providerId,
+            result.accessToken, session.expectedCredential, result.realDebridOAuth)
+    }
+
+    suspend fun redeemDeviceAuthorization(providerId: String, session: DebridDeviceAuthorization): DebridDeviceAuthorizationTokenResult {
+        if (!isCurrentDeviceSession(session)) return DebridDeviceAuthorizationTokenResult.Failed(null)
+        if (nativeDeviceAuth.expired(session)) return DebridDeviceAuthorizationTokenResult.Expired
+        val normalized = session.deviceCode.trim()
         if (normalized.isBlank()) return DebridDeviceAuthorizationTokenResult.Failed(null)
         return when (DebridProviders.byId(providerId)?.id) {
+            DebridProviders.REAL_DEBRID_ID, DebridProviders.ALL_DEBRID_ID -> nativeDeviceAuth.poll(session)
             DebridProviders.TORBOX_ID -> {
                 val response = torboxApi.redeemDeviceAuthorization(TorboxDeviceTokenRequestDto(normalized))
                 torboxDeviceAuthorizationTokenResult(response)
@@ -341,7 +385,7 @@ class DebridSettingsViewModel @Inject constructor(
             response.code() == 410 ->
                 DebridDeviceAuthorizationTokenResult.Expired
             else ->
-                DebridDeviceAuthorizationTokenResult.Failed(envelope?.detail ?: envelope?.error)
+                DebridDeviceAuthorizationTokenResult.Failed(null)
         }
     }
 
@@ -355,12 +399,13 @@ class DebridSettingsViewModel @Inject constructor(
         return when (body?.error?.lowercase()) {
             "authorization_pending", "slow_down" -> DebridDeviceAuthorizationTokenResult.Pending
             "invalid_grant", "expired_token" -> DebridDeviceAuthorizationTokenResult.Expired
-            "access_denied" -> DebridDeviceAuthorizationTokenResult.Failed(body.errorDescription)
+            "access_denied" -> DebridDeviceAuthorizationTokenResult.Failed(null)
             else -> {
                 if (response.code() == 400 && body?.error.isNullOrBlank()) {
                     DebridDeviceAuthorizationTokenResult.Pending
                 } else {
-                    DebridDeviceAuthorizationTokenResult.Failed(body?.errorDescription ?: body?.error ?: response.errorBody()?.string())
+                    response.errorBody()?.close()
+                    DebridDeviceAuthorizationTokenResult.Failed(null)
                 }
             }
         }
@@ -387,6 +432,7 @@ data class DebridSettingsUiState(
     val torboxApiKey: String = "",
     val premiumizeApiKey: String = "",
     val realDebridApiKey: String = "",
+    val allDebridApiKey: String = "",
     val preferredResolverProviderId: String = "",
     val instantPlaybackPreparationLimit: Int = 0,
     val streamMaxResults: Int = 0,
@@ -407,7 +453,8 @@ data class DebridSettingsUiState(
         get() = mapOf(
             DebridProviders.TORBOX_ID to torboxApiKey,
             DebridProviders.PREMIUMIZE_ID to premiumizeApiKey,
-            DebridProviders.REAL_DEBRID_ID to realDebridApiKey
+            DebridProviders.REAL_DEBRID_ID to realDebridApiKey,
+            DebridProviders.ALL_DEBRID_ID to allDebridApiKey
         )
 
     val hasAnyApiKey: Boolean
@@ -453,6 +500,7 @@ data class DebridSettingsUiState(
         torboxApiKey = settings.torboxApiKey,
         premiumizeApiKey = settings.premiumizeApiKey,
         realDebridApiKey = settings.realDebridApiKey,
+        allDebridApiKey = settings.allDebridApiKey,
         preferredResolverProviderId = settings.preferredResolverProviderId,
         instantPlaybackPreparationLimit = settings.instantPlaybackPreparationLimit,
         streamMaxResults = settings.streamMaxResults,
@@ -465,6 +513,8 @@ data class DebridSettingsUiState(
         streamNameTemplate = settings.streamNameTemplate,
         streamDescriptionTemplate = settings.streamDescriptionTemplate
     )
+
+    override fun toString(): String = "DebridSettingsUiState(enabled=$enabled, credentials=[redacted])"
 }
 
 sealed class DebridSettingsEvent {

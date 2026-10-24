@@ -635,6 +635,9 @@ fun SettingsScreen(
                         ) { animatedCategory ->
                             SettingsDetailPane(
                                 selectedCategory = animatedCategory,
+                                onOpenSettingsCategory = { category ->
+                                    visibleSections.firstOrNull { it.category == category }?.let(onSectionClick)
+                                },
                                 isEssentialMode = isEssentialMode,
                                 allowDetailAutofocus = allowDetailAutofocus,
                                 contentFocusRequesters = contentFocusRequesters,
@@ -789,6 +792,9 @@ fun SettingsScreen(
                 ) {
                     SettingsDetailPane(
                         selectedCategory = selectedCategory,
+                        onOpenSettingsCategory = { category ->
+                            visibleSections.firstOrNull { it.category == category }?.let(onSectionClick)
+                        },
                         isEssentialMode = isEssentialMode,
                         allowDetailAutofocus = allowDetailAutofocus,
                         contentFocusRequesters = contentFocusRequesters,
@@ -818,6 +824,7 @@ fun SettingsScreen(
 @Composable
 private fun SettingsDetailPane(
     selectedCategory: SettingsCategory,
+    onOpenSettingsCategory: (SettingsCategory) -> Unit,
     isEssentialMode: Boolean,
     allowDetailAutofocus: Boolean,
     contentFocusRequesters: Map<SettingsCategory, FocusRequester>,
@@ -949,6 +956,9 @@ private fun SettingsDetailPane(
         )
         SettingsCategory.ACCOUNT -> AccountSettingsInline(
             onNavigateToAuthQrSignIn = onNavigateToAuthQrSignIn,
+            onManageProfiles = onNavigateToManageProfiles,
+            onOpenTracking = { onOpenSettingsCategory(SettingsCategory.TRACKING) },
+            onOpenIntegrations = { onOpenSettingsCategory(SettingsCategory.INTEGRATION) },
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.ACCOUNT]
             } else {
@@ -1008,30 +1018,39 @@ private fun EssentialAdvancedSettingsContent(
 @Composable
 private fun AccountSettingsInline(
     onNavigateToAuthQrSignIn: () -> Unit,
+    onManageProfiles: () -> Unit,
+    onOpenTracking: () -> Unit,
+    onOpenIntegrations: () -> Unit,
     initialFocusRequester: FocusRequester?
 ) {
-    val accountViewModel: com.nuvio.tv.ui.screens.account.AccountViewModel = hiltViewModel()
-    val accountUiState by accountViewModel.uiState.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md)
     ) {
         SettingsDetailHeader(
-            title = stringResource(R.string.settings_account),
-            subtitle = stringResource(R.string.settings_account_section_subtitle)
+            title = stringResource(if (BuildConfig.LOCAL_ONLY_BUILD) R.string.syclop_local_profile_title else R.string.settings_account),
+            subtitle = stringResource(if (BuildConfig.LOCAL_ONLY_BUILD) R.string.syclop_local_account_subtitle else R.string.settings_account_section_subtitle)
         )
         SettingsGroupCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            com.nuvio.tv.ui.screens.account.AccountSettingsContent(
-                uiState = accountUiState,
-                viewModel = accountViewModel,
-                onNavigateToAuthQrSignIn = onNavigateToAuthQrSignIn,
-                initialFocusRequester = initialFocusRequester
-            )
+            if (BuildConfig.LOCAL_ONLY_BUILD) {
+                com.nuvio.tv.ui.screens.account.SyclopLocalAccountSettingsContent(
+                    initialFocusRequester, onManageProfiles, onOpenTracking, onOpenIntegrations
+                )
+            } else {
+                val accountViewModel: com.nuvio.tv.ui.screens.account.AccountViewModel = hiltViewModel()
+                val accountUiState by accountViewModel.uiState.collectAsStateWithLifecycle()
+                com.nuvio.tv.ui.screens.account.AccountSettingsContent(
+                    uiState = accountUiState,
+                    viewModel = accountViewModel,
+                    onNavigateToAuthQrSignIn = onNavigateToAuthQrSignIn,
+                    initialFocusRequester = initialFocusRequester
+                )
+            }
         }
     }
 }

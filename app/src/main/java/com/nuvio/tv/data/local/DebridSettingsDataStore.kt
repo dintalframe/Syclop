@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.gson.Gson
 import com.nuvio.tv.core.debrid.DebridProviders
+import com.nuvio.tv.core.debrid.RealDebridOAuthState
 import com.nuvio.tv.core.debrid.DebridStreamFormatterDefaults
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.domain.model.DebridSettings
@@ -25,13 +26,17 @@ import com.nuvio.tv.domain.model.normalizeDebridStreamMaxResults
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class DebridSettingsDataStore @Inject constructor(
     private val factory: ProfileDataStoreFactory,
-    private val profileManager: ProfileManager
+    private val profileManager: ProfileManager,
+    private val credentialCipher: DebridCredentialCipher
 ) {
     private val gson = Gson()
 
@@ -47,6 +52,8 @@ class DebridSettingsDataStore @Inject constructor(
     private val torboxApiKeyKey = stringPreferencesKey("torbox_api_key")
     private val premiumizeApiKeyKey = stringPreferencesKey("premiumize_api_key")
     private val realDebridApiKeyKey = stringPreferencesKey("real_debrid_api_key")
+    private val allDebridApiKeyKey = stringPreferencesKey("all_debrid_api_key")
+    private val realDebridOAuthKey = stringPreferencesKey("real_debrid_oauth_state")
     private val preferredResolverProviderIdKey = stringPreferencesKey("preferred_resolver_provider_id")
     private val instantPlaybackPreparationLimitKey = intPreferencesKey("instant_playback_preparation_limit")
     private val streamMaxResultsKey = intPreferencesKey("stream_max_results")
@@ -61,6 +68,10 @@ class DebridSettingsDataStore @Inject constructor(
 
     val settings: Flow<DebridSettings> = profileManager.activeProfileId.flatMapLatest { pid ->
         factory.get(pid, FEATURE).data.map { prefs ->
+            migrateLegacyCredentials(pid, prefs)
+            val keys = DebridProviders.all().associate { provider ->
+                provider.id to readCredential(prefs, pid, provider.id)
+            }
             val storedStreamSortMode = enumValueOrDefault(
                 prefs[streamSortModeKey],
                 DebridStreamSortMode.DEFAULT
@@ -78,14 +89,16 @@ class DebridSettingsDataStore @Inject constructor(
             DebridSettings(
                 enabled = prefs[enabledKey] ?: false,
                 cloudLibraryEnabled = prefs[cloudLibraryEnabledKey] ?: true,
-                torboxApiKey = prefs[torboxApiKeyKey] ?: "",
-                premiumizeApiKey = prefs[premiumizeApiKeyKey] ?: "",
-                realDebridApiKey = prefs[realDebridApiKeyKey] ?: "",
+                torboxApiKey = keys[DebridProviders.TORBOX_ID].orEmpty(),
+                premiumizeApiKey = keys[DebridProviders.PREMIUMIZE_ID].orEmpty(),
+                realDebridApiKey = keys[DebridProviders.REAL_DEBRID_ID].orEmpty(),
+                allDebridApiKey = keys[DebridProviders.ALL_DEBRID_ID].orEmpty(),
                 preferredResolverProviderId = preferredResolverProviderId(
                     stored = prefs[preferredResolverProviderIdKey],
-                    torboxApiKey = prefs[torboxApiKeyKey] ?: "",
-                    premiumizeApiKey = prefs[premiumizeApiKeyKey] ?: "",
-                    realDebridApiKey = prefs[realDebridApiKeyKey] ?: ""
+                    torboxApiKey = keys[DebridProviders.TORBOX_ID].orEmpty(),
+                    premiumizeApiKey = keys[DebridProviders.PREMIUMIZE_ID].orEmpty(),
+                    realDebridApiKey = keys[DebridProviders.REAL_DEBRID_ID].orEmpty(),
+                    allDebridApiKey = keys[DebridProviders.ALL_DEBRID_ID].orEmpty()
                 ),
                 instantPlaybackPreparationLimit = normalizeDebridInstantPlaybackPreparationLimit(
                     prefs[instantPlaybackPreparationLimitKey] ?: 0
@@ -131,20 +144,79 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     suspend fun setProviderApiKey(providerId: String, apiKey: String) {
-        val provider = DebridProviders.byId(providerId) ?: return
-        val normalized = apiKey.trim()
-        store().edit { prefs ->
-            providerKey(provider.id)?.let { key -> prefs[key] = normalized }
-            if (normalized.isBlank() && !hasAnyVisibleApiKeyAfter(prefs, provider.id)) {
-                prefs[enabledKey] = false
+        setProviderApiKeyForProfile(profileManager.activeProfileId.value, providerId, apiKey)
+    }
+
+    val activeProfileId get() = profileManager.activeProfileId
+    val localProfileIds get() = profileManager.profiles.value.map { it.id }
+
+    suspend fun credentialForProfile(profileId: Int, providerId: String): String =
+        readCredential(store(profileId).data.first(), profileId, providerId)
+
+    suspend fun realDebridOAuth(profileId: Int): RealDebridOAuthState? {
+        val prefs = store(profileId).data.first()
+        val json = credentialCipher.decrypt(prefs[realDebridOAuthKey].orEmpty(), profileId, "realdebrid.oauth")
+        return runCatching {
+            gson.fromJson(json, RealDebridOAuthState::class.java)?.takeIf {
+                it.clientId.isNotBlank() && it.clientSecret.isNotBlank() && it.refreshToken.isNotBlank() &&
+                    it.accessToken.isNotBlank() && it.accessToken == readCredential(prefs, profileId, DebridProviders.REAL_DEBRID_ID)
             }
-            val preferred = preferredResolverProviderId(
+        }.getOrNull()
+    }
+
+    /** Check the originating viewer again inside the atomic edit, after any network validation. */
+    suspend fun setProviderApiKeyForProfile(
+        profileId: Int, providerId: String, apiKey: String, expectedApiKey: String? = null,
+        realDebridOAuth: RealDebridOAuthState? = null
+    ): Boolean {
+        val provider = DebridProviders.byId(providerId) ?: return false
+        val normalized = apiKey.trim()
+        val pid = profileId
+        if (profileManager.activeProfileId.value != pid) return false
+        // Encryption must succeed before anything is committed. Never fall back to plaintext.
+        val encrypted = credentialCipher.encrypt(normalized, pid, provider.id)
+        val encryptedOAuth = realDebridOAuth?.let {
+            require(provider.id == DebridProviders.REAL_DEBRID_ID && it.accessToken == normalized)
+            credentialCipher.encrypt(gson.toJson(it), pid, "realdebrid.oauth")
+        }
+        var saved = false
+        store(pid).edit { prefs ->
+            currentCoroutineContext().ensureActive()
+            if (profileManager.activeProfileId.value != pid ||
+                (expectedApiKey != null && readCredential(prefs, pid, provider.id) != expectedApiKey)) return@edit
+            providerKey(provider.id)?.let { key -> prefs[key] = encrypted }
+            if (provider.id == DebridProviders.REAL_DEBRID_ID) {
+                if (encryptedOAuth == null) prefs.remove(realDebridOAuthKey) else prefs[realDebridOAuthKey] = encryptedOAuth
+            }
+            val keys = DebridProviders.all().associate { it.id to readCredential(prefs, pid, it.id) }
+            if (keys.values.all { it.isBlank() }) prefs[enabledKey] = false
+            prefs[preferredResolverProviderIdKey] = preferredResolverProviderId(
                 stored = prefs[preferredResolverProviderIdKey],
-                torboxApiKey = prefs[torboxApiKeyKey] ?: "",
-                premiumizeApiKey = prefs[premiumizeApiKeyKey] ?: "",
-                realDebridApiKey = prefs[realDebridApiKeyKey] ?: ""
+                torboxApiKey = keys[DebridProviders.TORBOX_ID].orEmpty(),
+                premiumizeApiKey = keys[DebridProviders.PREMIUMIZE_ID].orEmpty(),
+                realDebridApiKey = keys[DebridProviders.REAL_DEBRID_ID].orEmpty(),
+                allDebridApiKey = keys[DebridProviders.ALL_DEBRID_ID].orEmpty()
             )
-            prefs[preferredResolverProviderIdKey] = preferred
+            saved = true
+        }
+        return saved
+    }
+
+    private fun readCredential(prefs: androidx.datastore.preferences.core.Preferences, pid: Int, id: String): String =
+        providerKey(id)?.let { credentialCipher.decrypt(prefs[it].orEmpty(), pid, id) }.orEmpty()
+
+    private suspend fun migrateLegacyCredentials(pid: Int, prefs: androidx.datastore.preferences.core.Preferences) {
+        val legacy = DebridProviders.all().mapNotNull { provider ->
+            val key = providerKey(provider.id) ?: return@mapNotNull null
+            val value = prefs[key].orEmpty()
+            if (value.isBlank() || credentialCipher.isEncrypted(value)) return@mapNotNull null
+            Triple(key, value, credentialCipher.encrypt(value, pid, provider.id))
+        }
+        if (legacy.isEmpty()) return
+        store(pid).edit { current ->
+            legacy.forEach { (key, original, encrypted) ->
+                if (current[key] == original) current[key] = encrypted
+            }
         }
     }
 
@@ -286,29 +358,22 @@ class DebridSettingsDataStore @Inject constructor(
         DebridProviders.TORBOX_ID -> torboxApiKeyKey
         DebridProviders.PREMIUMIZE_ID -> premiumizeApiKeyKey
         DebridProviders.REAL_DEBRID_ID -> realDebridApiKeyKey
+        DebridProviders.ALL_DEBRID_ID -> allDebridApiKeyKey
         else -> null
-    }
-
-    private fun hasAnyVisibleApiKeyAfter(
-        prefs: androidx.datastore.preferences.core.MutablePreferences,
-        updatedProviderId: String
-    ): Boolean {
-        return DebridProviders.visible().any { provider ->
-            val key = providerKey(provider.id) ?: return@any false
-            provider.id != updatedProviderId && !prefs[key].isNullOrBlank()
-        }
     }
 
     private fun preferredResolverProviderId(
         stored: String?,
         torboxApiKey: String,
         premiumizeApiKey: String,
-        realDebridApiKey: String
+        realDebridApiKey: String,
+        allDebridApiKey: String
     ): String {
         val connected = listOf(
             DebridProviders.TORBOX_ID to torboxApiKey,
             DebridProviders.PREMIUMIZE_ID to premiumizeApiKey,
-            DebridProviders.REAL_DEBRID_ID to realDebridApiKey
+            DebridProviders.REAL_DEBRID_ID to realDebridApiKey,
+            DebridProviders.ALL_DEBRID_ID to allDebridApiKey
         ).mapNotNull { (id, key) ->
             DebridProviders.byId(id)
                 ?.takeIf { provider -> provider.visibleInUi && key.isNotBlank() }

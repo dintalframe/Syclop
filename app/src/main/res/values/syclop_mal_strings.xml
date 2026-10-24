@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="syclop_mal_library_empty">No anime in this MyAnimeList view</string>
+    <string name="syclop_mal_library_empty_detail">Connect MyAnimeList in Tracking settings, then refresh its list or choose another status. Playback resume positions remain local.</string>
+    <string name="syclop_mal_name">MyAnimeList</string>
+    <string name="syclop_mal_summary">Anime watchlist and completed episode tracking</string>
+    <string name="syclop_mal_dialog_summary">Connect your own account, manage your anime list, and sync completed episodes.</string>
+    <string name="syclop_mal_scan">Scan with your phone and authorize Syclop on MyAnimeList. This connection expires after five minutes.</string>
+    <string name="syclop_mal_callback_active">Keep this screen open. Your phone must be on the same home network as the TV. The temporary callback listener closes after sign-in, cancellation, or expiry.</string>
+    <string name="syclop_mal_callback_manual">If the registered callback cannot reach the TV, paste the full returned callback URL below. Its state must match this connection.</string>
+    <string name="syclop_mal_registration_needed">MyAnimeList sign-in becomes available after the Syclop developer configures this app registration once. Users do not register their own developer applications.</string>
+    <string name="syclop_mal_known_ids_only">Saves completed episodes at 80% playback or later, only when the player has a known MAL ID and matching season-specific episode number. No title guesses or season conversions. Local resume positions remain in Syclop.</string>
+    <string name="syclop_mal_developer_instructions">Register Syclop as your native application at https://myanimelist.net/apiconfig. Enter your application client ID and exact registered redirect URI. This is shared app setup; each profile signs into its own MAL account. Do not enter a client secret.</string>
+    <string name="syclop_mal_redirect_guidance">For phone sign-in on this home network, register the suggested TV HTTP callback exactly. MAL must accept that URI in your registration. If registration rejects a private HTTP address, use a registered HTTPS callback you control and return its full callback URL manually. No third-party account keys are reused.</string>
+</resources>

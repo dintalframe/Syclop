@@ -48,22 +48,22 @@ import retrofit2.http.Query
 
 interface TraktApi {
 
-    @POST("oauth/device/code")
+    @POST("https://auth.trakt.tv/oauth/device/code")
     suspend fun requestDeviceCode(
         @Body body: TraktDeviceCodeRequestDto
     ): Response<TraktDeviceCodeResponseDto>
 
-    @POST("oauth/device/token")
+    @POST("https://auth.trakt.tv/oauth/device/token")
     suspend fun requestDeviceToken(
         @Body body: TraktDeviceTokenRequestDto
     ): Response<TraktTokenResponseDto>
 
-    @POST("oauth/token")
+    @POST("https://auth.trakt.tv/oauth/token")
     suspend fun refreshToken(
         @Body body: TraktRefreshTokenRequestDto
     ): Response<TraktTokenResponseDto>
 
-    @POST("oauth/revoke")
+    @POST("https://auth.trakt.tv/oauth/revoke")
     suspend fun revokeToken(
         @Body body: TraktRevokeRequestDto
     ): Response<Unit>

@@ -22,6 +22,7 @@ class DirectDebridResolver @Inject constructor(
     private val dataStore: DebridSettingsDataStore,
     private val torboxResolver: TorboxDirectDebridResolver,
     private val realDebridResolver: RealDebridDirectDebridResolver,
+    private val allDebridResolver: AllDebridDirectDebridResolver,
     private val premiumizeResolver: PremiumizeDirectDebridResolver,
     private val localDebridService: LocalDebridService
 ) {
@@ -122,8 +123,10 @@ class DirectDebridResolver @Inject constructor(
         if (stream.needsLocalDebridResolve()) {
             return localTorrentResolveCredential(settings) != null
         }
-        if (!stream.isDirectDebrid() || stream.getStreamUrl() != null) return false
         val providerId = DebridProviders.byId(stream.clientResolve?.service)?.id ?: return false
+        val explicitHoster = providerId in setOf(DebridProviders.REAL_DEBRID_ID, DebridProviders.ALL_DEBRID_ID) &&
+            stream.clientResolve?.type.let { it.equals("hoster", true) || it.equals("http", true) }
+        if (!explicitHoster && (!stream.isDirectDebrid() || stream.getStreamUrl() != null)) return false
         return providerId == settings.activeResolverProviderId &&
             settings.apiKeyFor(providerId).isNotBlank()
     }
@@ -154,6 +157,7 @@ class DirectDebridResolver @Inject constructor(
             DebridProviders.TORBOX_ID -> torboxResolver.resolve(stream, season, episode)
             DebridProviders.PREMIUMIZE_ID -> premiumizeResolver.resolve(stream, season, episode)
             DebridProviders.REAL_DEBRID_ID -> realDebridResolver.resolve(stream, season, episode)
+            DebridProviders.ALL_DEBRID_ID -> allDebridResolver.resolve(stream, season, episode)
             else -> DirectDebridResolveResult.Error
         }
     }
@@ -181,6 +185,7 @@ class DirectDebridResolver @Inject constructor(
         val apiKey = settings.apiKeyFor(providerId).trim().takeIf { it.isNotBlank() } ?: return null
         val identity = resolve.infoHash
             ?: resolve.magnetUri
+            ?: getStreamUrl()
             ?: resolve.torrentName
             ?: resolve.filename
             ?: return null
@@ -246,6 +251,8 @@ class DirectDebridResolver @Inject constructor(
         return when (account.provider.id) {
             DebridProviders.TORBOX_ID -> torboxResolver.resolve(resolveStream, season, episode)
             DebridProviders.PREMIUMIZE_ID -> premiumizeResolver.resolve(resolveStream, season, episode)
+            DebridProviders.REAL_DEBRID_ID -> realDebridResolver.resolve(resolveStream, season, episode)
+            DebridProviders.ALL_DEBRID_ID -> allDebridResolver.resolve(resolveStream, season, episode)
             else -> DirectDebridResolveResult.Error
         }
     }
@@ -281,6 +288,7 @@ private fun Stream.withResolvedDebridUrl(result: DirectDebridResolveResult.Succe
     copy(
         url = result.url,
         externalUrl = null,
+        clientResolve = null,
         behaviorHints = behaviorHints.mergeResolvedDebridHints(result)
     )
 

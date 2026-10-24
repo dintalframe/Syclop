@@ -2,6 +2,8 @@ package com.nuvio.tv.data.local
 
 import android.content.Context
 import com.nuvio.tv.BuildConfig
+import com.nuvio.tv.core.network.SYCLOP_DISABLED_CLOUD_KEY
+import com.nuvio.tv.core.network.SYCLOP_DISABLED_CLOUD_URL
 import com.nuvio.tv.domain.model.ServerCapabilities
 import com.nuvio.tv.domain.model.ServerConfiguration
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -13,6 +15,14 @@ class ServerConfigurationStore @Inject constructor(
     @param:ApplicationContext private val context: Context
 ) {
     fun loadActive(): ServerConfiguration {
+        if (BuildConfig.LOCAL_ONLY_BUILD) return ServerConfiguration(
+            backendUrl = SYCLOP_DISABLED_CLOUD_URL,
+            publishableKey = SYCLOP_DISABLED_CLOUD_KEY,
+            capabilities = ServerCapabilities(emailPasswordAuth = false, tvLogin = false, watchParty = false),
+            isCustom = false,
+            tvLoginWebBaseUrl = "",
+            deviceLoginWebBaseUrl = ""
+        )
         if (!BuildConfig.FEATURE_CUSTOM_SERVER_CONNECTIONS_ENABLED) return officialConfiguration()
         val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
         if (!preferences.getBoolean(KEY_CUSTOM_ENABLED, false)) return officialConfiguration()

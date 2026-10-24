@@ -1,6 +1,6 @@
 # Syclop MyAnimeList return page
 
-This static page is prepared for `https://dintalframe.github.io/Syclop/mal/`. It is **not published yet**. The exact HTTPS URL must be live and registered with MyAnimeList before enabling the native relay.
+This static page is published at [https://dintalframe.github.io/Syclop/mal/](https://dintalframe.github.io/Syclop/mal/). The owner approved the public fork and page, and the live HTTPS page was checked on 2026-10-24. MyAnimeList application registration is still required before native account login can be verified. Register this exact URL, including its trailing slash.
 
 The phone receives MAL's temporary authorization code and opaque state here. After a deliberate button press, it navigates to the private IPv4 TV callback at port 17893, path `/mal/callback`. Syclop validates the exact pending state/profile/expiry, then exchanges the code directly with MAL using the original registered HTTPS redirect and the PKCE verifier retained on the TV. The HTTPS host receives the authorization URL, but never the access/refresh token or verifier. There is no analytics, network fetch, storage or third-party script in this page. The one-time URL is removed from visible browser history after reading.
 
@@ -12,4 +12,4 @@ Run the protocol/routing checks with:
 node --test docs/mal/relay-core.test.mjs
 ```
 
-Publishing requires the owner's approval to create/update the public Syclop source fork and enable GitHub Pages from the `docs/` directory. This source is part of the GPLv3 Syclop fork; retain the upstream license and attribution. No account credential is included in this page.
+The `syclop-pages.yml` workflow publishes only these static files to GitHub Pages. It fetches them from the exact public commit rather than checking out upstream native-library submodules. The workflow runs the protocol tests before deploying. This source is part of the GPLv3 Syclop fork; retain the upstream license and attribution. No account credential is included in this page.

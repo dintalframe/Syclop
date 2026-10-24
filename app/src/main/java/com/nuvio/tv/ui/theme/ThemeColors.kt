@@ -81,15 +81,27 @@ object ThemeColors {
         backgroundCard = Color(0xFF241A1F)
     )
 
-    val White = ThemeColorPalette(
-        secondary = NuvioPrimitives.neutral100,
-        secondaryVariant = NuvioPrimitives.neutral200,
+    // Syclop's own free default: black canvas, quiet charcoal surfaces and white focus.
+    val Syclop = ThemeColorPalette(
+        secondary = Color(0xFFF2F2F7),
+        secondaryVariant = Color(0xFFD1D1D9),
         onSecondary = NuvioPrimitives.neutral925,
         onSecondaryVariant = NuvioPrimitives.neutral925,
-        focusRing = NuvioPrimitives.white,
-        focusBackground = Color(0xFF303030),
-        backgroundCard = NuvioPrimitives.neutral850
+        focusRing = Color(0xFFD8D8E0),
+        focusBackground = Color(0xFF29292F),
+        background = Color.Black,
+        backgroundElevated = Color(0xFF111114),
+        backgroundCard = Color(0xFF1A1A1F),
+        surface = Color(0xFF16161B),
+        surfaceVariant = Color(0xFF232329),
+        panel = Color(0xFF111114),
+        field = Color(0xFF202026),
+        menu = Color(0xFF1C1C22),
+        modal = Color(0xFF19191F)
     )
+
+    // Retain the stored enum/API identity so existing profile selections stay compatible.
+    val White = Syclop
 
     fun getColorPalette(
         theme: AppTheme,

@@ -2,10 +2,13 @@ package com.nuvio.tv.data.repository
 
 import android.content.Context
 import android.util.Log
+import com.nuvio.tv.core.logging.urlForLog
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.network.safeApiCall
+import com.nuvio.tv.core.express.ExpressAddonAdapter
+import com.nuvio.tv.data.mal.MalCatalog
 import com.nuvio.tv.data.local.AddonPreferences
 import com.nuvio.tv.data.mapper.toDomain
 import com.nuvio.tv.data.remote.api.AddonApi
@@ -57,7 +60,9 @@ class AddonRepositoryImpl(
      */
     private val dispatcher: CoroutineDispatcher,
     /** Source of the refresh clock, injectable so the TTL policy can be tested without waiting. */
-    private val clock: () -> Long
+    private val clock: () -> Long,
+    private val expressAdapter: ExpressAddonAdapter? = null,
+    private val malCatalog: MalCatalog? = null
 ) : AddonRepository {
 
     @Inject
@@ -66,7 +71,9 @@ class AddonRepositoryImpl(
         preferences: AddonPreferences,
         addonSyncService: AddonSyncService,
         authManager: AuthManager,
-        @ApplicationContext context: Context
+        @ApplicationContext context: Context,
+        expressAdapter: ExpressAddonAdapter,
+        malCatalog: MalCatalog
     ) : this(
         api = api,
         preferences = preferences,
@@ -74,7 +81,9 @@ class AddonRepositoryImpl(
         authManager = authManager,
         context = context,
         dispatcher = Dispatchers.IO,
-        clock = System::currentTimeMillis
+        clock = System::currentTimeMillis,
+        expressAdapter = expressAdapter,
+        malCatalog = malCatalog
     )
 
     companion object {
@@ -293,10 +302,15 @@ class AddonRepositoryImpl(
         }
         .stateIn(syncScope, SharingStarted.Eagerly, emptyList<Addon>())
 
-    override fun getInstalledAddons(): Flow<List<Addon>> = installedAddonsFlow
+    override fun getInstalledAddons(): Flow<List<Addon>> = malCatalog?.let { catalog ->
+        combine(installedAddonsFlow, catalog.addon) { installed, builtin -> installed + listOfNotNull(builtin) }
+    } ?: installedAddonsFlow
 
     override suspend fun fetchAddon(baseUrl: String): NetworkResult<Addon> {
         val cleanBaseUrl = canonicalizeUrl(baseUrl)
+        if (getCachedManifest(cleanBaseUrl)?.id?.startsWith(ExpressAddonAdapter.ID_PREFIX) == true) {
+            return fetchExpressAddon(cleanBaseUrl)
+        }
         val queryStart = cleanBaseUrl.indexOf('?')
         val basePath = if (queryStart >= 0) cleanBaseUrl.substring(0, queryStart).trimEnd('/') else cleanBaseUrl
         val baseQuery = if (queryStart >= 0) cleanBaseUrl.substring(queryStart) else ""
@@ -304,18 +318,30 @@ class AddonRepositoryImpl(
 
         return when (val result = safeApiCall(context) { api.getManifest(manifestUrl) }) {
             is NetworkResult.Success -> {
+                if (result.data.resources.isEmpty() && result.data.catalogs.isEmpty() && expressAdapter != null) {
+                    val express = fetchExpressAddon(cleanBaseUrl)
+                    if (express is NetworkResult.Success) return express
+                }
                 val addon = result.data.toDomain(cleanBaseUrl)
                 if (putCachedManifestIfChanged(cleanBaseUrl, addon)) {
-                    Log.d(TAG, "Updated addon manifest cache url=$cleanBaseUrl version=${addon.version} configVersion=${addon.configVersion}")
+                    Log.d(TAG, "Updated addon manifest host=${cleanBaseUrl.urlForLog()} version=${addon.version} configVersion=${addon.configVersion}")
                 }
                 NetworkResult.Success(addon)
             }
             is NetworkResult.Error -> {
-                Log.w(TAG, "Failed to fetch addon manifest for url=$manifestUrl code=${result.code} message=${result.message}")
-                result
+                Log.w(TAG, "Failed to fetch addon manifest host=${manifestUrl.urlForLog()} code=${result.code}")
+                if (expressAdapter != null) fetchExpressAddon(cleanBaseUrl) else result
             }
             NetworkResult.Loading -> NetworkResult.Loading
         }
+    }
+
+    private suspend fun fetchExpressAddon(url: String): NetworkResult<Addon> {
+        val result = expressAdapter?.discover(url) ?: return NetworkResult.Error("Express source support is unavailable.")
+        if (result is NetworkResult.Success && putCachedManifestIfChanged(url, result.data)) {
+            Log.d(TAG, "Updated Express source configuration host=${url.urlForLog()}")
+        }
+        return result
     }
 
     override suspend fun addAddon(url: String) {

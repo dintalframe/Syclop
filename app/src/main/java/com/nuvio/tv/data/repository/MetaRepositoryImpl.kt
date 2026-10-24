@@ -2,12 +2,14 @@ package com.nuvio.tv.data.repository
 
 import android.content.Context
 import android.util.Log
+import com.nuvio.tv.core.logging.urlForLog
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.data.mapper.toDomain
 import com.nuvio.tv.data.mediaserver.ServerCatalog
 import com.nuvio.tv.data.mediaserver.ServerItemRef
 import com.nuvio.tv.data.mediaserver.messageRes
 import com.nuvio.tv.data.mediaserver.serverFailure
+import com.nuvio.tv.data.mal.MalMetadataService
 import com.nuvio.tv.data.remote.api.AddonApi
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.Meta
@@ -40,7 +42,8 @@ class MetaRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val api: AddonApi,
     private val addonRepository: AddonRepository,
-    private val serverCatalog: ServerCatalog
+    private val serverCatalog: ServerCatalog,
+    private val malMetadata: MalMetadataService? = null
 ) : MetaRepository {
     companion object {
         private const val TAG = "MetaRepository"
@@ -141,6 +144,10 @@ class MetaRepositoryImpl @Inject constructor(
         type: String,
         id: String
     ): Flow<NetworkResult<Meta>> = flow {
+        if (id.startsWith("mal:")) {
+            emitAll(malMeta(id))
+            return@flow
+        }
         ServerItemRef.parse(id)?.let { ref ->
             emitAll(serverMeta(ref))
             return@flow
@@ -184,13 +191,13 @@ class MetaRepositoryImpl @Inject constructor(
                 Log.w(
                     TAG,
                     "Addon unresolved (not installed, disabled, or URL not matched), " +
-                        "requesting as-is url=$addonBaseUrl type=$requestedType id=$id"
+                        "requesting as-is host=${addonBaseUrl.urlForLog()} type=$requestedType"
                 )
             } else {
                 Log.w(
                     TAG,
                     "Addon advertises neither type, requesting as-is " +
-                        "addonId=${addon.id} requested=$requestedType inferred=$inferredType id=$id"
+                        "host=${addon.baseUrl.urlForLog()} requested=$requestedType inferred=$inferredType"
                 )
             }
         }
@@ -219,7 +226,7 @@ class MetaRepositoryImpl @Inject constructor(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.w(TAG, "getMeta failed for $url: ${e.message}")
+                    Log.w(TAG, "getMeta failed host=${url.urlForLog()} error=${e.javaClass.simpleName}")
                     null
                 } finally {
                     inFlightMeta.remove(cacheKey)
@@ -240,6 +247,10 @@ class MetaRepositoryImpl @Inject constructor(
         id: String,
         sourceAddonBaseUrl: String?
     ): Flow<NetworkResult<Meta>> = flow {
+        if (id.startsWith("mal:")) {
+            emitAll(malMeta(id))
+            return@flow
+        }
         ServerItemRef.parse(id)?.let { ref ->
             emitAll(serverMeta(ref))
             return@flow
@@ -349,7 +360,7 @@ class MetaRepositoryImpl @Inject constructor(
                         attemptedFailures += MetaAttemptFailure(
                             addonName = addon.displayName,
                             kind = if (response.code() == 404) MetaFailureKind.MISSING else MetaFailureKind.REQUEST_FAILED,
-                            detail = response.message() ?: "HTTP ${response.code()}"
+                            detail = "HTTP ${response.code()}"
                         )
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
@@ -358,7 +369,7 @@ class MetaRepositoryImpl @Inject constructor(
                     attemptedFailures += MetaAttemptFailure(
                         addonName = addon.displayName,
                         kind = MetaFailureKind.REQUEST_FAILED,
-                        detail = e.message ?: context.getString(R.string.network_error_unknown)
+                        detail = context.getString(R.string.network_error_unknown)
                     )
                 }
             }
@@ -408,13 +419,13 @@ class MetaRepositoryImpl @Inject constructor(
                         // trying further addons.
                         if (normalizedSourceUrl != null) {
                             if (normalizedAddonKey(addon.baseUrl) == normalizedSourceUrl) {
-                                Log.d(TAG, "Source addon matched, catalog meta is sufficient addon=${addon.name} type=$candidateType id=$id")
+                                Log.d(TAG, "Source addon matched, catalog meta is sufficient host=${addon.baseUrl.urlForLog()} type=$candidateType")
                                 return@async MetaLookupResult.SourceSufficient
                             }
                         }
 
                         val url = buildMetaUrl(addon.baseUrl, candidateType, id)
-                        Log.d(TAG, "Trying meta addonId=${addon.id} addonName=${addon.name} type=$candidateType id=$id url=$url")
+                        Log.d(TAG, "Trying meta host=${url.urlForLog()} type=$candidateType")
                         loopAddonNames += addon.displayName
                         attempted++
                         try {
@@ -427,27 +438,27 @@ class MetaRepositoryImpl @Inject constructor(
                                     val cached = CachedMeta(meta, System.currentTimeMillis() + ttlMs)
                                     addonMetaCache[cacheKey] = cached
                                     metaCache[addonMetaCacheKey(addon.baseUrl, candidateType, id)] = cached
-                                    Log.d(TAG, "Meta fetch success addonId=${addon.id} type=$candidateType id=$id ttl=${ttlMs}ms")
+                                    Log.d(TAG, "Meta fetch success host=${addon.baseUrl.urlForLog()} type=$candidateType ttl=${ttlMs}ms")
                                     return@async MetaLookupResult.Found(meta)
                                 }
-                                Log.d(TAG, "Meta response was null addonId=${addon.id} type=$candidateType id=$id")
+                                Log.d(TAG, "Meta response was null host=${addon.baseUrl.urlForLog()} type=$candidateType")
                                 loopFailures += buildMissingMetaFailure(addon)
                             } else {
                                 loopFailures += MetaAttemptFailure(
                                     addonName = addon.displayName,
                                     kind = if (response.code() == 404) MetaFailureKind.MISSING else MetaFailureKind.REQUEST_FAILED,
-                                    detail = response.message() ?: "HTTP ${response.code()}"
+                                    detail = "HTTP ${response.code()}"
                                 )
                                 if (response.code() != 404) allMissing = false
                             }
                         } catch (e: kotlinx.coroutines.CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            Log.d(TAG, "Meta fetch failed addonId=${addon.id} type=$candidateType id=$id: ${e.message}")
+                            Log.d(TAG, "Meta fetch failed host=${addon.baseUrl.urlForLog()} type=$candidateType error=${e.javaClass.simpleName}")
                             loopFailures += MetaAttemptFailure(
                                 addonName = addon.displayName,
                                 kind = MetaFailureKind.REQUEST_FAILED,
-                                detail = e.message ?: context.getString(R.string.network_error_unknown)
+                                detail = context.getString(R.string.network_error_unknown)
                             )
                             allMissing = false
                             /* try next */
@@ -501,6 +512,10 @@ class MetaRepositoryImpl @Inject constructor(
         type: String,
         id: String
     ): Flow<NetworkResult<Meta>> = flow {
+        if (id.startsWith("mal:")) {
+            emitAll(malMeta(id))
+            return@flow
+        }
         ServerItemRef.parse(id)?.let { ref ->
             emitAll(serverMeta(ref))
             return@flow
@@ -534,7 +549,7 @@ class MetaRepositoryImpl @Inject constructor(
         val url = buildMetaUrl(addon.baseUrl, candidateType, id)
         Log.d(
             TAG,
-            "Trying primary meta addonId=${addon.id} addonName=${addon.name} type=$candidateType id=$id url=$url"
+            "Trying primary meta host=${url.urlForLog()} type=$candidateType"
         )
 
         val deferred = inFlightPrimaryMeta.getOrPut(cacheKey) {
@@ -555,7 +570,7 @@ class MetaRepositoryImpl @Inject constructor(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.w(TAG, "Primary meta fetch failed for $url: ${e.message}")
+                    Log.w(TAG, "Primary meta fetch failed host=${url.urlForLog()} error=${e.javaClass.simpleName}")
                     null
                 } finally {
                     inFlightPrimaryMeta.remove(cacheKey)
@@ -777,6 +792,7 @@ class MetaRepositoryImpl @Inject constructor(
     }
 
     override fun clearCache() {
+        malMetadata?.clear()
         metaCache.clear()
         addonMetaCache.clear()
         primaryAddonMetaCache.clear()
@@ -784,6 +800,17 @@ class MetaRepositoryImpl @Inject constructor(
         inFlightMeta.clear()
         inFlightAddonMeta.clear()
         inFlightPrimaryMeta.clear()
+    }
+
+    private fun malMeta(id: String): Flow<NetworkResult<Meta>> = flow {
+        emit(NetworkResult.Loading)
+        try {
+            emit(NetworkResult.Success(requireNotNull(malMetadata).meta(id)))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            emit(NetworkResult.Error("Could not load this MyAnimeList title. Check Syclop's MyAnimeList application settings."))
+        }
     }
 
     private fun serverMeta(ref: ServerItemRef): Flow<NetworkResult<Meta>> = flow {
@@ -806,6 +833,7 @@ class MetaRepositoryImpl @Inject constructor(
     }
 
     override fun getCachedMeta(type: String, id: String): Meta? {
+        if (id.startsWith("mal:")) return malMetadata?.cachedMeta(id)
         if (ServerItemRef.isServerId(id)) return serverMetaCache[id]?.takeIf { !it.isExpired() }?.meta
         val cacheKey = metaLookupCacheKey(type, id)
         return addonMetaCache[cacheKey]?.takeIf { !it.isExpired() }?.meta

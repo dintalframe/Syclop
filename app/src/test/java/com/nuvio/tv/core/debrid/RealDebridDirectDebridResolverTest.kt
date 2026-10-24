@@ -71,7 +71,7 @@ class RealDebridDirectDebridResolverTest {
     }
 
     @Test
-    fun `resolve deletes transient torrent when cached listing is stale`() = runTest {
+    fun `resolve reports uncached torrent and preserves cloud job`() = runTest {
         val api = FakeRealDebridApi(
             addResponse = Response.success(201, RealDebridAddTorrentDto(id = "rd_torrent")),
             infoResponses = mutableListOf(
@@ -96,8 +96,23 @@ class RealDebridDirectDebridResolverTest {
 
         val result = resolver.resolve(stream(fileIdx = 7), season = null, episode = null)
 
-        assertTrue(result is DirectDebridResolveResult.Stale)
-        assertEquals(1, api.deleteCalls)
+        assertTrue(result is DirectDebridResolveResult.NotCached)
+        assertEquals(0, api.deleteCalls)
+        assertEquals(0, api.unrestrictCalls)
+    }
+
+    @Test
+    fun `downloaded torrent without a usable link is stale and preserves cloud job`() = runTest {
+        val api = FakeRealDebridApi(
+            addResponse = Response.success(201, RealDebridAddTorrentDto(id = "rd_torrent")),
+            infoResponses = mutableListOf(
+                Response.success(RealDebridTorrentInfoDto(status = "waiting_files_selection",
+                    files = listOf(RealDebridTorrentFileDto(id = 7, path = "/right.mkv")))),
+                Response.success(RealDebridTorrentInfoDto(status = "downloaded", links = emptyList()))
+            )
+        )
+        assertEquals(DirectDebridResolveResult.Stale, resolver(api).resolve(stream(7), null, null))
+        assertEquals(0, api.deleteCalls)
         assertEquals(0, api.unrestrictCalls)
     }
 
@@ -114,6 +129,44 @@ class RealDebridDirectDebridResolverTest {
             api = api,
             fileSelector = RealDebridFileSelector()
         )
+    }
+
+    @Test
+    fun `explicit HTTP hoster source is unrestricted without creating a torrent`() = runTest {
+        val api = FakeRealDebridApi(
+            addResponse = Response.success(201, RealDebridAddTorrentDto(id = "unused")),
+            infoResponses = mutableListOf(),
+            unrestrictResponse = Response.success(RealDebridUnrestrictLinkDto(download = "https://cdn.example/file.mkv", filename = "file.mkv"))
+        )
+        val original = stream(null)
+        val hoster = original.copy(url = "https://host.example/file", clientResolve = original.clientResolve!!.copy(
+            type = "hoster", infoHash = null, magnetUri = null))
+        val result = resolver(api).resolve(hoster, null, null)
+        assertTrue(result is DirectDebridResolveResult.Success)
+        assertEquals("https://cdn.example/file.mkv", (result as DirectDebridResolveResult.Success).url)
+        assertEquals(0, api.addCalls)
+        assertEquals(1, api.unrestrictCalls)
+    }
+
+    @Test
+    fun `reused cloud job never resolves first link when selection is ambiguous or wrong`() = runTest {
+        val requested = RealDebridTorrentFileDto(id = 7, path = "/right.mkv", selected = 1)
+        val other = RealDebridTorrentFileDto(id = 1, path = "/wrong.mkv", selected = 1)
+        for (selected in listOf(listOf(other, requested), listOf(other))) {
+            val api = FakeRealDebridApi(
+                addResponse = Response.success(201, RealDebridAddTorrentDto(id = "existing_cloud_job")),
+                infoResponses = mutableListOf(
+                    Response.success(RealDebridTorrentInfoDto(status = "downloaded", files = listOf(other, requested))),
+                    Response.success(RealDebridTorrentInfoDto(status = "downloaded", files = selected,
+                        links = selected.map { "https://real-debrid.example/${it.id}" }))
+                ),
+                selectResponse = Response.success(202, "".toResponseBody())
+            )
+            assertEquals(DirectDebridResolveResult.Stale, resolver(api).resolve(stream(7), null, null))
+            assertEquals("7", api.lastSelectedFiles)
+            assertEquals(0, api.unrestrictCalls)
+            assertEquals(0, api.deleteCalls)
+        }
     }
 
     private fun stream(fileIdx: Int?): Stream = Stream(
@@ -154,7 +207,8 @@ class RealDebridDirectDebridResolverTest {
         private val infoResponses: MutableList<Response<RealDebridTorrentInfoDto>>,
         private val unrestrictResponse: Response<RealDebridUnrestrictLinkDto> = Response.success(
             RealDebridUnrestrictLinkDto(download = "")
-        )
+        ),
+        private val selectResponse: Response<ResponseBody> = Response.success("".toResponseBody())
     ) : RealDebridApi {
         var addCalls = 0
         var infoCalls = 0
@@ -166,6 +220,9 @@ class RealDebridDirectDebridResolverTest {
         override suspend fun getUser(authorization: String): Response<ResponseBody> {
             return Response.success("{}".toResponseBody())
         }
+
+        override suspend fun listTorrents(authorization: String, page: Int, limit: Int): Response<List<RealDebridTorrentInfoDto>> =
+            Response.success(emptyList())
 
         override suspend fun addMagnet(
             authorization: String,
@@ -190,7 +247,7 @@ class RealDebridDirectDebridResolverTest {
         ): Response<ResponseBody> {
             selectCalls++
             lastSelectedFiles = files
-            return Response.success("".toResponseBody())
+            return selectResponse
         }
 
         override suspend fun unrestrictLink(

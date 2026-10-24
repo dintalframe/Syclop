@@ -3,6 +3,8 @@ package com.nuvio.tv.core.auth
 import android.os.SystemClock
 import android.util.Log
 import com.nuvio.tv.BuildConfig
+import com.nuvio.tv.core.network.startupAuthState
+import com.nuvio.tv.core.network.LocalCloudDisabledException
 import com.nuvio.tv.core.auth.diagnostics.AuthDiagnosticEventListenerFactory
 import com.nuvio.tv.core.auth.diagnostics.AuthDiagnosticsSession
 import com.nuvio.tv.core.auth.diagnostics.authDiagnosticFilteredBody
@@ -95,7 +97,7 @@ class AuthManager @Inject constructor(
     private val startupAuthLock = Any()
     private val authHttpClient = if (serverConfiguration.isCustom) customServerHttpClient else httpClient
 
-    private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
+    private val _authState = MutableStateFlow(startupAuthState(BuildConfig.LOCAL_ONLY_BUILD))
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
     private var cachedEffectiveUserId: String? = null
@@ -104,7 +106,7 @@ class AuthManager @Inject constructor(
     private var startupAuthCompleted = false
 
     init {
-        observeSessionStatus()
+        if (!BuildConfig.LOCAL_ONLY_BUILD) observeSessionStatus()
     }
 
     private fun observeSessionStatus() {
@@ -376,6 +378,8 @@ class AuthManager @Inject constructor(
     }
 
     suspend fun signOut(explicit: Boolean = true) {
+        // Local profiles/add-ons are not a cloud session and must survive a sign-out UI action.
+        if (BuildConfig.LOCAL_ONLY_BUILD) return
         sessionValidator.reset()
         if (explicit) {
             authSessionNoticeDataStore.markNuvioExplicitLogout()
@@ -761,6 +765,7 @@ class AuthManager @Inject constructor(
         body: String,
         method: String = "POST"
     ): AuthHttpResponse {
+        if (BuildConfig.LOCAL_ONLY_BUILD) throw LocalCloudDisabledException()
         val requestId = tvLoginRequestCounter.incrementAndGet()
         return try {
             executeSupabaseJsonRequestAttempt(

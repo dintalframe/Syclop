@@ -68,7 +68,7 @@ class DirectDebridStreamPreparer @Inject constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                Log.d(DIRECT_DEBRID_PREPARER_TAG, "Instant playback preparation failed", error)
+                Log.d(DIRECT_DEBRID_PREPARER_TAG, "Instant playback preparation failed error=${error.javaClass.simpleName}")
             }
         }
     }

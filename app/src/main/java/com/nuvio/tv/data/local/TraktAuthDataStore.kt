@@ -1,6 +1,7 @@
 package com.nuvio.tv.data.local
 
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -38,8 +39,12 @@ data class TraktAuthState(
     val userCode: String? = null,
     val verificationUrl: String? = null,
     val expiresAt: Long? = null,
-    val pollInterval: Int? = null
+    val pollInterval: Int? = null,
+    val registrationClientId: String? = null,
+    val profileId: Int = 1
 ) {
+    override fun toString(): String = "TraktAuthState(authenticated=$isAuthenticated, profileId=$profileId)"
+
     val isAuthenticated: Boolean
         get() = !accessToken.isNullOrBlank() && !refreshToken.isNullOrBlank()
 }
@@ -48,7 +53,8 @@ data class TraktAuthState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class TraktAuthDataStore @Inject constructor(
     private val factory: ProfileDataStoreFactory,
-    private val profileManager: ProfileManager
+    private val profileManager: ProfileManager,
+    private val credentialCipher: DebridCredentialCipher
 ) {
     companion object {
         private const val FEATURE = "trakt_auth_store"
@@ -68,25 +74,29 @@ class TraktAuthDataStore @Inject constructor(
     private val verificationUrlKey = stringPreferencesKey("verification_url")
     private val expiresAtKey = longPreferencesKey("expires_at")
     private val pollIntervalKey = intPreferencesKey("poll_interval")
+    private val registrationClientIdKey = stringPreferencesKey("registration_client_id")
 
     private fun store(profileId: Int = profileManager.activeProfileId.value) =
         factory.get(profileId, FEATURE)
 
     val state: Flow<TraktAuthState> = profileManager.activeProfileId.flatMapLatest { profileId ->
         store(profileId).data.map { preferences ->
+            migrateLegacyCredentials(profileId, preferences)
             TraktAuthState(
-                accessToken = preferences[accessTokenKey],
-                refreshToken = preferences[refreshTokenKey],
+                accessToken = readSecret(preferences, accessTokenKey, profileId),
+                refreshToken = readSecret(preferences, refreshTokenKey, profileId),
                 tokenType = preferences[tokenTypeKey],
                 createdAt = preferences[createdAtKey],
                 expiresIn = preferences[expiresInKey]?.let(::normalizeTraktTokenLifetimeSeconds),
                 username = preferences[usernameKey],
                 userSlug = preferences[userSlugKey],
-                deviceCode = preferences[deviceCodeKey],
+                deviceCode = readSecret(preferences, deviceCodeKey, profileId),
                 userCode = preferences[userCodeKey],
                 verificationUrl = preferences[verificationUrlKey],
                 expiresAt = preferences[expiresAtKey],
-                pollInterval = preferences[pollIntervalKey]
+                pollInterval = preferences[pollIntervalKey],
+                registrationClientId = preferences[registrationClientIdKey],
+                profileId = profileId
             )
         }
     }
@@ -101,34 +111,38 @@ class TraktAuthDataStore @Inject constructor(
 
     suspend fun getCurrentState(profileId: Int): TraktAuthState {
         val prefs = store(profileId).data.first()
+        migrateLegacyCredentials(profileId, prefs)
         return TraktAuthState(
-            accessToken = prefs[accessTokenKey],
-            refreshToken = prefs[refreshTokenKey],
+            accessToken = readSecret(prefs, accessTokenKey, profileId),
+            refreshToken = readSecret(prefs, refreshTokenKey, profileId),
             tokenType = prefs[tokenTypeKey],
             createdAt = prefs[createdAtKey],
             expiresIn = prefs[expiresInKey]?.let(::normalizeTraktTokenLifetimeSeconds),
             username = prefs[usernameKey],
             userSlug = prefs[userSlugKey],
-            deviceCode = prefs[deviceCodeKey],
+            deviceCode = readSecret(prefs, deviceCodeKey, profileId),
             userCode = prefs[userCodeKey],
             verificationUrl = prefs[verificationUrlKey],
             expiresAt = prefs[expiresAtKey],
-            pollInterval = prefs[pollIntervalKey]
+            pollInterval = prefs[pollIntervalKey],
+            registrationClientId = prefs[registrationClientIdKey],
+            profileId = profileId
         )
     }
 
-    suspend fun saveToken(token: TraktTokenResponseDto) {
-        store().edit { preferences ->
-            preferences[accessTokenKey] = token.accessToken
-            preferences[refreshTokenKey] = token.refreshToken
+    suspend fun saveToken(token: TraktTokenResponseDto, profileId: Int, clientId: String) {
+        store(profileId).edit { preferences ->
+            preferences[accessTokenKey] = credentialCipher.encrypt(token.accessToken, profileId, "trakt_access_token")
+            preferences[refreshTokenKey] = credentialCipher.encrypt(token.refreshToken, profileId, "trakt_refresh_token")
+            preferences[registrationClientIdKey] = clientId
             preferences[tokenTypeKey] = token.tokenType
             preferences[createdAtKey] = token.createdAt
             preferences[expiresInKey] = normalizeTraktTokenLifetimeSeconds(token.expiresIn)
         }
     }
 
-    suspend fun saveUser(username: String?, userSlug: String?) {
-        store().edit { preferences ->
+    suspend fun saveUser(username: String?, userSlug: String?, profileId: Int) {
+        store(profileId).edit { preferences ->
             if (username.isNullOrBlank()) {
                 preferences.remove(usernameKey)
             } else {
@@ -142,10 +156,11 @@ class TraktAuthDataStore @Inject constructor(
         }
     }
 
-    suspend fun saveDeviceFlow(data: TraktDeviceCodeResponseDto) {
+    suspend fun saveDeviceFlow(data: TraktDeviceCodeResponseDto, profileId: Int, clientId: String) {
         val now = System.currentTimeMillis()
-        store().edit { preferences ->
-            preferences[deviceCodeKey] = data.deviceCode
+        store(profileId).edit { preferences ->
+            preferences[deviceCodeKey] = credentialCipher.encrypt(data.deviceCode, profileId, "trakt_device_code")
+            preferences[registrationClientIdKey] = clientId
             preferences[userCodeKey] = data.userCode
             preferences[verificationUrlKey] = data.verificationUrl
             preferences[expiresAtKey] = now + (data.expiresIn * 1000L)
@@ -153,14 +168,16 @@ class TraktAuthDataStore @Inject constructor(
         }
     }
 
-    suspend fun updatePollInterval(seconds: Int) {
-        store().edit { preferences ->
+    suspend fun updatePollInterval(seconds: Int, profileId: Int) {
+        store(profileId).edit { preferences ->
             preferences[pollIntervalKey] = seconds
         }
     }
 
-    suspend fun clearDeviceFlow() {
-        store().edit { preferences ->
+    suspend fun clearDeviceFlow() = clearDeviceFlowForProfile(profileManager.activeProfileId.value)
+
+    suspend fun clearDeviceFlowForProfile(profileId: Int) {
+        store(profileId).edit { preferences ->
             preferences.remove(deviceCodeKey)
             preferences.remove(userCodeKey)
             preferences.remove(verificationUrlKey)
@@ -169,8 +186,11 @@ class TraktAuthDataStore @Inject constructor(
         }
     }
 
-    suspend fun clearAuth() {
-        store().edit { preferences ->
+    suspend fun clearAuth() = clearAuthForProfile(profileManager.activeProfileId.value)
+
+    suspend fun clearAuthForProfile(profileId: Int) {
+        store(profileId).edit { preferences ->
+            preferences.remove(registrationClientIdKey)
             preferences.remove(accessTokenKey)
             preferences.remove(refreshTokenKey)
             preferences.remove(tokenTypeKey)
@@ -185,4 +205,21 @@ class TraktAuthDataStore @Inject constructor(
             preferences.remove(pollIntervalKey)
         }
     }
+
+    private val secretKeys get() = listOf(accessTokenKey, refreshTokenKey, deviceCodeKey)
+
+    private fun readSecret(preferences: Preferences, key: Preferences.Key<String>, profileId: Int): String? =
+        preferences[key]?.let { credentialCipher.decrypt(it, profileId, "trakt_${key.name}") }?.takeIf(String::isNotBlank)
+
+    private suspend fun migrateLegacyCredentials(profileId: Int, preferences: Preferences) {
+        if (secretKeys.none { key -> preferences[key]?.let { !credentialCipher.isEncrypted(it) } == true }) return
+        store(profileId).edit { current ->
+            secretKeys.forEach { key ->
+                current[key]?.takeIf { !credentialCipher.isEncrypted(it) }?.let { legacy ->
+                    current[key] = credentialCipher.encrypt(legacy, profileId, "trakt_${key.name}")
+                }
+            }
+        }
+    }
+
 }

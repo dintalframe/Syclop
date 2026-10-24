@@ -22,6 +22,20 @@ class TrackingSourceMemoryTest {
     )
 
     @Test
+    fun `MAL library choice is remembered on logout without changing local resume`() = runTest {
+        val stored = Stored(WatchProgressSource.NUVIO_SYNC, LibrarySourceMode.MAL)
+        val controller = controller(stored)
+        controller.reconcileConnectedProviders(emptySet())
+        assertEquals(LibrarySourceMode.LOCAL, stored.library)
+        assertEquals(LibrarySourceMode.MAL, stored.rememberedLibrary)
+        assertEquals(WatchProgressSource.NUVIO_SYNC, stored.progress)
+        controller.reconcileConnectedProviders(setOf(TrackingProviderId.MAL))
+        assertEquals(LibrarySourceMode.MAL, stored.library)
+        assertNull(stored.rememberedLibrary)
+        assertEquals(WatchProgressSource.NUVIO_SYNC, stored.progress)
+    }
+
+    @Test
     fun `logging out falls back and logging back in restores the choice`() = runTest {
         val stored = Stored(WatchProgressSource.TRAKT, LibrarySourceMode.TRAKT)
         val controller = controller(stored)

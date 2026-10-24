@@ -15,12 +15,14 @@ data class TrackingScrobbleFailure(
 
 @Singleton
 class TrackingScrobbleCoordinator @Inject constructor(
-    private val providerRegistry: TrackingProviderRegistry
+    private val providerRegistry: TrackingProviderRegistry,
+    private val malPlaybackSync: com.nuvio.tv.data.mal.MalPlaybackSync? = null
 ) {
     suspend fun scrobble(
         action: TrackingScrobbleAction,
         event: TrackingScrobbleEvent
     ): List<TrackingScrobbleFailure> {
+        malPlaybackSync?.record(action, event)
         val scrobblers = providerRegistry.connectedScrobblers()
         Log.d(
             TRACKING_SCROBBLE_DIAGNOSTIC_TAG,

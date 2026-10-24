@@ -38,7 +38,8 @@ class ThemeDataStore @Inject constructor(
     val themeSelection: Flow<ThemeSelection> = profileManager.activeProfileId.flatMapLatest { pid ->
         factory.get(pid, FEATURE).data.map { prefs ->
             ThemeSelection(
-                theme = prefs[themeKey]?.let { name -> AppTheme.entries.firstOrNull { it.name == name } },
+                theme = prefs[themeKey]?.let { name -> AppTheme.entries.firstOrNull { it.name == name } }
+                    ?: AppTheme.WHITE,
                 customColors = CustomThemeColors.decode(prefs[customThemeColorsKey])
             )
         }

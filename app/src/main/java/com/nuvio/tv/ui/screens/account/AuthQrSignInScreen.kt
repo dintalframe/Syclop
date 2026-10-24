@@ -87,6 +87,10 @@ fun AuthQrSignInScreen(
     onContinue: (() -> Unit)? = null,
     viewModel: AccountViewModel = hiltViewModel()
 ) {
+    if (com.nuvio.tv.BuildConfig.LOCAL_ONLY_BUILD) {
+        SyclopLocalProfileScreen(onBackPress = onBackPress)
+        return
+    }
     val uiState by viewModel.uiState.collectAsState()
     val fullAccount = uiState.authState as? AuthState.FullAccount
     val isSignedIn = fullAccount != null

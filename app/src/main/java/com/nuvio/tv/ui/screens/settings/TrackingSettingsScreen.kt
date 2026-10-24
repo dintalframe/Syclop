@@ -29,7 +29,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import com.nuvio.tv.R
-import com.nuvio.tv.core.tracking.TrackingProviderId
 import com.nuvio.tv.data.local.MoreLikeThisSourcePreference
 import com.nuvio.tv.data.local.TraktSettingsDataStore
 import com.nuvio.tv.data.local.WatchProgressSource
@@ -39,6 +38,9 @@ import com.nuvio.tv.domain.model.LibrarySourceMode
 import com.nuvio.tv.ui.components.NuvioDialog
 import com.nuvio.tv.ui.theme.NuvioTheme
 import kotlinx.coroutines.delay
+
+// These account dialogs are independent of the registry; MAL owns its native account dialog.
+private enum class TrackingDialogProvider { TRAKT, SIMKL, MDBLIST }
 
 @Composable
 fun TrackingSettingsScreen(
@@ -84,9 +86,9 @@ fun TrackingSettingsContent(
     val continueWatchingFocusRequester = remember { FocusRequester() }
     val moreLikeThisFocusRequester = remember { FocusRequester() }
 
-    var activeProvider by remember { mutableStateOf<TrackingProviderId?>(null) }
-    var dismissOnConnected by remember { mutableStateOf<TrackingProviderId?>(null) }
-    var disconnectProvider by remember { mutableStateOf<TrackingProviderId?>(null) }
+    var activeProvider by remember { mutableStateOf<TrackingDialogProvider?>(null) }
+    var dismissOnConnected by remember { mutableStateOf<TrackingDialogProvider?>(null) }
+    var disconnectProvider by remember { mutableStateOf<TrackingDialogProvider?>(null) }
     var restoreFocusTarget by remember { mutableStateOf<TrackingFocusTarget?>(null) }
     var showLibrarySourceDialog by remember { mutableStateOf(false) }
     var showWatchProgressDialog by remember { mutableStateOf(false) }
@@ -112,9 +114,9 @@ fun TrackingSettingsContent(
         mdbListState.isConnected
     ) {
         val connected = when (dismissOnConnected) {
-            TrackingProviderId.TRAKT -> traktState.mode == TraktConnectionMode.CONNECTED
-            TrackingProviderId.SIMKL -> simklState.mode == SimklConnectionMode.CONNECTED
-            TrackingProviderId.MDBLIST -> mdbListState.isConnected
+            TrackingDialogProvider.TRAKT -> traktState.mode == TraktConnectionMode.CONNECTED
+            TrackingDialogProvider.SIMKL -> simklState.mode == SimklConnectionMode.CONNECTED
+            TrackingDialogProvider.MDBLIST -> mdbListState.isConnected
             null -> false
         }
         if (activeProvider == dismissOnConnected && connected) {
@@ -141,16 +143,16 @@ fun TrackingSettingsContent(
         restoreFocusTarget = null
     }
 
-    val openProvider: (TrackingProviderId) -> Unit = { provider ->
+    val openProvider: (TrackingDialogProvider) -> Unit = { provider ->
         restoreFocusTarget = when (provider) {
-            TrackingProviderId.TRAKT -> TrackingFocusTarget.TRAKT
-            TrackingProviderId.SIMKL -> TrackingFocusTarget.SIMKL
-            TrackingProviderId.MDBLIST -> TrackingFocusTarget.MDBLIST
+            TrackingDialogProvider.TRAKT -> TrackingFocusTarget.TRAKT
+            TrackingDialogProvider.SIMKL -> TrackingFocusTarget.SIMKL
+            TrackingDialogProvider.MDBLIST -> TrackingFocusTarget.MDBLIST
         }
         activeProvider = provider
         disconnectProvider = null
         when (provider) {
-            TrackingProviderId.TRAKT -> {
+            TrackingDialogProvider.TRAKT -> {
                 if (traktState.mode == TraktConnectionMode.CONNECTED) {
                     dismissOnConnected = null
                 } else {
@@ -160,7 +162,7 @@ fun TrackingSettingsContent(
                     }
                 }
             }
-            TrackingProviderId.SIMKL -> {
+            TrackingDialogProvider.SIMKL -> {
                 if (simklState.mode == SimklConnectionMode.CONNECTED) {
                     dismissOnConnected = null
                 } else {
@@ -170,7 +172,7 @@ fun TrackingSettingsContent(
                     }
                 }
             }
-            TrackingProviderId.MDBLIST -> {
+            TrackingDialogProvider.MDBLIST -> {
                 if (mdbListState.isConnected) {
                     dismissOnConnected = null
                     mdbListViewModel.onAccountOpened()
@@ -194,9 +196,9 @@ fun TrackingSettingsContent(
         watchProgressFocusRequester = watchProgressFocusRequester,
         continueWatchingFocusRequester = continueWatchingFocusRequester,
         moreLikeThisFocusRequester = moreLikeThisFocusRequester,
-        onTraktClick = { openProvider(TrackingProviderId.TRAKT) },
-        onSimklClick = { openProvider(TrackingProviderId.SIMKL) },
-        onMdbListClick = { openProvider(TrackingProviderId.MDBLIST) },
+        onTraktClick = { openProvider(TrackingDialogProvider.TRAKT) },
+        onSimklClick = { openProvider(TrackingDialogProvider.SIMKL) },
+        onMdbListClick = { openProvider(TrackingDialogProvider.MDBLIST) },
         onLibrarySourceClick = {
             restoreFocusTarget = TrackingFocusTarget.LIBRARY
             showLibrarySourceDialog = true
@@ -225,7 +227,7 @@ fun TrackingSettingsContent(
     )
 
     when (activeProvider) {
-        TrackingProviderId.TRAKT -> {
+        TrackingDialogProvider.TRAKT -> {
             TraktAccountDialog(
                 state = traktState,
                 onStartConnection = traktViewModel::onConnectClick,
@@ -233,7 +235,7 @@ fun TrackingSettingsContent(
                 onDisconnect = {
                     activeProvider = null
                     dismissOnConnected = null
-                    disconnectProvider = TrackingProviderId.TRAKT
+                    disconnectProvider = TrackingDialogProvider.TRAKT
                 },
                 onDismiss = {
                     if (traktState.mode != TraktConnectionMode.CONNECTED) {
@@ -244,7 +246,7 @@ fun TrackingSettingsContent(
                 }
             )
         }
-        TrackingProviderId.SIMKL -> {
+        TrackingDialogProvider.SIMKL -> {
             SimklAccountDialog(
                 state = simklState,
                 onStartConnection = simklViewModel::onConnect,
@@ -253,7 +255,7 @@ fun TrackingSettingsContent(
                 onDisconnect = {
                     activeProvider = null
                     dismissOnConnected = null
-                    disconnectProvider = TrackingProviderId.SIMKL
+                    disconnectProvider = TrackingDialogProvider.SIMKL
                 },
                 onDismiss = {
                     if (simklState.mode != SimklConnectionMode.CONNECTED) {
@@ -264,7 +266,7 @@ fun TrackingSettingsContent(
                 }
             )
         }
-        TrackingProviderId.MDBLIST -> {
+        TrackingDialogProvider.MDBLIST -> {
             MdbListAccountDialog(
                 state = mdbListState,
                 onStartConnection = mdbListViewModel::onConnect,
@@ -273,7 +275,7 @@ fun TrackingSettingsContent(
                 onDisconnect = {
                     activeProvider = null
                     dismissOnConnected = null
-                    disconnectProvider = TrackingProviderId.MDBLIST
+                    disconnectProvider = TrackingDialogProvider.MDBLIST
                 },
                 onDismiss = {
                     if (!mdbListState.isConnected) mdbListViewModel.onCancel()
@@ -293,16 +295,16 @@ fun TrackingSettingsContent(
             },
             title = stringResource(
                 when (provider) {
-                    TrackingProviderId.TRAKT -> R.string.trakt_disconnect_title
-                    TrackingProviderId.SIMKL -> R.string.simkl_disconnect_title
-                    TrackingProviderId.MDBLIST -> R.string.mdblist_disconnect_title
+                    TrackingDialogProvider.TRAKT -> R.string.trakt_disconnect_title
+                    TrackingDialogProvider.SIMKL -> R.string.simkl_disconnect_title
+                    TrackingDialogProvider.MDBLIST -> R.string.mdblist_disconnect_title
                 }
             ),
             subtitle = stringResource(
                 when (provider) {
-                    TrackingProviderId.TRAKT -> R.string.trakt_disconnect_subtitle
-                    TrackingProviderId.SIMKL -> R.string.simkl_disconnect_subtitle
-                    TrackingProviderId.MDBLIST -> R.string.mdblist_disconnect_subtitle
+                    TrackingDialogProvider.TRAKT -> R.string.trakt_disconnect_subtitle
+                    TrackingDialogProvider.SIMKL -> R.string.simkl_disconnect_subtitle
+                    TrackingDialogProvider.MDBLIST -> R.string.mdblist_disconnect_subtitle
                 }
             ),
             width = 520.dp,
@@ -321,9 +323,9 @@ fun TrackingSettingsContent(
                     onClick = {
                         disconnectProvider = null
                         when (provider) {
-                            TrackingProviderId.TRAKT -> traktViewModel.onDisconnectClick()
-                            TrackingProviderId.SIMKL -> simklViewModel.onDisconnect()
-                            TrackingProviderId.MDBLIST -> mdbListViewModel.onDisconnect()
+                            TrackingDialogProvider.TRAKT -> traktViewModel.onDisconnectClick()
+                            TrackingDialogProvider.SIMKL -> simklViewModel.onDisconnect()
+                            TrackingDialogProvider.MDBLIST -> mdbListViewModel.onDisconnect()
                         }
                     },
                     primary = true
@@ -558,6 +560,7 @@ internal fun TrackingSettingsOverview(
                                 .focusRequester(mdbListFocusRequester)
                                 .testTag(TrackingSettingsTestTags.MDBLIST_PROVIDER)
                         )
+                        MalSettingsSection()
                     }
                 }
                 item(key = "tracking_sources") {
@@ -769,6 +772,7 @@ private fun librarySourceLabel(mode: LibrarySourceMode): String = when (mode) {
     LibrarySourceMode.TRAKT -> stringResource(R.string.trakt_name)
     LibrarySourceMode.SIMKL -> stringResource(R.string.simkl_name)
     LibrarySourceMode.MDBLIST -> stringResource(R.string.mdblist_name)
+    LibrarySourceMode.MAL -> stringResource(R.string.syclop_mal_name)
     LibrarySourceMode.LOCAL -> stringResource(R.string.trakt_library_source_nuvio)
 }
 

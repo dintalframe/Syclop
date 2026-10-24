@@ -1,6 +1,8 @@
 package com.nuvio.tv.core.trakt
 
 import android.content.Context
+import com.nuvio.tv.core.trakt.TraktAppRegistration
+import com.nuvio.tv.core.trakt.TraktAppRegistrationStore
 import com.nuvio.tv.R
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.data.local.AuthSessionNoticeDataStore
@@ -307,7 +309,10 @@ class TraktPublicListSourceResolverTest {
             context = context,
             traktApi = api,
             traktAuthDataStore = authStore,
-            authSessionNoticeDataStore = mockk<AuthSessionNoticeDataStore>(relaxed = true)
+            authSessionNoticeDataStore = mockk<AuthSessionNoticeDataStore>(relaxed = true),
+            appRegistrationStore = mockk<TraktAppRegistrationStore> {
+                every { current() } returns TraktAppRegistration("syclop-client-id-123456")
+            }
         )
         return TraktPublicListSourceResolver(
             appContext = context,

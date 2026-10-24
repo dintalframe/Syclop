@@ -15,30 +15,35 @@ data class TraktDeviceCodeResponseDto(
     @Json(name = "verification_url") val verificationUrl: String,
     @Json(name = "expires_in") val expiresIn: Int,
     @Json(name = "interval") val interval: Int
-)
+) {
+    override fun toString(): String = "TraktDeviceCodeResponseDto([redacted])"
+}
 
 @JsonClass(generateAdapter = true)
 data class TraktDeviceTokenRequestDto(
     @Json(name = "code") val code: String,
-    @Json(name = "client_id") val clientId: String,
-    @Json(name = "client_secret") val clientSecret: String
-)
+    @Json(name = "client_id") val clientId: String
+) {
+    override fun toString(): String = "TraktDeviceTokenRequestDto([redacted])"
+}
 
 @JsonClass(generateAdapter = true)
 data class TraktRefreshTokenRequestDto(
     @Json(name = "refresh_token") val refreshToken: String,
     @Json(name = "client_id") val clientId: String,
-    @Json(name = "client_secret") val clientSecret: String,
     @Json(name = "redirect_uri") val redirectUri: String,
     @Json(name = "grant_type") val grantType: String = "refresh_token"
-)
+) {
+    override fun toString(): String = "TraktRefreshTokenRequestDto([redacted])"
+}
 
 @JsonClass(generateAdapter = true)
 data class TraktRevokeRequestDto(
     @Json(name = "token") val token: String,
-    @Json(name = "client_id") val clientId: String,
-    @Json(name = "client_secret") val clientSecret: String
-)
+    @Json(name = "client_id") val clientId: String
+) {
+    override fun toString(): String = "TraktRevokeRequestDto([redacted])"
+}
 
 @JsonClass(generateAdapter = true)
 data class TraktTokenResponseDto(
@@ -48,7 +53,9 @@ data class TraktTokenResponseDto(
     @Json(name = "refresh_token") val refreshToken: String,
     @Json(name = "scope") val scope: String? = null,
     @Json(name = "created_at") val createdAt: Long
-)
+) {
+    override fun toString(): String = "TraktTokenResponseDto([redacted])"
+}
 
 @JsonClass(generateAdapter = true)
 data class TraktUserSettingsResponseDto(

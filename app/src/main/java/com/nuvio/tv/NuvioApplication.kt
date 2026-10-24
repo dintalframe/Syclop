@@ -2,6 +2,7 @@ package com.nuvio.tv
 
 import android.app.ActivityManager
 import android.app.Application
+import com.nuvio.tv.core.network.SyclopCloudGuardInterceptor
 import android.content.Context
 import android.os.Build
 import android.os.StrictMode
@@ -79,6 +80,12 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
         }
     }
 
+    override fun attachBaseContext(base: Context) {
+        // Finish any directory recovery before Hilt, providers, DataStore or SharedPreferences initialize.
+        com.nuvio.tv.core.backup.BackupRestoreBootstrap.applyBeforeInitialization(base)
+        super.attachBaseContext(base)
+    }
+
     override fun onCreate() {
         super.onCreate()
         SentryInitializer.start(this, sentrySettingsDataStore)
@@ -99,6 +106,7 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
                 maxRequestsPerHost = 16
             }
             OkHttpClient.Builder()
+                .addInterceptor(SyclopCloudGuardInterceptor())
                 .dispatcher(imageDispatcher)
                 .dns(IPv4FirstDns())
                 .socketFactory(NoDelaySocketFactory)

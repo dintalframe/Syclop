@@ -57,14 +57,22 @@ import androidx.tv.material3.Text
 import com.nuvio.tv.domain.model.AuthState
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
+import com.nuvio.tv.BuildConfig
 
 @Composable
 fun AccountSettingsContent(
     uiState: AccountUiState,
     viewModel: AccountViewModel,
     onNavigateToAuthQrSignIn: () -> Unit = {},
-    initialFocusRequester: FocusRequester? = null
+    initialFocusRequester: FocusRequester? = null,
+    onManageProfiles: () -> Unit = {},
+    onOpenTracking: () -> Unit = {},
+    onOpenIntegrations: () -> Unit = {}
 ) {
+    if (BuildConfig.LOCAL_ONLY_BUILD) {
+        SyclopLocalAccountSettingsContent(initialFocusRequester, onManageProfiles, onOpenTracking, onOpenIntegrations)
+        return
+    }
     if (uiState.authState is AuthState.FullAccount) {
         SignedInAccountSettingsContent(
             uiState = uiState,

@@ -14,7 +14,9 @@ data class DebridProvider(
 data class DebridServiceCredential(
     val provider: DebridProvider,
     val apiKey: String
-)
+) {
+    override fun toString(): String = "DebridServiceCredential(provider=${provider.id}, apiKey=[redacted])"
+}
 
 enum class DebridProviderCapability {
     ClientResolve,
@@ -32,6 +34,7 @@ object DebridProviders {
     const val TORBOX_ID = "torbox"
     const val PREMIUMIZE_ID = "premiumize"
     const val REAL_DEBRID_ID = "realdebrid"
+    const val ALL_DEBRID_ID = "alldebrid"
 
     val Torbox = DebridProvider(
         id = TORBOX_ID,
@@ -61,13 +64,29 @@ object DebridProviders {
 
     val RealDebrid = DebridProvider(
         id = REAL_DEBRID_ID,
+        authMethod = DebridProviderAuthMethod.DeviceCode,
         displayName = "Real-Debrid",
         shortName = "RD",
-        visibleInUi = false,
-        capabilities = setOf(DebridProviderCapability.ClientResolve)
+        capabilities = setOf(
+            DebridProviderCapability.ClientResolve,
+            DebridProviderCapability.LocalTorrentResolve,
+            DebridProviderCapability.CloudLibrary
+        )
     )
 
-    private val registered = listOf(Torbox, Premiumize, RealDebrid)
+    val AllDebrid = DebridProvider(
+        id = ALL_DEBRID_ID,
+        authMethod = DebridProviderAuthMethod.DeviceCode,
+        displayName = "AllDebrid",
+        shortName = "AD",
+        capabilities = setOf(
+            DebridProviderCapability.ClientResolve,
+            DebridProviderCapability.LocalTorrentResolve,
+            DebridProviderCapability.CloudLibrary
+        )
+    )
+
+    private val registered = listOf(Torbox, Premiumize, RealDebrid, AllDebrid)
 
     fun all(): List<DebridProvider> = registered
 

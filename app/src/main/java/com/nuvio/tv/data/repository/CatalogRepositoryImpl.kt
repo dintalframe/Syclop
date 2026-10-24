@@ -9,6 +9,7 @@ import com.nuvio.tv.data.mapper.toDomainOrNull
 import com.nuvio.tv.data.mediaserver.ServerCatalog
 import com.nuvio.tv.data.mediaserver.messageRes
 import com.nuvio.tv.data.mediaserver.serverFailure
+import com.nuvio.tv.data.mal.MalCatalog
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.remote.api.AddonApi
 import com.nuvio.tv.domain.model.CatalogRow
@@ -28,7 +29,8 @@ class CatalogRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val api: AddonApi,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
-    private val serverCatalog: ServerCatalog
+    private val serverCatalog: ServerCatalog,
+    private val malCatalog: MalCatalog? = null
 ) : CatalogRepository {
     companion object {
         private const val TAG = "CatalogRepository"
@@ -48,6 +50,18 @@ class CatalogRepositoryImpl @Inject constructor(
         posterScreen: com.nuvio.tv.core.poster.CustomPosterScreen
     ): Flow<NetworkResult<CatalogRow>> = flow {
         emit(NetworkResult.Loading)
+
+        if (MalCatalog.isNativeAddon(addonBaseUrl)) {
+            try {
+                emit(NetworkResult.Success(requireNotNull(malCatalog).catalog(catalogId,
+                    extraArgs["skip"]?.toIntOrNull() ?: skip, extraArgs)))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                emit(NetworkResult.Error("Could not load MyAnimeList. Check its account/application settings and try again."))
+            }
+            return@flow
+        }
 
         if (ServerCatalog.isServerAddon(addonBaseUrl)) {
             val row = try {

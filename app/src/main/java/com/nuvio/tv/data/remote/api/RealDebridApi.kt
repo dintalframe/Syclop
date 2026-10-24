@@ -12,12 +12,20 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface RealDebridApi {
     @GET("user")
     suspend fun getUser(
         @Header("Authorization") authorization: String
     ): Response<ResponseBody>
+
+    @GET("torrents")
+    suspend fun listTorrents(
+        @Header("Authorization") authorization: String,
+        @Query("page") page: Int,
+        @Query("limit") limit: Int
+    ): Response<List<RealDebridTorrentInfoDto>>
 
     @FormUrlEncoded
     @POST("torrents/addMagnet")

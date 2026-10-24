@@ -1,6 +1,7 @@
 package com.nuvio.tv.data.local
 
 import android.content.Context
+import com.nuvio.tv.BuildConfig
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
@@ -27,7 +28,7 @@ class AppOnboardingDataStore @Inject constructor(
     private val hasSeenAuthQrOnFirstLaunchKey = booleanPreferencesKey("has_seen_auth_qr_on_first_launch")
 
     val hasSeenAuthQrOnFirstLaunch: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[hasSeenAuthQrOnFirstLaunchKey] ?: false
+        BuildConfig.LOCAL_ONLY_BUILD || (prefs[hasSeenAuthQrOnFirstLaunchKey] ?: false)
     }
 
     suspend fun setHasSeenAuthQrOnFirstLaunch(value: Boolean) {

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.R
+import com.nuvio.tv.core.trakt.TraktAppRegistrationStore
 import com.nuvio.tv.data.local.TraktAuthDataStore
 import com.nuvio.tv.data.local.TraktAuthState
 import com.nuvio.tv.data.local.TraktSettingsDataStore
@@ -55,6 +56,7 @@ class TraktViewModel @Inject constructor(
     private val traktAuthDataStore: TraktAuthDataStore,
     private val traktProgressService: TraktProgressService,
     private val traktSettingsDataStore: TraktSettingsDataStore,
+    private val appRegistrationStore: TraktAppRegistrationStore,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: Context
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TraktUiState())
@@ -71,6 +73,12 @@ class TraktViewModel @Inject constructor(
         }
         observeSettings()
         observeAuthState()
+        viewModelScope.launch {
+            appRegistrationStore.registration.collectLatest { registration ->
+                _uiState.update { it.copy(credentialsConfigured = registration.isConfigured, errorMessage = null) }
+                traktAuthService.getCurrentAuthState() // Clears a profile token bound to a replaced app identity.
+            }
+        }
     }
 
     fun onContinueWatchingDaysCapSelected(days: Int) {
@@ -113,7 +121,7 @@ class TraktViewModel @Inject constructor(
         if (!traktAuthService.hasRequiredCredentials()) {
             _uiState.update {
                 it.copy(
-                    errorMessage = context.getString(R.string.trakt_missing_credentials),
+                    errorMessage = context.getString(R.string.syclop_trakt_registration_missing),
                     credentialsConfigured = false
                 )
             }

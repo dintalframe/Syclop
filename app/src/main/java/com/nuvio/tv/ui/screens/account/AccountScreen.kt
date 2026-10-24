@@ -51,6 +51,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.domain.model.AuthState
 
 private const val SHOW_SYNC_CODE_FEATURES = false
@@ -63,6 +64,10 @@ fun AccountScreen(
     onBackPress: () -> Unit = {},
     viewModel: AccountViewModel = hiltViewModel()
 ) {
+    if (BuildConfig.LOCAL_ONLY_BUILD) {
+        SyclopLocalProfileScreen(onBackPress)
+        return
+    }
     BackHandler { onBackPress() }
 
     val uiState by viewModel.uiState.collectAsState()

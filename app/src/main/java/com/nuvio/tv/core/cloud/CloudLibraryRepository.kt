@@ -17,9 +17,11 @@ class CloudLibraryRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val dataStore: DebridSettingsDataStore,
     torboxApi: TorboxCloudLibraryProviderApi,
-    premiumizeApi: PremiumizeCloudLibraryProviderApi
+    premiumizeApi: PremiumizeCloudLibraryProviderApi,
+    allDebridApi: AllDebridCloudLibraryProviderApi,
+    realDebridApi: RealDebridCloudLibraryProviderApi
 ) {
-    private val providerApis: List<CloudLibraryProviderApi> = listOf(torboxApi, premiumizeApi)
+    private val providerApis: List<CloudLibraryProviderApi> = listOf(torboxApi, premiumizeApi, allDebridApi, realDebridApi)
 
     suspend fun refresh(): CloudLibraryUiState {
         val settings = dataStore.settings.first()

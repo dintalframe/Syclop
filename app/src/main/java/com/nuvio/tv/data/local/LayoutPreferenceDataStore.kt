@@ -56,7 +56,7 @@ class LayoutPreferenceDataStore @Inject constructor(
         private const val FEATURE = "layout_settings"
         private const val DEFAULT_POSTER_CARD_WIDTH_DP = 126
         private const val DEFAULT_POSTER_CARD_HEIGHT_DP = 189
-        private const val DEFAULT_POSTER_CARD_CORNER_RADIUS_DP = 12
+        private const val DEFAULT_POSTER_CARD_CORNER_RADIUS_DP = 14
         private const val DEFAULT_FOCUSED_POSTER_BACKDROP_EXPAND_DELAY_SECONDS = 3
         private const val MIN_FOCUSED_POSTER_BACKDROP_EXPAND_DELAY_SECONDS = 0
     }
@@ -226,7 +226,7 @@ class LayoutPreferenceDataStore @Inject constructor(
     }
 
     val sidebarCollapsedByDefault: Flow<Boolean> = profileFlow { prefs ->
-        prefs[sidebarCollapsedKey] ?: false
+        prefs[sidebarCollapsedKey] ?: true
     }
 
     val modernSidebarEnabled: Flow<Boolean> = profileFlow { prefs ->
@@ -238,7 +238,7 @@ class LayoutPreferenceDataStore @Inject constructor(
     }
 
     val modernLandscapePostersEnabled: Flow<Boolean> = profileFlow { prefs ->
-        prefs[modernLandscapePostersEnabledKey] ?: false
+        prefs[modernLandscapePostersEnabledKey] ?: true
     }
 
     val modernHeroFullScreenBackdropEnabled: Flow<Boolean> = profileFlow { prefs ->
@@ -282,7 +282,7 @@ class LayoutPreferenceDataStore @Inject constructor(
     }
 
     val focusedPosterBackdropExpandEnabled: Flow<Boolean> = profileFlow { prefs ->
-        prefs[focusedPosterBackdropExpandEnabledKey] ?: true
+        prefs[focusedPosterBackdropExpandEnabledKey] ?: false
     }
 
     val focusedPosterBackdropExpandDelaySeconds: Flow<Int> = profileFlow { prefs ->
@@ -348,7 +348,7 @@ class LayoutPreferenceDataStore @Inject constructor(
         factory.get(profileId, FEATURE).data.map { it[randomEpisodeEnabledKey] ?: false }
 
     val startupSplashEnabled: Flow<Boolean> = profileFlow { prefs ->
-        prefs[startupSplashEnabledKey] ?: true
+        prefs[startupSplashEnabledKey] ?: false
     }
 
     val alwaysShowLandscapeClearlogo: Flow<Boolean> = profileFlow { prefs ->
@@ -356,9 +356,9 @@ class LayoutPreferenceDataStore @Inject constructor(
     }
 
     val episodeOptionsOverlayStyle: Flow<EpisodeOptionsOverlayStyle> = profileFlow { prefs ->
-        val stored = prefs[episodeOptionsOverlayStyleKey] ?: EpisodeOptionsOverlayStyle.BLUR.name
+        val stored = prefs[episodeOptionsOverlayStyleKey] ?: EpisodeOptionsOverlayStyle.ARTWORK.name
         runCatching { EpisodeOptionsOverlayStyle.valueOf(stored) }
-            .getOrDefault(EpisodeOptionsOverlayStyle.BLUR)
+            .getOrDefault(EpisodeOptionsOverlayStyle.ARTWORK)
     }
 
     val homeImdbRatingsVisibility: Flow<HomeImdbRatingsVisibility> = profileFlow { prefs ->

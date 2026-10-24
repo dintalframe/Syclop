@@ -2,9 +2,13 @@ package com.nuvio.tv.data.repository
 
 import android.content.Context
 import android.util.Log
+import com.google.gson.Gson
+import com.nuvio.tv.core.logging.urlForLog
 import com.nuvio.tv.R
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.network.safeApiCall
+import com.nuvio.tv.core.express.ExpressAddonAdapter
+import com.nuvio.tv.core.express.ExpressMediaRequest
 import com.nuvio.tv.core.debrid.DebridStreamPresentation
 import com.nuvio.tv.core.debrid.LocalDebridAvailabilityService
 import com.nuvio.tv.core.plugin.PluginManager
@@ -59,7 +63,8 @@ class StreamRepositoryImpl @Inject constructor(
     private val tmdbService: TmdbService,
     private val debridStreamPresentation: DebridStreamPresentation,
     private val localDebridAvailabilityService: LocalDebridAvailabilityService,
-    private val serverStreams: ServerStreams
+    private val serverStreams: ServerStreams,
+    private val expressAdapter: ExpressAddonAdapter? = null
 ) : StreamRepository {
     private val streamSearchSessions = StreamSearchSessionCache()
     private val localPluginSearchPaused = MutableStateFlow(false)
@@ -148,9 +153,9 @@ class StreamRepositoryImpl @Inject constructor(
             enabledScrapers = sourceConfiguration.enabledScrapers,
             groupPluginsByRepository = sourceConfiguration.groupPluginsByRepository,
             pluginRepositories = sourceConfiguration.pluginRepositories,
-            debridPresentationConfiguration = sourceConfiguration.debridSettings
-                .withoutRawCredentials()
-                .toString(),
+            debridPresentationConfiguration = Gson().toJson(
+                sourceConfiguration.debridSettings.withoutRawCredentials()
+            ),
             serverRevision = serverStreams.revision
         )
     )
@@ -218,7 +223,9 @@ class StreamRepositoryImpl @Inject constructor(
                 streamAddons.forEach { addon ->
                     launch {
                         try {
-                            val streamsResult = getStreamsFromAddon(addon, type, videoId)
+                            val streamsResult = if (expressAdapter?.isExpress(addon) == true) {
+                                getExpressStreams(addon, type, videoId, season, episode)
+                            } else getStreamsFromAddon(addon, type, videoId)
                             when (streamsResult) {
                                 is NetworkResult.Success -> {
                                     if (streamsResult.data.isNotEmpty()) {
@@ -258,7 +265,7 @@ class StreamRepositoryImpl @Inject constructor(
                             }
                         } catch (e: Exception) {
                             if (e is CancellationException) throw e
-                            Log.e(TAG, "Addon ${addon.name} failed: ${e.message}")
+                            Log.e(TAG, "Addon ${addon.name} failed: ${e.javaClass.simpleName}")
                             attemptedFailures += StreamAttemptFailure(
                                 addonName = addon.displayName,
                                 kind = StreamFailureKind.REQUEST_FAILED,
@@ -330,7 +337,7 @@ class StreamRepositoryImpl @Inject constructor(
                             .first()
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
-                        Log.e(TAG, "Plugin execution failed: ${e.message}")
+                        Log.e(TAG, "Plugin execution failed: ${e.javaClass.simpleName}")
                     } finally {
                         if (completedJobs.incrementAndGet() >= totalJobs) {
                             resultChannel.close()
@@ -364,7 +371,7 @@ class StreamRepositoryImpl @Inject constructor(
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            Log.e(TAG, "Failed to fetch streams: ${e.message}", e)
+            Log.e(TAG, "Failed to fetch streams: ${e.javaClass.simpleName}")
             emit(NetworkResult.Error(e.message ?: context.getString(com.nuvio.tv.R.string.stream_error_fetch_failed)))
         }
     }
@@ -399,7 +406,8 @@ class StreamRepositoryImpl @Inject constructor(
     private fun DebridSettings.withoutRawCredentials(): DebridSettings = copy(
         torboxApiKey = torboxApiKey.sha256(),
         premiumizeApiKey = premiumizeApiKey.sha256(),
-        realDebridApiKey = realDebridApiKey.sha256()
+        realDebridApiKey = realDebridApiKey.sha256(),
+        allDebridApiKey = allDebridApiKey.sha256()
     )
 
     private fun String.sha256(): String =
@@ -536,7 +544,7 @@ class StreamRepositoryImpl @Inject constructor(
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            Log.e(TAG, "Failed to stream plugins: ${e.message}", e)
+            Log.e(TAG, "Failed to stream plugins: ${e.javaClass.simpleName}")
         }
     }
 
@@ -636,6 +644,7 @@ class StreamRepositoryImpl @Inject constructor(
         type: String,
         videoId: String
     ): NetworkResult<List<Stream>> {
+        if (expressAdapter?.isExpress(addon) == true) return getExpressStreams(addon, type, videoId)
         val cleanBaseUrl = addon.baseUrl.trimEnd('/')
         val queryStart = cleanBaseUrl.indexOf('?')
         val basePath = if (queryStart >= 0) cleanBaseUrl.substring(0, queryStart).trimEnd('/') else cleanBaseUrl
@@ -643,7 +652,7 @@ class StreamRepositoryImpl @Inject constructor(
         val encodedType = encodePathSegment(type)
         val encodedVideoId = encodePathSegment(videoId)
         val streamUrl = "$basePath/stream/$encodedType/$encodedVideoId.json$baseQuery"
-        Log.d(TAG, "Fetching streams type=$type videoId=$videoId url=$streamUrl")
+        Log.d(TAG, "Fetching streams type=$type videoId=$videoId host=${streamUrl.urlForLog()}")
 
         // Display info comes from the installed addon the caller already holds. Calling
         // addonRepository.fetchAddon() here caused an unconditional manifest GET ahead of every
@@ -657,18 +666,25 @@ class StreamRepositoryImpl @Inject constructor(
                 val streams = result.data.streams?.map { 
                     it.toDomain(addonName, addonLogo) 
                 } ?: emptyList()
-                Log.d(TAG, "Streams success addon=$addonName count=${streams.size} url=$streamUrl")
+                Log.d(TAG, "Streams success addon=$addonName count=${streams.size} host=${streamUrl.urlForLog()}")
                 NetworkResult.Success(streams)
             }
             is NetworkResult.Error -> {
                 Log.w(
                     TAG,
-                    "Streams failed addon=$addonName code=${result.code} message=${result.message} url=$streamUrl"
+                    "Streams failed addon=$addonName code=${result.code} host=${streamUrl.urlForLog()}"
                 )
                 result
             }
             NetworkResult.Loading -> NetworkResult.Loading
         }
+    }
+
+    private suspend fun getExpressStreams(addon: Addon, type: String, videoId: String, season: Int? = null, episode: Int? = null): NetworkResult<List<Stream>> {
+        val adapter = expressAdapter ?: return NetworkResult.Error("Express source support is unavailable.")
+        val result = adapter.search(addon, ExpressMediaRequest(type, videoId, season, episode))
+        adapter.lastReport(addon)?.let { Log.d(TAG, it.summary()) }
+        return result
     }
 
     /**
@@ -713,7 +729,7 @@ class StreamRepositoryImpl @Inject constructor(
         val encodedType = encodePathSegment(type)
         val encodedMetaId = encodePathSegment(metaId)
         val metaUrl = "$basePath/meta/$encodedType/$encodedMetaId.json$baseQuery"
-        Log.d(TAG, "Fetching inline streams via meta type=$type metaId=$metaId videoId=$videoId url=$metaUrl")
+        Log.d(TAG, "Fetching inline streams via meta type=$type metaId=$metaId videoId=$videoId host=${metaUrl.urlForLog()}")
         return try {
             when (val result = safeApiCall(context) { api.getMeta(metaUrl) }) {
                 is NetworkResult.Success -> {
@@ -729,7 +745,7 @@ class StreamRepositoryImpl @Inject constructor(
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            Log.w(TAG, "Failed to fetch inline streams from meta for ${addon.displayName}: ${e.message}")
+            Log.w(TAG, "Failed to fetch inline streams from meta for ${addon.displayName}: ${e.javaClass.simpleName}")
             emptyList()
         }
     }

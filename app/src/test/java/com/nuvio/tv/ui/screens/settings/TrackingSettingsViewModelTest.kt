@@ -14,6 +14,9 @@ import com.nuvio.tv.data.simkl.SimklAnimeIdPreference
 import com.nuvio.tv.data.simkl.SimklAuthRepository
 import com.nuvio.tv.data.simkl.SimklAuthState
 import com.nuvio.tv.domain.model.LibrarySourceMode
+import com.nuvio.tv.data.mal.MalAccountState
+import com.nuvio.tv.data.mal.MalAuthRepository
+import com.nuvio.tv.data.mal.MalScope
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -55,7 +58,9 @@ class TrackingSettingsViewModelTest {
         }
         val trakt = mockk<TraktAuthDataStore> { every { state } returns flowOf(TraktAuthState()) }
         val simkl = mockk<SimklAuthRepository> { every { state } returns MutableStateFlow(SimklAuthState()) }
-        val viewModel = TrackingSettingsViewModel(controller, settings, mockk(), trakt, simkl, harness.store, profiles)
+        val malState = MutableStateFlow(MalAccountState())
+        val mal = mockk<MalAuthRepository> { every { state } returns malState }
+        val viewModel = TrackingSettingsViewModel(controller, settings, mockk(), trakt, simkl, harness.store, mal, profiles)
         runCurrent()
         assertEquals(setOf(TrackingProviderId.MDBLIST), viewModel.uiState.value.connectedProviderIds)
         val previousCount = reconciliations.size
@@ -64,6 +69,9 @@ class TrackingSettingsViewModelTest {
         assertFalse(viewModel.uiState.value.isReady)
         assertEquals(previousCount, reconciliations.size)
         harness.store.selectProfile(2)
+        runCurrent()
+        assertFalse(viewModel.uiState.value.isReady)
+        malState.value = MalAccountState(scope = MalScope(2, 1))
         runCurrent()
         assertTrue(viewModel.uiState.value.isReady)
         assertEquals(WatchProgressSource.MDBLIST, viewModel.uiState.value.watchProgressSource)

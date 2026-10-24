@@ -1,6 +1,7 @@
 package com.nuvio.tv.core.di
 
 import com.nuvio.tv.BuildConfig
+import com.nuvio.tv.core.network.SyclopCloudGuard
 import com.nuvio.tv.core.auth.TransientAuthRefreshException
 import com.nuvio.tv.core.auth.shouldRetryAuthRefreshResponse
 import com.nuvio.tv.core.network.BackendRateLimitCoordinator
@@ -65,6 +66,7 @@ object SupabaseModule {
             supabaseKey = serverConfiguration.publishableKey
         ) {
             httpConfig {
+                if (BuildConfig.LOCAL_ONLY_BUILD) install(SyclopCloudGuard)
                 install(BackendRateLimitPlugin) {
                     coordinator = rateLimitCoordinator
                 }
@@ -111,9 +113,9 @@ object SupabaseModule {
                 }
             }
             install(Auth) {
-                alwaysAutoRefresh = true
-                autoLoadFromStorage = true
-                autoSaveToStorage = true
+                alwaysAutoRefresh = !BuildConfig.LOCAL_ONLY_BUILD
+                autoLoadFromStorage = !BuildConfig.LOCAL_ONLY_BUILD
+                autoSaveToStorage = !BuildConfig.LOCAL_ONLY_BUILD
                 enableLifecycleCallbacks = false
             }
             install(Postgrest)

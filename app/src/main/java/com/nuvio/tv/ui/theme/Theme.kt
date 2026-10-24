@@ -24,7 +24,7 @@ data class NuvioExtendedColors(
 )
 
 val LocalNuvioColors = staticCompositionLocalOf {
-    NuvioColorScheme(ThemeColors.Ocean)
+    NuvioColorScheme(ThemeColors.Syclop)
 }
 
 val LocalNuvioExtendedColors = staticCompositionLocalOf {
@@ -33,8 +33,8 @@ val LocalNuvioExtendedColors = staticCompositionLocalOf {
         backgroundCard = Color(0xFF242424),
         textSecondary = Color(0xFFB3B3B3),
         textTertiary = Color(0xFF808080),
-        focusRing = ThemeColors.Ocean.focusRing,
-        focusBackground = ThemeColors.Ocean.focusBackground,
+        focusRing = ThemeColors.Syclop.focusRing,
+        focusBackground = ThemeColors.Syclop.focusBackground,
         rating = Color(0xFFFFD700)
     )
 }
@@ -48,7 +48,7 @@ val LocalThemePalette = staticCompositionLocalOf { ThemeColors.White }
 val LocalSettingsUiStyle = staticCompositionLocalOf { SettingsUiStyle.CLASSIC }
 
 val LocalNuvioFocusRingStyle = staticCompositionLocalOf {
-    createFocusRingStyle(ThemeColors.Ocean)
+    createFocusRingStyle(ThemeColors.Syclop)
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)

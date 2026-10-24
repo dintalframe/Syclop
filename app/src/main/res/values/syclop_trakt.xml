@@ -1,0 +1,9 @@
+<resources>
+    <string name="syclop_trakt_application_setup">Trakt application setup</string>
+    <string name="syclop_trakt_advanced_application_setup">Advanced application setup</string>
+    <string name="syclop_trakt_application_setup_description">For the Syclop maintainer: configure Syclop’s public Trakt application registration once. Viewers connect their own Trakt accounts using the normal approval code.</string>
+    <string name="syclop_trakt_application_setup_help">Create the Syclop application at developer.trakt.tv/apps/new using the owner’s verified GitHub-linked account. Enter its Client ID and exact registered HTTPS redirect URI. No client secret or user password is needed. Changing this registration requires reconnecting existing Trakt accounts.</string>
+    <string name="syclop_trakt_client_id">Syclop application Client ID</string>
+    <string name="syclop_trakt_redirect_uri">Registered redirect URI</string>
+    <string name="syclop_trakt_registration_missing">Syclop’s Trakt connection has not been configured by the app maintainer yet. Account sign-in becomes available after application setup.</string>
+</resources>

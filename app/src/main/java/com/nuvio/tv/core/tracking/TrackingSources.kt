@@ -17,6 +17,7 @@ val LibrarySourceMode.providerId: TrackingProviderId?
         LibrarySourceMode.TRAKT -> TrackingProviderId.TRAKT
         LibrarySourceMode.SIMKL -> TrackingProviderId.SIMKL
         LibrarySourceMode.MDBLIST -> TrackingProviderId.MDBLIST
+        LibrarySourceMode.MAL -> TrackingProviderId.MAL
     }
 
 fun effectiveWatchProgressSource(
@@ -70,4 +71,5 @@ fun availableLibrarySourceModes(
     if (TrackingProviderId.TRAKT in connectedProviderIds) add(LibrarySourceMode.TRAKT)
     if (TrackingProviderId.SIMKL in connectedProviderIds) add(LibrarySourceMode.SIMKL)
     if (TrackingProviderId.MDBLIST in connectedProviderIds) add(LibrarySourceMode.MDBLIST)
+    if (TrackingProviderId.MAL in connectedProviderIds) add(LibrarySourceMode.MAL)
 }

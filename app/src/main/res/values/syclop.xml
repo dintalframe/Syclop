@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="syclop_local_profile_title">Local profile</string>
+    <string name="syclop_local_profile_description">Profiles, add-ons and watch history stay on this TV. Connect your streaming services in Settings.</string>
+    <string name="syclop_back">Back</string>
+    <string name="syclop_local_account_subtitle">Profiles and service accounts</string>
+    <string name="syclop_local_account_explanation">Syclop has no central account or cloud sync. Local progress stays on this TV. Each profile can connect its own tracking and streaming accounts in the sections below.</string>
+    <string name="syclop_manage_local_profiles">Manage local profiles</string>
+    <string name="syclop_open_tracking_accounts">Tracking accounts · Trakt and MyAnimeList</string>
+    <string name="syclop_open_streaming_accounts">Streaming accounts · Real-Debrid, AllDebrid and Premiumize</string>
+</resources>

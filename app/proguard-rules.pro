@@ -149,3 +149,5 @@
 
 -dontwarn java.beans.ConstructorProperties
 -dontwarn java.beans.Transient
+# Syclop portable backup schema and private recovery journals use stable Gson field names.
+-keep class com.nuvio.tv.core.backup.** { *; }
