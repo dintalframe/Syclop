@@ -159,7 +159,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: nuviotv-${{ steps.release.outputs.version }}-${{ inputs.mode }}-release-notes
+          name: syclop-${{ steps.release.outputs.version }}-${{ inputs.mode }}-release-notes
           path: |
             release-notes.md
             release-note-quality.md
@@ -207,7 +207,6 @@ jobs:
             NUVIO_RELEASE_KEY_ALIAS
             NUVIO_RELEASE_KEY_PASSWORD
             TRAKT_CLIENT_ID
-            TRAKT_CLIENT_SECRET
           )
           for property_name in "${required_properties[@]}"; do
             if ! grep -Eq "^[[:space:]]*${property_name}[[:space:]]*=[[:space:]]*.+$" local.properties; then
@@ -224,7 +223,7 @@ jobs:
         if: inputs.mode != 'dry-run'
         uses: actions/upload-artifact@v6
         with:
-          name: nuviotv-${{ steps.release.outputs.version }}-full-release
+          name: syclop-${{ steps.release.outputs.version }}-full-release
           path: app/build/outputs/apk/full/release/*.apk
           if-no-files-found: error
 

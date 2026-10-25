@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve NuvioTV.
+Thanks for helping improve Syclop. Development takes place on the `syclop` branch. See [the build guide](SYCLOP_BUILD.md) and [current feature/verification status](SYCLOP_FEATURE_AUDIT.md) before starting.
 
 ## Strict rules - read before opening anything
 
@@ -109,9 +109,9 @@ Approval means a maintainer has clearly said the implementation is approved. A f
 To keep issues fixable, bug reports should include:
 
 - A short, specific issue title that describes the bug
-- App version (release version or commit hash)
+- App version and development-build checksum or commit hash
 - Platform + device model + Android version
-- Install method (release APK / CI / built from source)
+- Install method (private beta / development APK / CI / built from source)
 - Steps to reproduce (exact steps)
 - Expected vs actual behavior
 - Frequency (always/sometimes/once)
@@ -128,7 +128,7 @@ If you can, reproduce the issue once, then attach a short log snippet from aroun
 adb logcat -d | tail -n 300
 ```
 
-If the issue is a crash, include a stack trace or log snippet from Android Studio or `adb logcat`.
+If the issue is a crash, include a short stack trace or relevant log snippet from Android Studio or `adb logcat`. Redact account identifiers, tokens, authorization codes, private provider URLs and playable media URLs before posting. Never attach app-data backups or signing files.
 
 ---
 

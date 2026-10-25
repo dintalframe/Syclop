@@ -4,6 +4,11 @@ Syclop is an independent fork of [NuvioTV](https://github.com/NuvioMedia/NuvioTV
 
 ## Standalone clone
 
+```sh
+git clone --branch syclop https://github.com/dintalframe/Syclop.git
+cd Syclop
+```
+
 Use JDK 17, Python 3, Bash, `shasum`, and a normal Android SDK installation from Android Studio or the Android command-line tools. Set `JAVA_HOME` to the JDK and `ANDROID_HOME` (or `ANDROID_SDK_ROOT`) to the SDK. Install platform `android-36` and build tools `36.0.0`, and accept the SDK licenses. The project uses NDK `29.0.14206865`; Gradle may download it into the SDK on the first build. The checked-in Gradle 8.13 wrapper downloads Gradle itself; a separate Gradle installation is unnecessary. The first build needs access to the configured dependency repositories.
 
 ```sh
