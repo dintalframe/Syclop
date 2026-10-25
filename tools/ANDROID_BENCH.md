@@ -12,6 +12,8 @@ python3 tools/android-bench.py --serial emulator-5580 status
 
 `--sdk` can override `ANDROID_HOME`/`ANDROID_SDK_ROOT`; `--home` overrides `SYCLOP_BENCH_HOME`. The macOS default is `~/Library/Caches/Syclop/android-bench`; Linux uses `$XDG_CACHE_HOME/syclop/android-bench` or `~/.cache/syclop/android-bench`. Keep mutable AVDs and reports outside synced folders. The source checkout, Desktop and known Apple cloud roots are rejected, as are escaping AVD/report symlinks. Existing root permissions are preserved.
 
+On macOS, also keep the source checkout and build JDK/SDK in ordinary local directories outside Desktop/iCloud and other cloud-managed folders. Source or toolchain inputs can be evicted during compilation even when AVD data and build caches are stored elsewhere. Use a verified local checkout and intact toolchain copies; the bench does not migrate them automatically.
+
 The SDK can remain in a separate configured directory. `--emulator /absolute/path/to/emulator` or `SYCLOP_EMULATOR` optionally selects a separately installed emulator bundle; its selected system-image directory still comes from the SDK. Such an override is not updated by SDK `setup` automatically. The bench does not bootstrap command-line tools or accept SDK licenses silently.
 
 ## Miniconda environment

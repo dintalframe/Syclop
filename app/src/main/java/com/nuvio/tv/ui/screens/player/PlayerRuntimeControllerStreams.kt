@@ -1582,7 +1582,7 @@ internal fun PlayerRuntimeController.switchToEpisodeStream(
     hasRetriedCurrentStreamAfter416 = false
     resetErrorRetryState()
     currentVideoId = targetVideoId
-    currentSeason = targetVideo?.season ?: _uiState.value.episodeStreamsSeason ?: currentSeason
+    currentSeason = if (targetVideo != null) targetVideo.season else _uiState.value.episodeStreamsSeason ?: currentSeason
     currentEpisode = targetVideo?.episode ?: _uiState.value.episodeStreamsEpisode ?: currentEpisode
     currentEpisodeTitle = targetVideo?.title ?: _uiState.value.episodeStreamsTitle ?: currentEpisodeTitle
     // Until the new file loads, MPV keeps reporting the old one, which is often at its end.
@@ -1883,7 +1883,7 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
 
     val state = _uiState.value
     val nextInfo = state.nextEpisode ?: return
-    if (!nextInfo.hasAired) {
+    if (!nextInfo.hasAired || (nextInfo.released.isNullOrBlank() && nextInfo.available == false)) {
         return
     }
     val activeAutoPlay = state.postPlayMode as? PostPlayMode.AutoPlay

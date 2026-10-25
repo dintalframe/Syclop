@@ -68,7 +68,6 @@ import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.rounded.Groups
@@ -1559,6 +1558,7 @@ fun PlayerScreen(
                 },
                 onPlayPause = { viewModel.onEvent(PlayerEvent.OnPlayPause) },
                 onPlayNextEpisode = { viewModel.onEvent(PlayerEvent.OnPlayNextEpisode) },
+                onStartFromBeginning = { viewModel.onEvent(PlayerEvent.OnStartFromBeginning) },
                 onSeekForward = { viewModel.onEvent(PlayerEvent.OnSeekForward) },
                 onSeekBackward = { viewModel.onEvent(PlayerEvent.OnSeekBackward) },
                 onSeekTo = { viewModel.onEvent(PlayerEvent.OnSeekTo(it)) },
@@ -2608,6 +2608,7 @@ private fun PlayerControlsOverlay(
     progressBarUpFocusRequester: FocusRequester? = null,
     onPlayPause: () -> Unit,
     onPlayNextEpisode: () -> Unit,
+    onStartFromBeginning: () -> Unit,
     onSeekForward: () -> Unit,
     onSeekBackward: () -> Unit,
     onSeekTo: (Long) -> Unit,
@@ -2659,6 +2660,8 @@ private fun PlayerControlsOverlay(
     var showEngineSwitchConfirm by remember { mutableStateOf(false) }
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
     val isLivePlayback = playbackTimeline.isLive
+    val startFromBeginningFocusRequester = remember { FocusRequester() }
+    val showNextEpisodeButton = uiState.canManuallyPlayNextEpisode()
     val progressUpTarget = if (isLivePlayback) {
         progressBarUpFocusRequester ?: playPauseFocusRequester
     } else {
@@ -2719,7 +2722,7 @@ private fun PlayerControlsOverlay(
                 exit = fadeOut(animationSpec = tween(NuvioMotion.tokens.durations.fast))
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    val displayName = if (uiState.currentSeason != null && uiState.currentEpisode != null) {
+                    val displayName = if (uiState.currentEpisode != null) {
                         uiState.contentName ?: uiState.title
                     } else {
                         uiState.title
@@ -2734,12 +2737,12 @@ private fun PlayerControlsOverlay(
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    if (uiState.currentSeason != null && uiState.currentEpisode != null) {
-                        val seasonEpisodeCode = stringResource(
-                            R.string.season_episode_format,
-                            uiState.currentSeason,
-                            uiState.currentEpisode
-                        )
+                    if (uiState.currentEpisode != null) {
+                        val seasonEpisodeCode = if (uiState.currentSeason == null) {
+                            stringResource(R.string.playback_episode_number, uiState.currentEpisode)
+                        } else {
+                            stringResource(R.string.season_episode_format, uiState.currentSeason, uiState.currentEpisode)
+                        }
                         val appContext = LocalContext.current
                         val localizedEpisodeTitle = uiState.currentEpisodeTitle
                             ?.takeIf { it.isNotBlank() }
@@ -2782,6 +2785,18 @@ private fun PlayerControlsOverlay(
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
 
             if (!isLivePlayback) {
+                PlaybackActionButtons(
+                    showStartFromBeginning = true,
+                    showNextEpisode = showNextEpisodeButton,
+                    onStartFromBeginning = onStartFromBeginning,
+                    onNextEpisode = onPlayNextEpisode,
+                    startFocusRequester = startFromBeginningFocusRequester,
+                    downFocusRequester = progressBarFocusRequester,
+                    upFocusRequester = progressBarUpFocusRequester,
+                    onUpAtTop = onHideControls,
+                    onFocused = onResetHideTimer
+                )
+                Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
                 // Progress bar — always LTR regardless of locale
                 DisposableEffect(Unit) {
                     onDispose { progressBarClearancePx = 0f }
@@ -2803,7 +2818,7 @@ private fun PlayerControlsOverlay(
                             viewModel = viewModel,
                             chapters = uiState.chapters,
                             focusRequester = progressBarFocusRequester,
-                            upFocusRequester = progressBarUpFocusRequester,
+                            upFocusRequester = startFromBeginningFocusRequester,
                             downFocusRequester = playPauseFocusRequester,
                             onUpKey = onHideControls,
                             onFocused = onResetHideTimer,
@@ -2828,14 +2843,10 @@ private fun PlayerControlsOverlay(
                     horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val hasEpisodeContext = uiState.currentSeason != null && uiState.currentEpisode != null
+                    val hasEpisodeContext = uiState.currentEpisode != null ||
+                        uiState.contentType.equals("cloud", ignoreCase = true)
                     val hasSubtitleControl = uiState.subtitleTracks.isNotEmpty() || uiState.addonSubtitles.isNotEmpty()
                     val hasAudioControl = uiState.audioTracks.isNotEmpty()
-                    val showNextEpisodeButton = uiState.nextEpisode?.hasAired == true &&
-                        (uiState.postPlayMode as? PostPlayMode.AutoPlay)?.let {
-                            !it.searching && it.countdownSec == null
-                        } != false
-
                     ControlButton(
                         icon = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         iconPainter = if (uiState.isPlaying) customPausePainter else customPlayPainter,
@@ -2846,17 +2857,6 @@ private fun PlayerControlsOverlay(
                         onDownKey = onHideControls,
                         onFocused = onResetHideTimer
                     )
-
-                    if (showNextEpisodeButton) {
-                        ControlButton(
-                            icon = Icons.Default.SkipNext,
-                            contentDescription = stringResource(R.string.next_episode_label),
-                            onClick = onPlayNextEpisode,
-                            upFocusRequester = progressUpTarget,
-                            onDownKey = onHideControls,
-                            onFocused = onResetHideTimer
-                        )
-                    }
 
                     if (hasSubtitleControl) {
                         ControlButton(

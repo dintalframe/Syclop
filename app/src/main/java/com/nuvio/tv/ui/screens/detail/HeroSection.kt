@@ -96,6 +96,7 @@ fun HeroContentSection(
     onPlayClick: () -> Unit,
     isPlayEnabled: Boolean = true,
     onPlayLongPress: (() -> Unit)? = null,
+    onStartFromBeginning: (() -> Unit)? = null,
     isInLibrary: Boolean,
     onToggleLibrary: () -> Unit,
     onLibraryLongPress: () -> Unit,
@@ -264,6 +265,16 @@ fun HeroContentSection(
                                 onPlayFocusRestored()
                             }
                         )
+
+                        if (nextToWatch?.isResume == true && onStartFromBeginning != null) {
+                            Button(
+                                onClick = onStartFromBeginning,
+                                enabled = isPlayEnabled,
+                                modifier = Modifier.onFocusChanged { if (it.isFocused) onHeroActionFocused() }
+                            ) {
+                                Text(stringResource(R.string.cw_action_start_from_beginning))
+                            }
+                        }
 
                         ActionIconButton(
                             icon = if (isInLibrary) Icons.Default.Check else null,

@@ -287,7 +287,7 @@ data class TrackInfo(
 
 data class NextEpisodeInfo(
     val videoId: String,
-    val season: Int,
+    val season: Int?,
     val episode: Int,
     val title: String,
     val thumbnail: String?,
@@ -313,6 +313,7 @@ sealed class PlayerEvent {
     data class OnPreviewSeekBy(val deltaMs: Long) : PlayerEvent()
     data object OnCommitPreviewSeek : PlayerEvent()
     data class OnSeekTo(val position: Long) : PlayerEvent()
+    data object OnStartFromBeginning : PlayerEvent()
     data class OnSkipChapter(val forward: Boolean) : PlayerEvent()
     data object OnShowChaptersPanel : PlayerEvent()
     data object OnDismissChaptersPanel : PlayerEvent()

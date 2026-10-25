@@ -140,22 +140,21 @@ fun AboutSettingsContent(
 
                             Spacer(modifier = Modifier.height(NuvioTheme.spacing.xxs))
 
+                            AppRestartSettingsAction(
+                                modifier = firstRowModifier.then(
+                                    if (initialFocusRequester != null) Modifier.focusRequester(initialFocusRequester)
+                                    else Modifier
+                                )
+                            )
+
                             if (AppFeaturePolicy.inAppUpdatesEnabled) {
-                                UpdateChannelSettings(initialFocusRequester, modifier = firstRowModifier)
+                                UpdateChannelSettings(initialFocusRequester = null)
                             }
 
                             SettingsActionRow(
                                 title = stringResource(R.string.about_privacy_policy),
                                 subtitle = stringResource(R.string.about_privacy_policy_subtitle),
                                 trailingIcon = Icons.Default.OpenInNew,
-                                modifier = if (!AppFeaturePolicy.inAppUpdatesEnabled) {
-                                    firstRowModifier.then(
-                                        if (initialFocusRequester != null) Modifier.focusRequester(initialFocusRequester)
-                                        else Modifier
-                                    )
-                                } else {
-                                    Modifier
-                                },
                                 onClick = {
                                     val intent = Intent(
                                         Intent.ACTION_VIEW,

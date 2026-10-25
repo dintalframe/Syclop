@@ -29,7 +29,7 @@ class StartupInitializationCoordinator @Inject constructor(
     private var owner: Pair<Int, Long>? = null
     @Volatile private var accountVersion = 0L
     private var checkedVersion = -1L
-    private var runId = 0L
+    @Volatile private var runId = 0L
     val state = engine.state
 
     init {
@@ -75,6 +75,18 @@ class StartupInitializationCoordinator @Inject constructor(
 
     @Synchronized fun retry() { if (homeEligible) beginLocked(force = true) }
 
+    /** Invalidate only this process's work; durable imports and account data remain untouched. */
+    @Synchronized fun prepareForAppRestart() {
+        homeEligible = false
+        entryDecisionMade = false
+        runId++
+        work?.cancel()
+        work = null
+        owner = null
+        checkedVersion = -1L
+        engine.resetForAppRestart()
+    }
+
     @Synchronized fun continueWithSavedData() {
         runId++
         work?.cancel()
@@ -98,11 +110,11 @@ class StartupInitializationCoordinator @Inject constructor(
         work = scope.launch {
             try {
                 engine.run(captured.first, captured.second, participants) {
-                    profiles.activeProfileId.value == captured.first &&
+                    runId == ownRun && profiles.activeProfileId.value == captured.first &&
                         profiles.activeProfileSelectionRevision == captured.second && accountVersion == version
                 }
                 synchronized(this@StartupInitializationCoordinator) {
-                    if (owner == captured && accountVersion == version) checkedVersion = version
+                    if (runId == ownRun && owner == captured && accountVersion == version) checkedVersion = version
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled

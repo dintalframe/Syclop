@@ -1433,6 +1433,39 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
                 }
             }
         }
+        PlayerEvent.OnStartFromBeginning -> {
+            if (_playbackTimeline.value.isLive) return
+            if (isPartyControlLocked) {
+                partyBlocksControl()
+                return
+            }
+            // A delayed resume lookup must never undo an explicit restart.
+            resumeRequestGate.invalidate()
+            pendingPreviewSeekPosition = null
+            clearPendingInitialResumePosition()
+            nextEpisodeAutoPlayJob?.cancel()
+            nextEpisodeAutoPlayJob = null
+            stillWatchingPromptJob?.cancel()
+            stillWatchingPromptJob = null
+            autoSkippedIntervalKeys.clear()
+            _uiState.update {
+                it.copy(playbackEnded = false, postPlayMode = null,
+                    postPlayDismissedForCurrentEpisode = false, showPauseOverlay = false,
+                    activeSkipInterval = null, skipIntervalDismissed = false)
+            }
+            seekPlaybackTo(0L, SeekParameters.EXACT, exact = true)
+            updatePlaybackTimeline(currentPosition = 0L)
+            userPausedManually = false
+            cancelPauseOverlay()
+            setPlaybackPaused(false)
+            if (isUsingMpvEngine()) {
+                startProgressUpdates()
+                startWatchProgressSaving()
+            }
+            scheduleProgressSyncAfterSeek()
+            publishPartyPlayback(positionMs = 0L, paused = false)
+            showControlsTemporarily()
+        }
         is PlayerEvent.OnSeekTo -> {
             if (_playbackTimeline.value.isLive) return
             pendingPreviewSeekPosition = null

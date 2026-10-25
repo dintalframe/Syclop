@@ -19,6 +19,7 @@ The app targets **Android 7.0/API24 and newer**. Universal builds include arm64-
 - **Connected-service playback:** local P2P is disabled; playback requires an authorized native connected-service link. Provider discovery alone does not authorize a media URL.
 - **Source information:** confidence-labelled bitrate estimates, quality and file size; bounded inspection of the selected media file, with unknown values kept explicit.
 - **Player choices:** ExoPlayer is the recommended internal player. Optional MPV and compatible installed external players are available, including Just Player and VLC selection.
+- **Playback controls:** visible Start from beginning and Next Episode actions, plus a confirmed Restart Syclop action in Settings → About. See [usage and verification](SYCLOP_PLAYBACK_CONTROLS.md).
 - **Account initialization:** first use imports bounded connected history/lists with visible progress, Retry and Continue with saved data.
 - **Providers:** supported declarative Express/Magnify and Stremio JSON configurations, with daily checks scheduled by Android. Executable remote plugins are disabled.
 - **Local customization:** profiles, appearance/layout/player preferences and scoped portable backup/restore. The supplied dark mascot animates during full-screen loading and errors.
@@ -54,6 +55,7 @@ Syclop has no central cloud account or cross-device settings sync. Tracker servi
 - [Builds, signing, compatibility and release status](SYCLOP_BUILD.md)
 - [Local Android TV emulator bench](tools/ANDROID_BENCH.md)
 - [Feature coverage, device evidence and known limitations](SYCLOP_FEATURE_AUDIT.md)
+- [Restart, start from beginning and next-episode controls](SYCLOP_PLAYBACK_CONTROLS.md)
 - [Application registration for connected services](SYCLOP_APP_REGISTRATION.md)
 - [Trakt setup](TRAKT_APP_SETUP.md) and [MyAnimeList return page](docs/mal/README.md)
 - [Local backup and recovery](LOCAL_BACKUPS.md)

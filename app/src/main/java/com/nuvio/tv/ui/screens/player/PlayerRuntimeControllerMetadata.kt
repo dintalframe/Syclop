@@ -250,7 +250,7 @@ internal fun PlayerRuntimeController.recomputeNextEpisode(resetVisibility: Boole
 
     val season = currentSeason
     val episode = currentEpisode
-    if (season == null || episode == null) {
+    if (episode == null) {
         nextEpisodeVideo = null
         clearNextEpisodeAndCancelPostPlay()
         return
@@ -273,7 +273,7 @@ internal fun PlayerRuntimeController.recomputeNextEpisode(resetVisibility: Boole
     val hasAired = PlayerNextEpisodeRules.hasEpisodeAired(resolvedNext.released)
     val nextInfo = NextEpisodeInfo(
         videoId = resolvedNext.id,
-        season = resolvedNext.season ?: return,
+        season = resolvedNext.season,
         episode = resolvedNext.episode ?: return,
         title = resolvedNext.title,
         thumbnail = resolvedNext.thumbnail,

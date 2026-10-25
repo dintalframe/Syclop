@@ -382,8 +382,9 @@ androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.applicationId.set("com.dintal.syclop")
     }
-    // Only the full flavor ships the in-app updater.
-    onVariants(selector().withFlavor("distribution" to "full")) { variant ->
+    // Dex metadata belongs to optimized release APKs. Wiring debug assets to the ART
+    // profile task forces AGP to consume an L8 profile that debug builds do not produce.
+    onVariants(selector().withBuildType("release").withFlavor("distribution" to "full")) { variant ->
         val variantName = variant.name.replaceFirstChar { it.uppercase() }
         val embedTask = tasks.register<EmbedUpdateDexMetadataTask>("embed${variantName}UpdateDexMetadata") {
             dexMetadataDirectory.from(provider {

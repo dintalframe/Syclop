@@ -142,10 +142,10 @@ fun NextEpisodeEndPromptOverlay(
 @Composable
 private fun nextEpisodeEndPromptLabel(nextEpisode: NextEpisodeInfo): String {
     if (nextEpisode.isOtherType) return nextEpisode.title
-    val episodeCode = stringResource(
-        R.string.season_episode_format,
-        nextEpisode.season,
-        nextEpisode.episode
-    )
+    val episodeCode = if (nextEpisode.season == null) {
+        stringResource(R.string.playback_episode_number, nextEpisode.episode)
+    } else {
+        stringResource(R.string.season_episode_format, nextEpisode.season, nextEpisode.episode)
+    }
     return "$episodeCode - ${nextEpisode.title}"
 }

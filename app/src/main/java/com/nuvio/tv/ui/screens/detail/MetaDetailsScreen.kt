@@ -2502,6 +2502,7 @@ private fun MetaDetailsContent(
                         } else {
                             null
                         },
+                        onStartFromBeginning = if (!shufflePoolEmpty && isPlayEnabled) heroPlayStartFromBeginningClick else null,
                         isInLibrary = isInLibrary,
                         showTraktActions = showTraktActions,
                         onTraktActions = onTraktActions,

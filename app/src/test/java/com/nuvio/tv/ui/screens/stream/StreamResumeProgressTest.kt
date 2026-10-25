@@ -43,6 +43,14 @@ class StreamResumeProgressTest {
             streamResumeProgress(remote.copy(completionThresholdOverride = 0.95f), false))
     }
 
+    @Test fun `explicit start overrides remote percentage and preserves saved history object`() {
+        val remote = progress.copy(contentType = "series", videoId = "tt123:2:3", season = 2, episode = 3,
+            position = 0L, duration = 0L, progressPercent = 42f)
+        assertNull(streamResumeProgress(remote, true))
+        assertEquals(42f, remote.progressPercent)
+        assertEquals(remote, streamResumeProgress(remote, false))
+    }
+
     @Test fun `episode progress is preserved`() {
         val episode = progress.copy(contentType = "series", videoId = "tt123:2:3", season = 2, episode = 3)
         assertEquals(episode, streamResumeProgress(episode, false))

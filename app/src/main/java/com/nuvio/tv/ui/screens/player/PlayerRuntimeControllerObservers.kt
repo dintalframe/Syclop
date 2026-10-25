@@ -506,6 +506,7 @@ internal fun PlayerRuntimeController.loadSavedProgressFor(season: Int?, episode:
     val progressContentId = contentId
     if (!isCloudLibraryPlayback && progressContentId == null) return
 
+    val resumeRequest = resumeRequestGate.beginRequest()
     scope.launch {
         pendingResumeProgress = null
         val local = if (isCloudLibraryPlayback) {
@@ -521,6 +522,7 @@ internal fun PlayerRuntimeController.loadSavedProgressFor(season: Int?, episode:
             watchProgressRepository.getProgress(progressContentId!!, profileId).firstOrNull()
         }
         val progress = newerServerProgress(local)
+        if (!resumeRequestGate.isCurrent(resumeRequest)) return@launch
 
         progress?.let { saved ->
 
@@ -552,25 +554,32 @@ internal fun PlayerRuntimeController.loadSavedProgressFor(season: Int?, episode:
  * `STATE_READY` callback fires.  The fire-and-forget version races against the
  * player lifecycle and can lose the resume position entirely.
  */
-internal suspend fun PlayerRuntimeController.loadSavedProgressSuspend(season: Int?, episode: Int?) {
+internal suspend fun PlayerRuntimeController.loadSavedProgressSuspend(
+    season: Int?,
+    episode: Int?,
+    resumeRequest: Long
+) {
     val isCloudLibraryPlayback = contentType.equals("cloud", ignoreCase = true)
     val progressContentId = contentId
     if (!isCloudLibraryPlayback && progressContentId == null) return
+    if (!resumeRequestGate.isCurrent(resumeRequest)) return
 
     pendingResumeProgress = null
-    val local = if (isCloudLibraryPlayback) {
-        loadCloudLibraryResumeProgress()
-    } else if (season != null && episode != null) {
-        watchProgressRepository.getEpisodeProgress(
-            progressContentId!!,
-            season,
-            episode,
-            profileId
-        ).firstOrNull()
-    } else {
-        watchProgressRepository.getProgress(progressContentId!!, profileId).firstOrNull()
+    val progress = resumeRequestGate.readIfCurrent(resumeRequest) {
+        val local = if (isCloudLibraryPlayback) {
+            loadCloudLibraryResumeProgress()
+        } else if (season != null && episode != null) {
+            watchProgressRepository.getEpisodeProgress(
+                progressContentId!!,
+                season,
+                episode,
+                profileId
+            ).firstOrNull()
+        } else {
+            watchProgressRepository.getProgress(progressContentId!!, profileId).firstOrNull()
+        }
+        newerServerProgress(local)
     }
-    val progress = newerServerProgress(local)
 
     progress?.let { saved ->
         if (saved.isInProgress()) {

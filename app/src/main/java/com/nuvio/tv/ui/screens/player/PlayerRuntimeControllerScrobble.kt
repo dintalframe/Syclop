@@ -36,6 +36,10 @@ internal fun PlayerRuntimeController.preparePlaybackBeforeStart(
     )
     clearPendingEngineSwitchTrackPreference()
     playbackPreparationJob?.cancel()
+    // Capture before authorization/preferences suspend. Starting from the beginning while these
+    // reads are pending invalidates this exact preparation's right to restore saved progress.
+    val resumeRequest = resumeRequestGate.beginRequest()
+    if (!loadSavedProgress) clearPendingInitialResumePosition()
 
     // Fire-and-forget: warm the Trakt episode mapping in the background.
     traktMappingJob?.cancel()
@@ -109,7 +113,7 @@ internal fun PlayerRuntimeController.preparePlaybackBeforeStart(
         // seek to be silently skipped — the player would start from 0:00
         // or hang in buffering after a late seek.
         val partyPositionMs = partyResumePositionMs()
-        if (partyPositionMs != null) {
+        if (partyPositionMs != null && resumeRequestGate.isCurrent(resumeRequest)) {
             pendingResumeProgress = null
             _uiState.update { it.copy(pendingSeekPosition = partyPositionMs) }
         } else if (loadSavedProgress) {
@@ -117,7 +121,7 @@ internal fun PlayerRuntimeController.preparePlaybackBeforeStart(
                 phase = "loading_saved_progress",
                 message = context.getString(com.nuvio.tv.R.string.player_loading_preparing)
             )
-            loadSavedProgressSuspend(currentSeason, currentEpisode)
+            loadSavedProgressSuspend(currentSeason, currentEpisode, resumeRequest)
         }
         recordLoadingDiagnosticEvent(
             phase = "initializing_player",

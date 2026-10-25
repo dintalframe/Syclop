@@ -25,6 +25,13 @@ class FirstUseInitialization(private val markers: InitializationMarkerStore, pri
         mutableState.value = StartupInitializationState(profile, selection)
     }
 
+    /** Forget RAM warm-up state without deleting any durable account/import completion markers. */
+    @Synchronized fun resetForAppRestart() {
+        generation++
+        hydrated.clear()
+        mutableState.value = StartupInitializationState()
+    }
+
     @Synchronized fun continueWithSavedData() {
         generation++
         mutableState.value = mutableState.value.copy(phase = InitializationPhase.CONTINUED)

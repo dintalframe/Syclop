@@ -443,11 +443,11 @@ private fun NextEpisodeStatusLine(text: String, modifier: Modifier = Modifier) {
 private fun nextEpisodeDisplayLabel(nextEpisode: NextEpisodeInfo): String {
     if (nextEpisode.isOtherType) return nextEpisode.title
     val context = LocalContext.current
-    val code = stringResource(
-        R.string.season_episode_format,
-        nextEpisode.season,
-        nextEpisode.episode,
-    )
+    val code = if (nextEpisode.season == null) {
+        stringResource(R.string.playback_episode_number, nextEpisode.episode)
+    } else {
+        stringResource(R.string.season_episode_format, nextEpisode.season, nextEpisode.episode)
+    }
     val localizedTitle = nextEpisode.title.localizeEpisodeTitle(context)
     return "$code • $localizedTitle"
 }
