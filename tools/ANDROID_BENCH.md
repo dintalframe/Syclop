@@ -14,6 +14,51 @@ python3 tools/android-bench.py --serial emulator-5580 status
 
 The SDK can remain in a separate configured directory. `--emulator /absolute/path/to/emulator` or `SYCLOP_EMULATOR` optionally selects a separately installed emulator bundle; its selected system-image directory still comes from the SDK. Such an override is not updated by SDK `setup` automatically. The bench does not bootstrap command-line tools or accept SDK licenses silently.
 
+## Miniconda environment
+
+Use an [official Miniconda installer](https://repo.anaconda.com/miniconda/) for your host. The portable recipe is [`conda/environment.yml`](conda/environment.yml). It selects Python 3.12 from conda-forge, excludes default channels and disables user-site packages. The bench needs no pip packages. Java, the Android SDK, the native emulator and AVD data stay in their existing locations.
+
+On this Mac, Miniconda is installed separately at `~/Library/Developer/Syclop/miniconda3`, with the environment under `envs/syclop-bench`. Existing Anaconda and global shell initialization are unchanged. To recreate the environment from the checkout:
+
+```sh
+export SYCLOP_MINICONDA_HOME="$HOME/Library/Developer/Syclop/miniconda3"
+"$SYCLOP_MINICONDA_HOME/bin/conda" env create \
+  --prefix "$SYCLOP_MINICONDA_HOME/envs/syclop-bench" \
+  --file tools/conda/environment.yml --no-default-packages
+```
+
+Store machine-specific SDK/JDK settings locally in this environment, using your own installed paths:
+
+```sh
+"$SYCLOP_MINICONDA_HOME/bin/conda" env config vars set \
+  --prefix "$SYCLOP_MINICONDA_HOME/envs/syclop-bench" \
+  JAVA_HOME="/absolute/path/to/jdk-17" \
+  ANDROID_HOME="/absolute/path/to/android-sdk" \
+  ANDROID_SDK_ROOT="/absolute/path/to/android-sdk"
+```
+
+This Mac also has `SYCLOP_EMULATOR` set to its separate emulator executable and `SYCLOP_BENCH_HOME` set to its local bench cache. These local values are not embedded in the portable recipe. Do not set global ADB routing variables; the bench manages its own isolated server.
+
+The wrapper runs the selected environment without changing your current shell or requiring `conda init`:
+
+```sh
+./tools/conda-bench.sh --serial emulator-5580 status
+./tools/conda-bench.sh --serial emulator-5580 start
+./tools/conda-bench.sh --serial emulator-5580 smoke
+```
+
+It forwards the same options and subcommands as `android-bench.py`. For another installation, set `SYCLOP_MINICONDA_HOME`; `SYCLOP_CONDA_PREFIX` can select a different existing environment prefix. On Linux the default Miniconda root is `~/miniconda3`.
+
+For an interactive development shell:
+
+```sh
+source "$SYCLOP_MINICONDA_HOME/etc/profile.d/conda.sh"
+conda activate "$SYCLOP_MINICONDA_HOME/envs/syclop-bench"
+python -m unittest discover -s tools -p test_android_bench.py -v
+python tools/android-bench.py --serial emulator-5580 status
+conda deactivate
+```
+
 ## Isolated emulator connection
 
 Every device action requires an explicit `emulator-NNNN` serial with an even console port in Android Emulator's supported range. The primary uses console port 5580, transport port 5581 and serial `emulator-5580`. TCP addresses, physical serials and implicit device selection are rejected. An online target must also report a QEMU emulator property before installation, capture or navigation.
