@@ -28,6 +28,10 @@
     <uses-feature
         android:name="android.hardware.touchscreen"
         android:required="false" />
+    <!-- Network playback also works over Ethernet; ACCESS_WIFI_STATE must not require Wi-Fi hardware. -->
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false" />
     <uses-feature
         android:name="android.hardware.microphone"
         android:required="false" />

@@ -11,7 +11,7 @@ for option in "$@"; do
     --test) run_tests=1 ;;
     --release) variant=Release; variant_dir=release ;;
     --help|-h)
-      printf 'Usage: ./build-syclop.sh [--test] [--release]\nBuilds Syclop fullDebug by default; --release builds the optimized, non-debuggable fullRelease.\n--test runs the selected isolation, credential, debrid, Trakt, MAL, Express, backup and log-redaction checks. No TV connection.\n'
+      printf 'Usage: ./build-syclop.sh [--test] [--release]\nBuilds Syclop fullDebug by default; --release builds the optimized, non-debuggable fullRelease.\n--test runs the selected isolation, credential, debrid, Trakt, MAL, Express, backup and log-redaction checks. Outputs go to ../dist/development; stable is never promoted automatically. No TV connection.\n'
       exit 0 ;;
     *) printf 'Unknown option: %s\n' "$option" >&2; exit 2 ;;
   esac
@@ -146,7 +146,8 @@ fi
 ./gradlew --no-daemon --console=plain --max-workers=2 \
   -Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8' \
   :app:assembleFull${variant}
-mkdir -p "$workspace_dir/dist"
+artifact_dir="$workspace_dir/dist/development"
+mkdir -p "$artifact_dir" "$workspace_dir/dist/stable"
 outputs="$project_dir/app/build/outputs/apk/full/$variant_dir"
 python3 - "$outputs" "$variant_dir" <<'PY'
 from pathlib import Path
@@ -161,14 +162,14 @@ for abi in ('arm64-v8a', 'universal'):
             raise SystemExit(f'Refusing APK containing the disabled local P2P engine: {apk.name}')
 print('Verified both APKs exclude the native local P2P engine.')
 PY
-cp "$outputs/app-full-arm64-v8a-${variant_dir}.apk" "$workspace_dir/dist/syclop-arm64-${variant_dir}.apk"
-cp "$outputs/app-full-universal-${variant_dir}.apk" "$workspace_dir/dist/syclop-${variant_dir}.apk"
+cp "$outputs/app-full-arm64-v8a-${variant_dir}.apk" "$artifact_dir/syclop-arm64-${variant_dir}.apk"
+cp "$outputs/app-full-universal-${variant_dir}.apk" "$artifact_dir/syclop-${variant_dir}.apk"
 (
-  cd "$workspace_dir/dist"
+  cd "$artifact_dir"
   checksum_file=syclop.sha256
   if [ "$variant_dir" = release ]; then checksum_file=syclop-release.sha256; fi
   shasum -a 256 "syclop-arm64-${variant_dir}.apk" "syclop-${variant_dir}.apk" > "$checksum_file"
 )
-"$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$workspace_dir/dist/syclop-arm64-${variant_dir}.apk" \
-  > "$workspace_dir/dist/syclop-${variant_dir}-signing-certificate.txt"
-printf 'Built %s and %s. No TV installation performed.\n' "$workspace_dir/dist/syclop-arm64-${variant_dir}.apk" "$workspace_dir/dist/syclop-${variant_dir}.apk"
+"$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$artifact_dir/syclop-arm64-${variant_dir}.apk" \
+  > "$artifact_dir/syclop-${variant_dir}-signing-certificate.txt"
+printf 'Built %s and %s. No TV installation performed.\n' "$artifact_dir/syclop-arm64-${variant_dir}.apk" "$artifact_dir/syclop-${variant_dir}.apk"
