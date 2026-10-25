@@ -19,7 +19,8 @@ internal data class HomeBrowseRow(val key: String, val title: String, val data: 
     val loading: Boolean = true, val failed: Boolean = false)
 internal data class HomeBrowseState(val section: HomeBrowseSection = HomeBrowseSection.HOME,
     val rows: List<HomeBrowseRow> = emptyList(), val loading: Boolean = true,
-    val moreCatalogs: Boolean = false, val originRevision: Long = -1L, val failed: Boolean = false)
+    val moreCatalogs: Boolean = false, val originRevision: Long = -1L, val failed: Boolean = false,
+    val requestRevision: Long = 0L)
 
 /** Read-only category browsing. It never edits Home catalog order/visibility, Library or accounts. */
 @HiltViewModel
@@ -78,6 +79,7 @@ class HomeBrowseViewModel @Inject constructor(
     }
 
     private var fingerprint = emptyList<String>()
+    private var requestRevision = 0L
     private var requests = emptyList<HomeBrowseRequest>()
     private val _state = MutableStateFlow(HomeBrowseState())
     internal val state: StateFlow<HomeBrowseState> = _state.asStateFlow()
@@ -123,15 +125,18 @@ class HomeBrowseViewModel @Inject constructor(
                             request.addon.id == com.nuvio.tv.data.catalog.RatedKidsCatalog.ADDON_ID &&
                             com.nuvio.tv.data.catalog.RatedKidsCatalog.isNativeAddon(request.addon.baseUrl)) 0 else 1
                     }.take(MAX_CATALOGS)
-                    fingerprint = listOf(profile.toString(), captured.selection.toString()) + requests.map {
+                    val nextFingerprint = listOf(profile.toString(), captured.selection.toString()) + requests.map {
                         "${it.key}|${it.addon.version}|${it.addon.configVersion}|${it.addon.timestamp}|${it.extraArgs}"
                     }
+                    if (fingerprint != nextFingerprint) requestRevision++
+                    fingerprint = nextFingerprint
                     val previous = cache[selected]?.takeIf { it.fingerprint == fingerprint }
                     if (previous != null) {
-                        _state.value = previous.state.copy(originRevision = captured.selection)
+                        _state.value = previous.state.copy(originRevision = captured.selection, requestRevision = requestRevision)
                     } else {
                         _state.value = HomeBrowseState(selected, loading = false,
-                            moreCatalogs = requests.isNotEmpty(), originRevision = captured.selection)
+                            moreCatalogs = requests.isNotEmpty(), originRevision = captured.selection,
+                            requestRevision = requestRevision)
                         loadCatalogBatch(captured)
                     }
                 }

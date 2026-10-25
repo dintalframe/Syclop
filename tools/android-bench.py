@@ -2,6 +2,7 @@
 """Syclop's local-emulator bench. No LAN connection, real-device targeting, or account actions."""
 import argparse
 import hashlib
+import importlib.util
 import itertools
 import json
 import os
@@ -23,6 +24,9 @@ PACKAGE = "com.dintal.syclop"
 TABS = ("Home", "Movies", "TV", "Anime", "Documentary", "Kids")
 KEYS = {"UP": "KEYCODE_DPAD_UP", "DOWN": "KEYCODE_DPAD_DOWN", "LEFT": "KEYCODE_DPAD_LEFT", "RIGHT": "KEYCODE_DPAD_RIGHT"}
 MAX_CAPTURE = 32 * 1024 * 1024
+_controls_spec = importlib.util.spec_from_file_location("android_bench_controls", Path(__file__).with_name("android_bench_controls.py"))
+controls = importlib.util.module_from_spec(_controls_spec)
+_controls_spec.loader.exec_module(controls)
 
 
 class BenchError(Exception):
@@ -139,6 +143,7 @@ class Bench:
         self.serial = options.serial
         self.report = {"schema": 1, "command": options.command, "steps": []}
         self.report_dir = None
+        self.startup_app_focused = False
 
     def validate_home(self):
         forbidden = [self.project.resolve(), (Path.home() / "Desktop").resolve(),
@@ -306,7 +311,7 @@ class Bench:
 
     def build(self):
         script = self.project / "build-syclop.sh"
-        args = ["bash", str(script), "--release"] + (["--test"] if self.options.test else [])
+        args = ["bash", str(script), "--ui-tests" if self.options.ui_tests else "--release"] + (["--test"] if self.options.test else [])
         build_env = os.environ.copy()
         build_env.update(ANDROID_HOME=str(self.sdk), ANDROID_SDK_ROOT=str(self.sdk))
         try:
@@ -315,9 +320,85 @@ class Bench:
             raise BenchError("Development build did not complete before its deadline.") from None
         if result.returncode:
             raise BenchError("Development build failed; no emulator install was attempted.")
-        if not self.apk().is_file():
+        expected = self.project.parent / "dist/development" / ("syclop-debug.apk" if self.options.ui_tests else "syclop-release.apk")
+        if not expected.is_file():
             raise BenchError("Expected development universal APK was not produced.")
-        print("Development universal APK ready:", self.apk())
+        if self.options.ui_tests and not (expected.parent / "syclop-ui-tests.apk").is_file():
+            raise BenchError("Expected UI test APK was not produced.")
+        print("Development universal APK ready:", expected)
+
+    def playback_controls(self):
+        """Run only the fixed synthetic fixtures, preserving the emulator's app data."""
+        serial_port(self.serial)
+        declared_development = self.project.parent / "dist/development"
+        development = declared_development.resolve()
+        if development != declared_development:
+            raise BenchError("Playback-control development directory must not escape through a symlink.")
+        paths = [(Path(value).expanduser() if value else development / default).resolve()
+                 for value, default in ((self.options.apk, "syclop-debug.apk"),
+                                        (self.options.test_apk, "syclop-ui-tests.apk"))]
+        for apk in paths:
+            if development not in apk.parents or apk.suffix != ".apk" or not apk.is_file():
+                raise BenchError("Playback controls require both APKs under dist/development.")
+        tool = self.sdk / "build-tools/36.0.0"
+        host_env = self.env.copy()
+        if os.environ.get("JAVA_HOME"):
+            host_env["PATH"] = str(Path(os.environ["JAVA_HOME"]) / "bin") + os.pathsep + host_env.get("PATH", "")
+        facts, signatures = [], []
+        try:
+            for apk, package in zip(paths, (controls.PACKAGE, controls.TEST_PACKAGE)):
+                tree = run([tool / "aapt2", "dump", "xmltree", apk, "--file", "AndroidManifest.xml"], env=host_env).stdout
+                facts.append(controls.validate_manifest(tree, package))
+                signature = run([tool / "apksigner", "verify", "--print-certs", apk], env=host_env, timeout=60).stdout
+                signers = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]{64})$", signature, re.M)
+                if not signers:
+                    raise BenchError("APK signing certificates could not be verified.")
+                signatures.append([value.lower() for value in signers])
+        except controls.ControlsError as error:
+            raise BenchError(str(error)) from None
+        badging = run([tool / "aapt2", "dump", "badging", paths[0]], env=host_env).stdout
+        native = re.findall(r"^native-code: (.+)$", badging, re.M)
+        abis = re.findall(r"'([a-zA-Z0-9_-]+)'", native[0]) if len(native) == 1 else []
+        if not abis or not set(abis) <= {"arm64-v8a", "armeabi-v7a", "x86", "x86_64"}:
+            raise BenchError("App APK native ABI declarations could not be verified.")
+        self.verify_emulator()
+        api = self.device("shell", "getprop", "ro.build.version.sdk").stdout.strip()
+        abi = self.device("shell", "getprop", "ro.product.cpu.abi").stdout.strip()
+        if not api.isdigit() or any(fact["min_sdk"] > int(api) for fact in facts) or abi not in abis:
+            raise BenchError("Playback-control APKs are incompatible with the selected emulator.")
+        self.report["device"] = {"api": int(api), "abi": abi}
+        self.report["fixture"] = "account-free-playback-controls"
+        self.report["apks"] = {role: {"sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "signers": signers}
+                               for role, apk, signers in zip(("app", "tests"), paths, signatures)}
+        for apk in paths:
+            result = self.device("install", "-r", "-t", str(apk), timeout=180)
+            if not result.stdout.splitlines() or result.stdout.splitlines()[-1].strip() != "Success":
+                raise BenchError("Emulator did not confirm the playback-control APK installation.")
+        remote = "/sdcard/Android/data/" + PACKAGE + "/files/"
+        self.device("shell", "rm", "-f", *[remote + name for name in controls.SCREENSHOTS])
+        print("Running the 11 fixed playback-control fixtures on", self.serial, flush=True)
+        result = self.device("shell", "am", "instrument", "-w", "-r", "-e", "class", ",".join(controls.TESTS),
+                             controls.TEST_PACKAGE + "/" + controls.RUNNER,
+                             timeout=self.options.test_timeout, check=False)
+        # Raw instrumentation can contain logs or exception values. Retain only protocol facts.
+        self.report["instrumentation"] = controls.instrumentation_result(result.stdout + "\n" + result.stderr, result.returncode)
+        self.report["screenshots"] = []
+        for name in controls.SCREENSHOTS:
+            capture = self.device("exec-out", "cat", remote + name, binary=True, check=False)
+            if capture.returncode:
+                continue
+            try:
+                controls.png_dimensions(capture.stdout)
+            except controls.ControlsError:
+                continue
+            (self.report_dir / name).write_bytes(capture.stdout)
+            self.report["screenshots"].append(name)
+        self.report["visual_inspection"] = "required"
+        if not self.report["instrumentation"]["passed"]:
+            raise BenchError("The required playback-control tests did not all pass.")
+        if len(self.report["screenshots"]) != len(controls.SCREENSHOTS):
+            raise BenchError("The playback-control run did not produce six fresh valid screenshots.")
+        print("All 11 fixtures passed; inspect the six screenshots before accepting the visuals.")
 
     def apk(self):
         return Path(self.options.apk).expanduser().resolve() if self.options.apk else self.project.parent / "dist/development/syclop-release.apk"
@@ -346,8 +427,12 @@ class Bench:
         focus = self.device("shell", "dumpsys", "window").stdout
         if not any("mCurrentFocus=" in line and " " + PACKAGE + "/" in line for line in focus.splitlines()):
             if allow_unfocused:
+                if self.startup_app_focused:
+                    raise BenchError("Syclop lost foreground before Home was observed; inspect the failure screenshot and local crash diagnostics.")
                 return None
             raise BenchError("Syclop is not the focused app; no navigation continued.")
+        if allow_unfocused:
+            self.startup_app_focused = True
         output = self.device("exec-out", "uiautomator", "dump", "/dev/tty", timeout=15).stdout
         start, end = output.find("<?xml"), output.rfind("</hierarchy>")
         if start < 0 or end < start:
@@ -370,6 +455,7 @@ class Bench:
 
     def smoke(self):
         self.verify_emulator()
+        self.startup_app_focused = False
         resolved = self.device("shell", "cmd", "package", "resolve-activity", "--brief", "-a",
             "android.intent.action.MAIN", "-c", "android.intent.category.LEANBACK_LAUNCHER", "-p", PACKAGE).stdout
         component = next((line.strip() for line in reversed(resolved.splitlines())
@@ -519,10 +605,16 @@ def parser():
     commands.add_parser("status")
     build = commands.add_parser("build", help="Existing build-syclop.sh --release; development artifacts only")
     build.add_argument("--test", action="store_true")
+    build.add_argument("--ui-tests", action="store_true", help="Build debuggable app and Android test APKs; no installation")
     install = commands.add_parser("install")
     install.add_argument("--apk", help="Optional artifact under dist/development")
     smoke = commands.add_parser("smoke")
     smoke.add_argument("--ui-timeout", type=bounded_integer(15, 180), default=90)
+    playback = commands.add_parser("playback-controls", help="Install development debug/test APKs and run the 11 fixed synthetic fixtures")
+    playback.set_defaults(command="playback_controls")
+    playback.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
+    playback.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
+    playback.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
     commands.add_parser("stop")
     reset = commands.add_parser("reset", help="Explicit deletion, ownership marker required")
     reset.add_argument("--confirm-reset", action="store_true")
@@ -532,13 +624,13 @@ def parser():
 def main(argv=None):
     options = parser().parse_args(argv)
     # Keep optional subcommand fields predictable without ever echoing arguments or environment.
-    for key, value in (("apk", None), ("test", False)):
+    for key, value in (("apk", None), ("test", False), ("ui_tests", False)):
         if not hasattr(options, key):
             setattr(options, key, value)
     bench = None
     try:
         bench = Bench(options)
-        if options.command in ("status", "install", "smoke"):
+        if options.command in ("status", "install", "smoke", "playback_controls"):
             bench.begin_report()
         getattr(bench, options.command)()
         bench.save_report(True)

@@ -18,11 +18,14 @@ export ANDROID_HOME=/absolute/path/to/android-sdk
 ./build-syclop.sh --test
 ./build-syclop.sh --release
 ./build-syclop.sh --test --release
+./build-syclop.sh --test --ui-tests
 ```
 
 The sibling `.toolchain/env.sh` is optional. If it exists, the script sources it to reuse this development workspace's pinned toolchain. A standalone clone can use the normal JDK/SDK environment above without that file or the sibling `bootstrap.sh`. This environment-based path is implemented; a clean build on a separate machine has not yet been exercised. If SDK 36 or build tools are missing, the script can install them through `cmdline-tools/latest/bin/sdkmanager` or `sdkmanager` on `PATH`; otherwise install them in Android Studio first.
 
 The script builds `fullDebug` by default or optimized, non-debuggable `fullRelease` with `--release`. It copies the arm64 APK, universal APK, SHA-256 record and public signing-certificate report to the sibling `../dist/development/` directory. It also creates `../dist/stable/`, but never promotes a build there automatically. Release artifacts use separate `syclop-*-release.apk` names, preserving debug artifacts. `--test` runs the selected local-mode, credential, debrid, tracking, Express, logging and backup safety suites. The script never installs on or connects to a device. Host compilation/tests do not establish device playback compatibility, account authentication, or measured performance.
+
+For the isolated emulator fixtures, `--ui-tests` builds a debuggable app plus `syclop-ui-tests.apk` and includes all three APKs in the development checksum file. It cannot be combined with `--release`. Run the fixed controls suite with `tools/conda-bench.sh --serial emulator-5580 playback-controls`; see the [bench guide](tools/ANDROID_BENCH.md#playback-control-fixtures) for artifact checks, screenshots and test boundaries.
 
 The current Shield-installed optimized arm64 release is SHA-256 `0828d05e872ae806cd46a3e93af10455d435a260da557cfc9fdbcba40f45a228` (52,943,139 bytes). It passed 1,325 selected tests in 186 suites with zero failures/errors/skips, Android/Hilt compilation, lint and R8 packaging. Transfer MD5 `ccc5f7816cdf35c54321e70608132678`, the existing Syclop signing certificate and absence of `libnuvio_engine.so` were verified.
 
@@ -45,6 +48,8 @@ Stable promotion also requires fresh-install/onboarding acceptance, a published 
 ## Signing and public service registration
 
 The first build creates a separate local signing key under the sibling `../.toolchain/syclop-private/` directory, outside the source repository. Its directory is mode 700 and key/password files are mode 600. Retain these private files to sign future compatible updates. They must not be published. Debug and release variants use this same local Syclop identity; the script explicitly disables CI's optional debug-signing override. A fresh clone that creates a different key cannot update somebody else's installed Syclop APK; it must use the original maintainer's key or a separate installation. No upstream signing key or cloud-service secret is needed.
+
+`SYCLOP_SIGNING_HOME` may select an existing private signing directory outside Git using an absolute path when reusing the same identity across local checkouts. It must contain both `syclop-local.jks` and `signing.password`, or neither for initial creation. The bench verifies the Android test APK's certificate separately; a test APK does not replace the app's signing identity.
 
 Syclop's owner has registered its own public Trakt, MyAnimeList and Simkl applications. This workspace sets their public Client IDs and exact registered redirects in ignored `local.properties`:
 

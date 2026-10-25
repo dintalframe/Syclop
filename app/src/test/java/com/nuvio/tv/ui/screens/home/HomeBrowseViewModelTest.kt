@@ -173,6 +173,30 @@ class HomeBrowseViewModelTest {
         assertEquals(24, f.calls.size)
         assertEquals(1, f.calls.count { it.first == com.nuvio.tv.data.catalog.RatedKidsCatalog.BASE_URL })
     }
+    @Test fun `request order revision changes for deliberate catalog reorder not late completion`() = runTest {
+        val slow = CompletableDeferred<Unit>()
+        val f = fixture(catalogs = listOf(descriptor("slow", ContentType.MOVIE), descriptor("ready", ContentType.MOVIE)))
+        every { f.catalogs.getCatalog(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } answers {
+            val id = arg<String>(3)
+            flow {
+                if (id == "slow") slow.await()
+                emit(NetworkResult.Success(row(id, listOf(item(id, ContentType.MOVIE)))))
+            }
+        }
+        f.vm.select(HomeBrowseSection.MOVIES); runCurrent()
+        val revision = f.vm.state.value.requestRevision
+        assertTrue(revision > 0)
+        assertEquals(listOf("ready"), f.vm.state.value.rows.mapNotNull { it.data?.catalogId })
+        slow.complete(Unit); advanceUntilIdle()
+        assertEquals(revision, f.vm.state.value.requestRevision)
+        assertEquals(listOf("slow", "ready"), f.vm.state.value.rows.mapNotNull { it.data?.catalogId })
+
+        f.installed.value = listOf(f.addon.copy(catalogs = f.addon.catalogs.reversed()))
+        advanceUntilIdle()
+        assertTrue(f.vm.state.value.requestRevision > revision)
+        assertEquals(listOf("ready", "slow"), f.vm.state.value.rows.mapNotNull { it.data?.catalogId })
+    }
+
     private fun fixture(catalogs: List<CatalogDescriptor> = listOf(descriptor("movie", ContentType.MOVIE))) = Fixture(catalogs).also(fixtures::add)
     private class Fixture(descriptors: List<CatalogDescriptor>) {
         val profile = MutableStateFlow(1); val revision = AtomicLong(1)

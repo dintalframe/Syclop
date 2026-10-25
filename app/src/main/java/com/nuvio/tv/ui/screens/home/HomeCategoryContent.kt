@@ -54,7 +54,7 @@ internal fun HomeCategoryContent(
     }
 
     val currentState = state ?: return
-    key(section, currentState.originRevision) {
+    key(section, currentState.originRevision, currentState.requestRevision) {
         HomeCategoryModernContent(section, viewModel, homeViewModel, homeUiState,
             entry, currentState, rows, onDetail, isWatched, onLongPress)
     }
@@ -77,6 +77,7 @@ private fun HomeCategoryModernContent(
     var contentHasFocus by remember { mutableStateOf(false) }
     var lastFocusedRow by remember(section, revision) { mutableStateOf<String?>(null) }
     val cache = remember(section, revision) { ModernCarouselRowBuildCache() }
+    val displayedRowKeys = remember(section, revision, state.requestRevision) { mutableStateOf(emptyList<String>()) }
     val buildLock = remember { Mutex() }
     val context = LocalContext.current
     val input = remember(rows, homeUiState.modernLandscapePostersEnabled,
@@ -94,13 +95,15 @@ private fun HomeCategoryModernContent(
         )
     }
     val produced by produceState<CategoryPresentationResult?>(null, input, context) {
+        val previousRowKeys = displayedRowKeys.value
         val built = buildLock.withLock {
             withContext(Dispatchers.Default) {
-                buildModernHomePresentation(input, cache, context).let { base ->
-                    if (section == HomeBrowseSection.KIDS) HomeCategoryPresentation.kidsRows(base, rows) else base
-                }
+                val base = buildModernHomePresentation(input, cache, context)
+                val grouped = if (section == HomeBrowseSection.KIDS) HomeCategoryPresentation.kidsRows(base, rows) else base
+                HomeCategoryPresentation.preserveRowOrder(grouped, previousRowKeys)
             }
         }
+        displayedRowKeys.value = built.rows.list.map { it.key }
         value = CategoryPresentationResult(input, built)
     }
     // Keep current-profile cards composed during page append. The enclosing revision key

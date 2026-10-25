@@ -226,6 +226,19 @@ class LaunchFocusRuntimeRegressionTest(unittest.TestCase):
         self.assertEqual(("shell", "dumpsys", "window"), device.call_args_list[0].args)
         self.assertEqual(("exec-out", "uiautomator", "dump", "/dev/tty"), device.call_args_list[1].args)
 
+    def test_startup_foreground_loss_fails_even_when_a_background_app_process_survives(self):
+        instance = self.instance()
+        window = subprocess.CompletedProcess([], 0, "mCurrentFocus=Window{test u0 com.dintal.syclop/com.nuvio.tv.MainActivity}\n", "")
+        loading = subprocess.CompletedProcess([], 0, '<?xml version="1.0"?><hierarchy/>', "")
+        launcher = subprocess.CompletedProcess([], 0, "mCurrentFocus=Window{test u0 com.google.android.tvlauncher/.MainActivity}\n", "")
+        with patch.object(instance, "device", side_effect=[window, loading, launcher]) as device, patch.object(instance, "key") as key:
+            self.assertIsNone(instance.hierarchy(allow_unfocused=True))
+            with self.assertRaisesRegex(bench.BenchError, "lost foreground before Home"):
+                instance.hierarchy(allow_unfocused=True)
+        self.assertEqual(3, device.call_count)
+        self.assertFalse(any("pidof" in call.args for call in device.call_args_list))
+        key.assert_not_called()
+
     def run_smoke_fixture(self, transient_start=False, restore_home=False):
         instance = self.instance()
         state = {"tab": 0, "body": False, "reads": 0}

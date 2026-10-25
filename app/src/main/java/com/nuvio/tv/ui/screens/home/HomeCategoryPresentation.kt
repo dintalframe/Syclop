@@ -5,6 +5,19 @@ import com.nuvio.tv.ui.util.asStable
 
 /** UI-only grouping: original provider identities and detail/playback payloads remain intact. */
 internal object HomeCategoryPresentation {
+    /** Late catalogs must not insert a row above the card that already received focus. */
+    fun preserveRowOrder(base: ModernHomePresentationState, previousKeys: List<String>): ModernHomePresentationState {
+        val remaining = base.rows.list.distinctBy { it.key }.associateByTo(linkedMapOf<String, HeroCarouselRow>()) { it.key }
+        val ordered = buildList<HeroCarouselRow> {
+            previousKeys.forEach { key -> remaining.remove(key)?.let(::add) }
+            addAll(remaining.values)
+        }.mapIndexed { index, row ->
+            if (row.globalRowIndex == index) row else row.copy(globalRowIndex = index)
+        }
+        if (ordered.size == base.rows.list.size && ordered.indices.all { ordered[it] === base.rows.list[it] }) return base
+        return ModernHomePresentationState(ordered.asStable(), buildCarouselRowLookups(ordered))
+    }
+
     fun kidsRows(base: ModernHomePresentationState, catalogs: List<CatalogRow>): ModernHomePresentationState {
         val sourceByKey = catalogs.associateBy(::catalogRowKey)
         var rowIndex = 0

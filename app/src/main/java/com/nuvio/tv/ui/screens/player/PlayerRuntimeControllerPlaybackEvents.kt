@@ -1454,6 +1454,10 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
                     activeSkipInterval = null, skipIntervalDismissed = false)
             }
             seekPlaybackTo(0L, SeekParameters.EXACT, exact = true)
+            // This is a new viewing session, even if the previous pass crossed the watched
+            // threshold. Keep durable watched history, but allow this rewatch to save its progress.
+            hasMarkedCurrentEpisodeCompleted = false
+            lastSavedPosition = 0L
             updatePlaybackTimeline(currentPosition = 0L)
             userPausedManually = false
             cancelPauseOverlay()
