@@ -282,6 +282,8 @@ fun HeroContentSection(
                             Button(onClick = onTraktActions) { Text("Trakt") }
                         }
 
+                        SimklAttributionButton(meta)
+
                         if (meta.apiType == "movie") {
                             ActionIconButton(
                                 icon = if (isMovieWatched) {

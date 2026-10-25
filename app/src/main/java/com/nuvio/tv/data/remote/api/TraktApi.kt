@@ -373,4 +373,24 @@ interface TraktApi {
         @Header("Authorization") authorization: String,
         @Body body: TraktListItemsMutationRequestDto
     ): Response<TraktListItemsMutationResponseDto>
+    /** Public discovery calls: these methods deliberately have no account Authorization header. */
+    @GET("movies/popular")
+    suspend fun getRatedKidsMovies(
+        @Query("genres") genres: String,
+        @Query("certifications") certifications: String,
+        @Query("subgenres") subgenres: String? = null,
+        @Query("extended") extended: String = "full,images",
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 25
+    ): Response<List<TraktMovieDto>>
+
+    @GET("shows/popular")
+    suspend fun getRatedKidsShows(
+        @Query("genres") genres: String,
+        @Query("certifications") certifications: String,
+        @Query("subgenres") subgenres: String? = null,
+        @Query("extended") extended: String = "full,images",
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 25
+    ): Response<List<TraktShowDto>>
 }

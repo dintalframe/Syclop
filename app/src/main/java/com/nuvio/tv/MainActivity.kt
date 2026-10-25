@@ -1,5 +1,7 @@
 package com.nuvio.tv
 
+import com.nuvio.tv.core.initialization.StartupInitializationCoordinator
+import com.nuvio.tv.ui.components.StartupInitializationScreen
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -220,6 +222,8 @@ import kotlinx.coroutines.launch
 
 val LocalSidebarExpanded = compositionLocalOf { false }
 val LocalContentFocusRequester = compositionLocalOf { FocusRequester.Default }
+/** Explicit root-navigation entry, independent of geometric content focus search. */
+val LocalOpenSidebar = compositionLocalOf<(() -> Unit)?> { null }
 
 data class SplashBackground(
     val profileColorHex: String? = null,
@@ -285,6 +289,9 @@ open class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var trackingProgressRefreshCoordinator: TrackingProgressRefreshCoordinator
+
+    @Inject
+    lateinit var startupInitializationCoordinator: StartupInitializationCoordinator
 
     @Inject
     lateinit var startupSyncService: StartupSyncService
@@ -436,6 +443,7 @@ open class MainActivity : ComponentActivity() {
             }
 
             val activeProfileId by profileManager.activeProfileId.collectAsState()
+            val initializationState by startupInitializationCoordinator.state.collectAsState()
             val startupSplashEnabled by profileManager.startupSplashEnabled.collectAsState()
             val startupLoadingState = remember(activeProfileId, startupSession) { StartupLoadingState() }
             val profiles by profileManager.profiles.collectAsState()
@@ -735,6 +743,7 @@ open class MainActivity : ComponentActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
 
                     var startupDestination = StartupDestination.Loading
+                    var initializationHomeEntry = false
                     val surfaceContentReady = hasSeenAuthQrOnFirstLaunch != null &&
                         authState !is AuthState.Loading
 
@@ -872,6 +881,7 @@ open class MainActivity : ComponentActivity() {
                     val actualRoute = navBackStackEntry?.destination?.route
                     val currentRoute = optimisticRoute ?: actualRoute
                     startupDestination = startupDestinationForRoute(actualRoute ?: startDestination)
+                    initializationHomeEntry = (actualRoute ?: startDestination) == Screen.Home.route
 
                     LaunchedEffect(actualRoute) {
                         optimisticRoute = null
@@ -999,7 +1009,8 @@ open class MainActivity : ComponentActivity() {
                                         itemType = deepLink.type
                                     )
                                 ) {
-                                    launchSingleTop = true
+                                    // A new title needs a new SavedStateHandle and detail ViewModel.
+                                    launchSingleTop = false
                                 }
                             }
                             is AppDeepLink.Party -> {
@@ -1238,6 +1249,17 @@ open class MainActivity : ComponentActivity() {
         } 
     }
 
+                    // This overlay does not intercept callbacks, profile selection, setup or content intents.
+                    // Navigation/deep-link effects above remain mounted while Home is covered.
+                    val initializationSelection = profileManager.activeProfileSelectionRevision
+                    LaunchedEffect(initializationHomeEntry, activeProfileId, initializationSelection) {
+                        if (initializationHomeEntry) startupInitializationCoordinator.onHomeEntry(activeProfileId, initializationSelection)
+                        else startupInitializationCoordinator.onLeaveHome()
+                    }
+                    val blockHomeForInitialization = initializationHomeEntry &&
+                        (initializationState.profileId != activeProfileId ||
+                            initializationState.selectionRevision != initializationSelection || initializationState.blocksHome)
+
                     LaunchedEffect(startupDestination, startupLoadingState) {
                         if (startupDestination == StartupDestination.Content) {
                             startupLoadingState.complete = true
@@ -1272,6 +1294,14 @@ open class MainActivity : ComponentActivity() {
                             modifier = Modifier.graphicsLayer { alpha = splashAlpha }
                         )
                     }
+                    if (blockHomeForInitialization) {
+                        val visibleInitialization = if (initializationState.profileId == activeProfileId &&
+                            initializationState.selectionRevision == initializationSelection) initializationState
+                            else com.nuvio.tv.core.initialization.StartupInitializationState(activeProfileId, initializationSelection)
+                        StartupInitializationScreen(visibleInitialization,
+                            onRetry = startupInitializationCoordinator::retry,
+                            onContinue = startupInitializationCoordinator::continueWithSavedData)
+                    }
                     }
                 }
                 }
@@ -1304,7 +1334,9 @@ open class MainActivity : ComponentActivity() {
             } else {
                 TrackingRefreshIntent.AUTOMATIC
             }
-            trackingProgressRefreshCoordinator.refreshConnected(refreshIntent)
+            if (!startupInitializationCoordinator.shouldDeferForegroundRefresh) {
+                trackingProgressRefreshCoordinator.refreshConnected(refreshIntent)
+            }
         }
     }
 
@@ -1458,6 +1490,16 @@ private fun LegacySidebarScaffold(
     // Bumped on every key event the drawer sees so the auto-collapse timer
     // resets while the user navigates between drawer items.
     var legacyDrawerInteractionVersion by remember { mutableStateOf(0) }
+
+    val openSidebar: () -> Unit = remember(showSidebar, drawerState) {
+        {
+            if (showSidebar) {
+                pendingContentFocusTransfer = false
+                pendingSidebarFocusRequest = true
+                drawerState.setValue(DrawerValue.Open)
+            }
+        }
+    }
 
 
     BackHandler(enabled = currentRoute in rootRoutes && drawerState.currentValue == DrawerValue.Closed) {
@@ -1698,7 +1740,8 @@ private fun LegacySidebarScaffold(
         ) {
             CompositionLocalProvider(
                 LocalSidebarExpanded provides (drawerState.currentValue == DrawerValue.Open),
-                LocalContentFocusRequester provides contentFocusRequester
+                LocalContentFocusRequester provides contentFocusRequester,
+                LocalOpenSidebar provides openSidebar
             ) {
                 NuvioNavHost(
                     navController = navController,
@@ -1853,6 +1896,16 @@ private fun ModernSidebarScaffold(
     var sidebarCollapsePending by remember { mutableStateOf(false) }
     var pendingContentFocusTransfer by remember { mutableStateOf(false) }
     var pendingSidebarFocusRequest by remember { mutableStateOf(false) }
+    val openSidebar: () -> Unit = remember(showSidebar) {
+        {
+            if (showSidebar) {
+                pendingContentFocusTransfer = false
+                sidebarCollapsePending = false
+                isSidebarExpanded = true
+                pendingSidebarFocusRequest = true
+            }
+        }
+    }
     var focusedDrawerIndex by remember { mutableStateOf(-1) }
     var isFloatingPillIconOnly by remember { mutableStateOf(false) }
     var pillExpandRequestCount by remember { mutableIntStateOf(0) }
@@ -2100,7 +2153,8 @@ private fun ModernSidebarScaffold(
         ) {
             CompositionLocalProvider(
                 LocalSidebarExpanded provides isSidebarExpanded,
-                LocalContentFocusRequester provides contentFocusRequester
+                LocalContentFocusRequester provides contentFocusRequester,
+                LocalOpenSidebar provides openSidebar
             ) {
                 NuvioNavHost(
                     navController = navController,

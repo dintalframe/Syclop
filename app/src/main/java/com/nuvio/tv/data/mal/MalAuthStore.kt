@@ -62,6 +62,9 @@ class MalAuthStore internal constructor(
     }
 
     val storageAvailable: Boolean get() = persistence.available
+    /** Loading holds the same monitor, so observers never mistake its transient empty state for logout. */
+    fun initializationSnapshot(): MalAccountState = synchronized(lock) { state.value }
+
     fun isCurrent(expected: MalScope): Boolean = state.value.scope == expected
     fun credentials(expected: MalScope): MalTokens? = synchronized(lock) { if (persistence.available && isCurrent(expected)) tokens else null }
 

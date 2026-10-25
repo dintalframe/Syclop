@@ -119,6 +119,10 @@ class DebridSettingsViewModel @Inject constructor(
         update { dataStore.setCloudLibraryEnabled(enabled) }
     }
 
+    fun setConnectedServiceFallbackEnabled(enabled: Boolean) {
+        update { dataStore.setConnectedServiceFallbackEnabled(enabled) }
+    }
+
     fun setPreferredResolverProviderId(providerId: String) {
         update { dataStore.setPreferredResolverProviderId(providerId) }
     }
@@ -393,6 +397,7 @@ data class DebridSettingsUiState(
     val realDebridApiKey: String = "",
     val allDebridApiKey: String = "",
     val preferredResolverProviderId: String = "",
+    val connectedServiceFallbackEnabled: Boolean = true,
     val instantPlaybackPreparationLimit: Int = 0,
     val streamMaxResults: Int = 0,
     val streamSortMode: DebridStreamSortMode = DebridStreamSortMode.DEFAULT,
@@ -461,6 +466,7 @@ data class DebridSettingsUiState(
         realDebridApiKey = settings.realDebridApiKey,
         allDebridApiKey = settings.allDebridApiKey,
         preferredResolverProviderId = settings.preferredResolverProviderId,
+        connectedServiceFallbackEnabled = settings.connectedServiceFallbackEnabled,
         instantPlaybackPreparationLimit = settings.instantPlaybackPreparationLimit,
         streamMaxResults = settings.streamMaxResults,
         streamSortMode = settings.streamSortMode,

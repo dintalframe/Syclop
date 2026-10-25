@@ -12,9 +12,11 @@ class TorboxFileSelector @Inject constructor() {
         resolve: StreamClientResolve,
         season: Int?,
         episode: Int?,
+        animeProof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof? = null,
     ): TorboxTorrentFileDto? = selectDebridFile(
         files = files,
         resolve = resolve,
+        animeProof = animeProof,
         season = season,
         episode = episode,
         path = { file ->

@@ -78,7 +78,8 @@ import androidx.compose.ui.platform.LocalContext
 import com.nuvio.tv.domain.model.ContinueWatchingCardStyle
 import com.nuvio.tv.domain.model.FocusedPosterTrailerPlaybackTarget
 import com.nuvio.tv.domain.model.MetaPreview
-import com.nuvio.tv.ui.components.LoadingIndicator
+import com.nuvio.tv.ui.components.SyclopBrandAnimation
+import com.nuvio.tv.ui.components.SyclopBrandState
 import com.nuvio.tv.ui.components.ContinueWatchingOptionsDialog
 import com.nuvio.tv.LocalSidebarExpanded
 import com.nuvio.tv.LocalContentFocusRequester
@@ -142,7 +143,12 @@ fun ModernHomeContent(
     scrollToTopTrigger: Int = 0,
     onRequestLazyCatalogLoad: (String) -> Unit = {},
     onRowItemFocusedCallback: (String, Int, Boolean) -> Unit = { _, _, _ -> },
-    blockLeftOnFirstExpandedItem: Boolean = false
+    blockLeftOnFirstExpandedItem: Boolean = false,
+    // Category tabs retain tab focus until an explicit Down or a return from detail.
+    // Defaults preserve the original Home entry behavior.
+    autoFocusOnEntry: Boolean = true,
+    contentEntryRequest: Int = 0,
+    inheritPreviousHeroBackdrop: Boolean = true
 ) {
     val onRowItemFocusedPassedDown = rememberUpdatedState(onRowItemFocusedCallback)
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
@@ -176,7 +182,7 @@ fun ModernHomeContent(
     val hasCatalogs = uiState.catalogRows.isNotEmpty()
     if (hasCollections && !hasCatalogs && uiState.installedAddonsCount > 0 && uiState.isLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            LoadingIndicator()
+            SyclopBrandAnimation(SyclopBrandState.Loading)
         }
         return
     }
@@ -473,9 +479,11 @@ fun ModernHomeContent(
                 focusedItemByRow[resolvedRow.key] = resolvedIndex
                 heroItem.value = resolvedRow.items.getOrNull(resolvedIndex)?.heroPreview
                     ?: resolvedRow.items.firstOrNull()?.heroPreview
-                pendingRowFocusKey.value = resolvedRow.key
-                pendingRowFocusIndex.value = resolvedIndex
-                pendingRowFocusNonce.intValue++
+                if (autoFocusOnEntry) {
+                    pendingRowFocusKey.value = resolvedRow.key
+                    pendingRowFocusIndex.value = resolvedIndex
+                    pendingRowFocusNonce.intValue++
+                }
                 restoredFromSavedState.value = true
                 return@LaunchedEffect
             }
@@ -503,7 +511,7 @@ fun ModernHomeContent(
             heroItem.value = resolvedActive.items.getOrNull(resolvedIndex)?.heroPreview
                 ?: resolvedActive.items.firstOrNull()?.heroPreview
 
-            if (!focusState.hasSavedFocus && !hadActiveRow) {
+            if (autoFocusOnEntry && !focusState.hasSavedFocus && !hadActiveRow) {
                 initialAutoSelectedKey = resolvedActive.key
                 pendingRowFocusKey.value = resolvedActive.key
                 pendingRowFocusIndex.value = resolvedIndex
@@ -514,6 +522,16 @@ fun ModernHomeContent(
         if (!restoredFromSavedState.value && carouselRows.list.isNotEmpty()) {
             restoredFromSavedState.value = true
         }
+    }
+
+    LaunchedEffect(contentEntryRequest, carouselRows.list.isNotEmpty()) {
+        if (contentEntryRequest <= 0 || carouselRows.list.isEmpty()) return@LaunchedEffect
+        val row = focusHolder.activeRowKey?.let { rowByKey[it] }
+            ?: focusState.focusedRowKey?.let { rowByKey[it] } ?: carouselRows.list.first()
+        val index = (focusedItemByRow[row.key] ?: 0).coerceIn(0, (row.items.size - 1).coerceAtLeast(0))
+        pendingRowFocusKey.value = row.key
+        pendingRowFocusIndex.value = index
+        pendingRowFocusNonce.intValue++
     }
 
     LaunchedEffect(focusState.verticalScrollIndex, focusState.verticalScrollOffset) {
@@ -954,7 +972,7 @@ fun ModernHomeContent(
                             }
                         }
                         val displayedBackdrop = HeroBackdropState.lastDisplayedUrl
-                        val corrected = if (!displayedBackdrop.isNullOrBlank() &&
+                        val corrected = if (inheritPreviousHeroBackdrop && !displayedBackdrop.isNullOrBlank() &&
                             displayedBackdrop != currentStable.heroBackdrop
                         ) {
                             currentStable.copy(heroBackdrop = displayedBackdrop)
@@ -1095,6 +1113,7 @@ fun ModernHomeContent(
 
             ModernHeroSection(
                 heroSceneState = heroSceneStateLambda,
+                inheritPreviousHeroBackdrop = inheritPreviousHeroBackdrop,
                 isFullScreen = isFullScreenLambda,
                 heroMediaWidthPx = heroMediaWidthPx,
                 heroMediaHeightPx = heroMediaHeightPx,
@@ -1261,6 +1280,7 @@ fun ModernHomeContent(
                 onFocusedHeroMediaNonceChange = onFocusedHeroMediaNonceChangeLambda,
                 onExpansionInteractionNonceChange = onExpansionInteractionNonceChangeLambda,
                 blockLeftOnFirstExpandedItem = blockLeftOnFirstExpandedItem,
+                contentFocusEnabled = autoFocusOnEntry || contentEntryRequest > 0,
                 isVerticalRowsScrollingState = isVerticalRowsScrollingState,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -1306,6 +1326,7 @@ fun ModernHomeContent(
 @Composable
 private fun ModernHeroSection(
     heroSceneState: () -> ModernHeroSceneState,
+    inheritPreviousHeroBackdrop: Boolean,
     isFullScreen: () -> Boolean,
     heroMediaWidthPx: Int,
     heroMediaHeightPx: Int,
@@ -1317,6 +1338,7 @@ private fun ModernHeroSection(
     val bgColor = NuvioTheme.colors.Background
     ModernHeroScene(
         state = heroSceneState,
+        inheritPreviousHeroBackdrop = inheritPreviousHeroBackdrop,
         isFullScreen = isFullScreen,
         bgColor = bgColor,
         modifier = modifier.then(if (highlighterEnabled) Modifier.recompositionHighlighter() else Modifier),

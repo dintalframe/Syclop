@@ -3444,4 +3444,18 @@
     <string name="playback_external_installed_note">Installed video players are listed below. Just Player and VLC appear when installed.</string>
     <string name="playback_external_progress_note">Resume, subtitles and returned progress depend on the player.</string>
     <string name="player_error_initial_buffering_timeout">This stream did not start within 60 seconds. Go back to retry or choose another source.</string>
+    <string name="provider_install_formats">Add a Stremio manifest, Express package, or vendor URL. Choose the package when the vendor offers several.</string>
+    <string name="provider_install_invalid_url">Enter an HTTPS provider URL without embedded credentials.</string>
+    <string name="provider_install_failed">This provider is unavailable or incompatible. Use a Stremio manifest or a compatible Express package.</string>
+    <string name="provider_vendor_choose">Choose a provider package</string>
+    <string name="provider_vendor_choose_sub">Only the package you choose will be installed.</string>
+    <string name="provider_vendor_default"> · Publisher default</string>
+    <string name="provider_update_schedule">Automatic updates every 24 hours when Android permits and a network is available. Overdue checks resume when the app opens.</string>
+    <string name="provider_update_running">Checking provider definitions…</string>
+    <string name="provider_update_finished">Provider checks finished. See each provider’s status below.</string>
+    <string name="provider_update_failed">Update failed. The last valid configuration was kept.</string>
+    <string name="provider_update_identity_changed">Provider identity changed. The last valid configuration was kept.</string>
+    <string name="provider_update_valid">Configuration valid.</string>
+    <string name="provider_update_not_checked">Not checked yet.</string>
+    <string name="provider_update_times">Last attempt: %1$s · Last success: %2$s</string>
 </resources>

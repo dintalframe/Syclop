@@ -97,6 +97,7 @@ class StreamScreenViewModel @Inject constructor(
     private val directDebridStreamPreparer: DirectDebridStreamPreparer,
     private val debridStreamPresentation: DebridStreamPresentation,
     private val bitrateMetadata: com.nuvio.tv.core.debrid.DebridBitrateMetadataService,
+    private val selectedSourceFacts: com.nuvio.tv.core.mediafacts.SelectedSourceFactsService,
     private val bitrateSettingsStore: com.nuvio.tv.data.local.DebridSettingsDataStore,
     private val youTubeStreamResolver: YouTubeStreamResolver,
     private val externalPlaybackTracker: com.nuvio.tv.core.player.ExternalPlaybackTracker,
@@ -129,6 +130,10 @@ class StreamScreenViewModel @Inject constructor(
     private val nativeMetadataStreams = java.util.concurrent.ConcurrentHashMap<String,Stream>()
     private var bitrateRequestKey: String? = null
     private var lastSelectedBitrateStream: Stream? = null
+    private val selectedSourceSelection = MutableStateFlow(0L)
+    private fun newSelectedSourceTicket(): Long = synchronized(selectedSourceSelection) {
+        (selectedSourceSelection.value + 1L).also { selectedSourceSelection.value = it }
+    }
     @Volatile private var bitrateMetadataSelectionRevision = Long.MIN_VALUE
     @Volatile private var bitrateMetadataCredentialRevision = Long.MIN_VALUE
 
@@ -355,10 +360,20 @@ class StreamScreenViewModel @Inject constructor(
         loadStreams()
     }
 
+    fun isNativeSourceDisplayEligible(stream: Stream): Boolean =
+        bitrateSettings?.let { com.nuvio.tv.core.debrid.NativeDebridSourceCards.eligible(stream, it) } == true
+
     private fun rankBitrateStreams(streams: List<Stream>): List<Stream> {
         syncBitrateMetadataScope()
-        val merged = streams.map { nativeMetadataStreams[it.stableKey(0)] ?: it }
-        return bitrateSettings?.let { debridStreamPresentation.rankAll(merged, it) } ?: merged
+        val state = _uiState.value
+        val movieRuntime = state.bitrateDurationMillis?.takeIf {
+            state.bitrateDurationOrigin == com.nuvio.tv.domain.model.StreamDurationOrigin.CATALOG_MOVIE &&
+                state.season == null && state.episode == null
+        }
+        val merged = streams.map {
+            (nativeMetadataStreams[it.stableKey(0)] ?: it).copy(reportedMovieRuntimeMillis = movieRuntime)
+        }
+        return bitrateSettings?.let { debridStreamPresentation.rankAll(merged, it) } ?: emptyList()
     }
 
     private fun refreshBitrateRanking() {
@@ -381,13 +396,14 @@ class StreamScreenViewModel @Inject constructor(
         val settings = bitrateSettings ?: return
         val ordered = debridStreamPresentation.rankAll(state.addonStreams.flatMap { it.streams }, settings, enforceLimits = false)
         val visible = (listOfNotNull(lastSelectedBitrateStream) + ordered).distinctBy { it.stableKey(0) }
+            .map { nativeMetadataStreams[it.stableKey(0)] ?: it }
         val requestKey = visible.take(12).joinToString { it.stableKey(0) } + "|${state.bitrateDurationMillis}"
         if(!force && requestKey == bitrateRequestKey) return
         bitrateRequestKey = requestKey
         bitrateJob?.cancel()
         bitrateJob = viewModelScope.launch {
             val changed = bitrateMetadata.enrichKnownFiles(visible, state.bitrateDurationMillis, state.bitrateDurationOrigin,
-                season, episode, playbackProfileId)
+                season, episode, playbackProfileId, nativeVideoId = videoId, nativeMediaType = contentType)
             ensureActive()
             if (bitrateSettingsStore.activeProfileId.value != playbackProfileId ||
                 bitrateSettingsStore.activeProfileSelectionRevision != selectionRevision ||
@@ -408,6 +424,7 @@ class StreamScreenViewModel @Inject constructor(
         when (event) {
             is StreamScreenEvent.OnAddonFilterSelected -> filterByAddon(event.addonName)
             is StreamScreenEvent.OnStreamSelected -> {
+                newSelectedSourceTicket()
                 lastSelectedBitrateStream = event.stream
                 bitrateJob?.cancel()
                 cancelStreamsLoad()
@@ -835,7 +852,8 @@ class StreamScreenViewModel @Inject constructor(
                         season = season,
                         episode = episode,
                         playerSettings = playerSettings,
-                        installedAddonNames = installedAddonOrder.toSet()
+                        installedAddonNames = installedAddonOrder.toSet(),
+                        nativeVideoId = videoId
                     ) { original, prepared ->
                         updateUiStateIfChanged { state ->
                             val updatedGroups = directDebridStreamPreparer.replacePreparedStream(
@@ -1311,6 +1329,7 @@ class StreamScreenViewModel @Inject constructor(
             }
             _uiState.update { it.copy(bitrateDurationMillis = exactRuntime?.toLong()?.times(60_000L),
                 bitrateDurationOrigin = durationOrigin.takeIf { exactRuntime != null }) }
+            refreshBitrateRanking()
             scheduleBitrateMetadata()
             if (!requiresMetadataLookup) return@launch
             val metaGenres = meta.genres.takeIf { it.isNotEmpty() }
@@ -1391,12 +1410,13 @@ class StreamScreenViewModel @Inject constructor(
     }
 
     suspend fun authorizePlaybackUrl(url: String): Boolean {
-        val allowed = directDebridResolver.isPlaybackAuthorized(url, playbackProfileId)
+        val allowed = directDebridResolver.isPlaybackAuthorized(url, playbackProfileId, videoId, season, episode, contentType)
         if (!allowed) showDirectDebridPlaybackError(com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE, false)
         return allowed
     }
 
     suspend fun resolveStreamForPlayback(stream: Stream, saveLastLink: Boolean = true): StreamPlaybackInfo? {
+        val selectedTicket = newSelectedSourceTicket()
         if (stream.serverTarget != null || stream.youTubeIdToResolve() != null) {
             showDirectDebridPlaybackError(com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE, false)
             return null
@@ -1409,7 +1429,7 @@ class StreamScreenViewModel @Inject constructor(
             Log.d(TAG, "resolveStreamForPlayback: no debrid resolve needed, using direct URL")
             val direct = stream.getStreamUrl()
             if (direct == null || !authorizePlaybackUrl(direct)) return null
-            return getStreamForPlayback(stream, saveLastLink)
+            return inspectSelectedSource(stream, getStreamForPlayback(stream, saveLastLink), selectedTicket)
         }
 
         Log.d(TAG, "resolveStreamForPlayback: starting debrid resolve for stream=${stream.name} addon=${stream.addonName}")
@@ -1429,7 +1449,13 @@ class StreamScreenViewModel @Inject constructor(
         }
 
         val basePlaybackInfo = getStreamForPlayback(stream)
-        val result = directDebridResolver.resolve(stream, season, episode)
+        val result = directDebridResolver.resolve(stream, season, episode, nativeVideoId = videoId,
+            nativeMediaType = contentType, onProviderAttempt = { providerId ->
+            if (selectedSourceSelection.value == selectedTicket) updateUiStateIfChanged {
+                it.copy(directAutoPlayMessage = if (showLoadingStatus)
+                    context.getString(R.string.syclop_debrid_trying_service, com.nuvio.tv.core.debrid.DebridProviders.displayName(providerId)) else null)
+            }
+        })
         val resolveMs = System.currentTimeMillis() - resolveStartMs
         Log.d(TAG, "resolveStreamForPlayback: debrid resolve completed in ${resolveMs}ms result=${result::class.simpleName}")
 
@@ -1454,8 +1480,9 @@ class StreamScreenViewModel @Inject constructor(
                     isTorrent = false,
                     headers = null,
                     filename = result.filename ?: basePlaybackInfo.filename,
-                    videoSize = result.videoSize ?: basePlaybackInfo.videoSize
+                    videoSize = result.videoSize
                 )
+                val checked = inspectSelectedSource(stream, resolved, selectedTicket, freshNativeFile = true) ?: return null
                 StreamSidecarSubtitles.set(result.url, stream.subtitles)
                 // Save resolved URL to cache for reuse last link
                 if (!result.url.isNullOrBlank()) {
@@ -1474,14 +1501,14 @@ class StreamScreenViewModel @Inject constructor(
                         )
                     }
                 }
-                resolved
+                checked
             }
             DirectDebridResolveResult.MissingApiKey -> {
                 showDirectDebridPlaybackError(context.getString(R.string.debrid_missing_api_key), refreshStreams = false)
                 null
             }
             DirectDebridResolveResult.NotCached -> {
-                showDirectDebridPlaybackError(context.getString(R.string.debrid_not_cached), refreshStreams = false)
+                showDirectDebridPlaybackError(context.getString(R.string.syclop_debrid_not_ready), refreshStreams = false)
                 null
             }
             DirectDebridResolveResult.Stale -> {
@@ -1493,6 +1520,56 @@ class StreamScreenViewModel @Inject constructor(
                 null
             }
         }
+    }
+
+    private suspend fun inspectSelectedSource(stream: Stream, playback: StreamPlaybackInfo, selectedTicket: Long,
+        freshNativeFile: Boolean = false): StreamPlaybackInfo? {
+        val url = playback.url ?: return null
+        if (selectedSourceSelection.value != selectedTicket || !syncBitrateMetadataScope() || !authorizePlaybackUrl(url)) return null
+        val selection = bitrateSettingsStore.activeProfileSelectionRevision
+        val credentials = bitrateSettingsStore.activeCredentialRevision
+        if (freshNativeFile) {
+            bitrateJob?.cancel()
+            bitrateRequestKey = null
+            val previous = nativeMetadataStreams[stream.stableKey(0)]?.nativeFileMetadata ?: stream.nativeFileMetadata
+            nativeMetadataStreams[stream.stableKey(0)] = stream.copy(nativeFileMetadata =
+                com.nuvio.tv.core.debrid.freshNativeResolvedFileMetadata(previous, playback.videoSize,
+                    stream.stableKey(0).substringBeforeLast('|')))
+        }
+        val previousOverlay = _uiState.value.showDirectAutoPlayOverlay
+        val previousMessage = _uiState.value.directAutoPlayMessage
+        updateUiStateIfChanged { it.copy(showDirectAutoPlayOverlay = true, directAutoPlayMessage = "Checking selected file…") }
+        val result = try {
+            selectedSourceFacts.inspect(url, playbackProfileId, selectedSourceSelection, selectedTicket)
+        } finally {
+            if (selectedSourceSelection.value == selectedTicket && bitrateSettingsStore.activeProfileId.value == playbackProfileId &&
+                bitrateSettingsStore.activeProfileSelectionRevision == selection && bitrateSettingsStore.activeCredentialRevision == credentials) updateUiStateIfChanged {
+                it.copy(showDirectAutoPlayOverlay = previousOverlay, directAutoPlayMessage = previousMessage)
+            }
+        }
+        if (selectedSourceSelection.value != selectedTicket || bitrateSettingsStore.activeProfileId.value != playbackProfileId ||
+            bitrateSettingsStore.activeProfileSelectionRevision != selection || bitrateSettingsStore.activeCredentialRevision != credentials ||
+            !authorizePlaybackUrl(url)) return null
+        if (result != null) {
+            bitrateJob?.cancel()
+            val previous = nativeMetadataStreams[stream.stableKey(0)]?.nativeFileMetadata ?: stream.nativeFileMetadata
+            val tracks = result.tracks ?: previous?.verifiedTracks
+            val measuredDuration = tracks?.durationMillis
+            val metadata = (previous ?: com.nuvio.tv.domain.model.StreamFileMetadata()).copy(
+                selectedFileBytes = result.fileBytes ?: previous?.selectedFileBytes,
+                durationMillis = measuredDuration ?: previous?.durationMillis,
+                durationOrigin = if(measuredDuration != null) com.nuvio.tv.domain.model.StreamDurationOrigin.NATIVE_CONTAINER else previous?.durationOrigin,
+                sourceIdentity = stream.stableKey(0).substringBeforeLast('|'), verifiedTracks = tracks)
+            nativeMetadataStreams[stream.stableKey(0)] = stream.copy(nativeFileMetadata = metadata)
+            while (nativeMetadataStreams.size > 128) {
+                val oldest = nativeMetadataStreams.keys.firstOrNull() ?: break
+                nativeMetadataStreams.remove(oldest)
+            }
+            bitrateRequestKey = null
+            refreshBitrateRanking()
+        }
+        if (freshNativeFile && result == null) refreshBitrateRanking()
+        return playback
     }
 
     private suspend fun prepareServerStream(stream: Stream, target: ServerPlaybackTarget): StreamPlaybackInfo? {

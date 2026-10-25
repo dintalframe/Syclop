@@ -125,6 +125,12 @@ val releaseKeyPasswordValue = env("NUVIO_RELEASE_KEY_PASSWORD")
 val releaseStorePasswordValue = env("NUVIO_RELEASE_STORE_PASSWORD")
     ?: localProperties.getProperty("NUVIO_RELEASE_STORE_PASSWORD", "815787")
 
+// Sync conflict copies keep a numeric filename suffix; never treat them as canonical sources.
+val workspaceConflictSourceCopy = Regex(""".* [0-9]+\.(kt|java)$""")
+val workspaceConflictSourceSpec = org.gradle.api.specs.Spec<org.gradle.api.file.FileTreeElement> { entry ->
+    !entry.isDirectory && workspaceConflictSourceCopy.matches(entry.name)
+}
+
 android {
     namespace = "com.nuvio.tv"
     compileSdk = 36
@@ -327,6 +333,9 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
     kotlin {
+        sourceSets.configureEach {
+            kotlin.exclude(workspaceConflictSourceSpec)
+        }
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
         }
@@ -337,6 +346,9 @@ android {
     }
 
     sourceSets {
+        configureEach {
+            (java as org.gradle.api.tasks.util.PatternFilterable).exclude(workspaceConflictSourceSpec)
+        }
         getByName("main") {
             jniLibs.srcDirs("src/main/jniLibs")
         }

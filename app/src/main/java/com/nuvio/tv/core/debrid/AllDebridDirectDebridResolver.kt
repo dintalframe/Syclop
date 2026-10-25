@@ -28,10 +28,18 @@ class AllDebridDirectDebridResolver @Inject constructor(
                 stage = "magnet_upload"
                 val uploaded = scopedDebridRequest(operation) { service.upload(apiKey, magnet) }
                 val id = uploaded.id ?: return DirectDebridResolveResult.Stale
-                // No background download polling. An uncached job remains available in cloud.
+                // No extra requests or background polling. A processing job remains in the cloud.
                 stage = "magnet_status"
-                val ready = uploaded.ready == true || scopedDebridRequest(operation) { service.status(apiKey, id) }.any { it.id == id && it.statusCode == 4 }
-                if (!ready) return DirectDebridResolveResult.NotCached
+                val statuses = if (uploaded.ready == true) emptyList()
+                    else scopedDebridRequest(operation) { service.status(apiKey, id) }
+                val readiness = AllDebridReadiness.classify(uploaded.ready, id, statuses)
+                Log.d("DebridResolve", "provider=alldebrid stage=readiness " + readiness.diagnosticFields())
+                when (readiness.classification) {
+                    AllDebridReadiness.Classification.READY -> Unit
+                    AllDebridReadiness.Classification.PROCESSING -> return DirectDebridResolveResult.NotCached
+                    AllDebridReadiness.Classification.SERVICE_ERROR,
+                    AllDebridReadiness.Classification.MISSING_STATUS -> return DirectDebridResolveResult.Error
+                }
                 stage = "magnet_files"
                 val files = scopedDebridRequest(operation) { service.files(apiKey, listOf(id)) }[id].orEmpty()
                 stage = "file_select"
@@ -40,6 +48,7 @@ class AllDebridDirectDebridResolver @Inject constructor(
                     resolve = metadata,
                     season = season,
                     episode = episode,
+                    animeProof = operation?.animeProof,
                     path = { it.path },
                     isPlayable = { it.path.hasDebridVideoExtension() },
                     size = { it.size ?: 0L }
@@ -61,7 +70,7 @@ class AllDebridDirectDebridResolver @Inject constructor(
             // Fixed stage/status/class only: never log server text, request fields or Throwable.
             val status = (error as? AllDebridApiException)?.httpStatus?.takeIf { it in 100..599 }
             Log.w("DebridResolve", "provider=alldebrid stage=$stage result=error " +
-                "httpStatus=${status ?: "none"} exception=${error.javaClass.simpleName}")
+                "httpStatus=${status ?: "none"} exception=${error.javaClass.simpleName}" + AllDebridJsonDiagnostics.fields(error))
             DirectDebridResolveResult.Error
         }
     }

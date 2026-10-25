@@ -146,6 +146,7 @@ internal fun ModernHomeRowsList(
     onFocusedHeroMediaNonceChange: (Int) -> Unit,
     onExpansionInteractionNonceChange: (Int) -> Unit,
     blockLeftOnFirstExpandedItem: Boolean = false,
+    contentFocusEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     // Unwrap StableRef wrappers for internal use (not passed to child composables)
@@ -162,6 +163,7 @@ internal fun ModernHomeRowsList(
     val density = LocalDensity.current
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
+    val browseTabFocusRequester = LocalHomeBrowseTabFocusRequester.current
     val verticalPrefetchImageLoader = context.imageLoader
     val latestCarouselRowsForImagePrefetch = rememberUpdatedState(carouselRows)
 
@@ -301,6 +303,14 @@ internal fun ModernHomeRowsList(
                         activeRowKey.value == firstRowKey
                     ) return@onPreviewKeyEvent true
                     if (event.type == KeyEventType.KeyDown &&
+                        event.key == Key.DirectionUp &&
+                        firstRowKey != null && activeRowKey.value == firstRowKey &&
+                        browseTabFocusRequester != null
+                    ) {
+                        browseTabFocusRequester.requestFocus(FocusDirection.Up)
+                        return@onPreviewKeyEvent true
+                    }
+                    if (event.type == KeyEventType.KeyDown &&
                         event.key == Key.DirectionDown &&
                         effectiveExpandEnabled &&
                         expandedCatalogFocusKey.value != null &&
@@ -426,6 +436,7 @@ internal fun ModernHomeRowsList(
                 ModernRowSection(
                     row = row,
                     isActiveRow = isActiveRowLambda,
+                    contentFocusEnabled = contentFocusEnabled,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
                     rowTitleBottom = 14.dp, // rowTitleBottom
                     defaultBringIntoViewSpec = defaultBringIntoViewSpec,

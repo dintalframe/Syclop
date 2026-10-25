@@ -126,9 +126,71 @@ class AllDebridIntegrationTest {
         }
     }
 
+    @Test fun `single object status preserves native selected-file resolution and cached status checks`()=runTest {
+        MockWebServer().use { server ->
+            server.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"ready":false}]}}"""))
+            server.enqueue(json("""{"status":"success","data":{"magnets":{"id":42,"statusCode":4}}}"""))
+            server.enqueue(json(filesResponse))
+            server.enqueue(json("""{"status":"success","data":{"link":"https://cdn.example/episode2.mkv","filename":"Show.S01E02.mkv","filesize":200}}"""))
+            val store=mockk<DebridSettingsDataStore>()
+            every { store.settings } returns flowOf(DebridSettings(allDebridApiKey=TOKEN))
+            val result=AllDebridDirectDebridResolver(store,service(server)).resolve(stream(),1,2)
+            assertTrue(result is DirectDebridResolveResult.Success)
+            assertEquals(200L,(result as DirectDebridResolveResult.Success).videoSize)
+            assertEquals("/v4/magnet/upload",server.takeRequest().path)
+            assertEquals("/v4.1/magnet/status",server.takeRequest().path)
+            assertEquals("/v4/magnet/files",server.takeRequest().path)
+            assertEquals("/v4/link/unlock",server.takeRequest().path)
+        }
+    }
+    @Test fun `single object processing status cannot become a cached playback claim`()=runTest {
+        MockWebServer().use { server ->
+            server.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"ready":false}]}}"""))
+            server.enqueue(json("""{"status":"success","data":{"magnets":{"id":42,"statusCode":1}}}"""))
+            val store=mockk<DebridSettingsDataStore>()
+            every { store.settings } returns flowOf(DebridSettings(allDebridApiKey=TOKEN))
+            assertEquals(DirectDebridResolveResult.NotCached,AllDebridDirectDebridResolver(store,service(server)).resolve(stream(),1,2))
+            assertEquals(2,server.requestCount)
+        }
+    }
+
+    @Test fun `all documented processing codes return not cached after exactly one status request`() = runTest {
+        for (code in 0..3) assertReadinessResult("""{"magnets":{"id":42,"statusCode":$code}}""", DirectDebridResolveResult.NotCached)
+    }
+
+    @Test fun `service error codes return error instead of a misleading cache miss`() = runTest {
+        for (code in listOf(5, 12, 999)) assertReadinessResult("""{"magnets":{"id":42,"statusCode":$code}}""", DirectDebridResolveResult.Error)
+    }
+
+    @Test fun `missing empty mismatched and unknown status cannot become not cached`() = runTest {
+        for (data in listOf("{}", """{"magnets":[]}""", """{"magnets":{"id":43,"statusCode":4}}""",
+            """{"magnets":{"id":42}}""", """{"magnets":{"id":42,"statusCode":-1}}""")) {
+            assertReadinessResult(data, DirectDebridResolveResult.Error)
+        }
+    }
+
+    @Test fun `malformed status still fails without file requests retries or a cache claim`() = runTest {
+        for (data in listOf("""{"magnets":null}""", """{"magnets":true}""", """{"magnets":{"id":42,"statusCode":"invalid"}}""")) {
+            assertReadinessResult(data, DirectDebridResolveResult.Error)
+        }
+    }
+
+    private suspend fun assertReadinessResult(data: String, expected: DirectDebridResolveResult) {
+        MockWebServer().use { server ->
+            server.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"ready":false}]}}"""))
+            server.enqueue(json("""{"status":"success","data":$data}"""))
+            val store = mockk<DebridSettingsDataStore>()
+            every { store.settings } returns flowOf(DebridSettings(allDebridApiKey = TOKEN))
+            assertEquals(expected, AllDebridDirectDebridResolver(store, service(server)).resolve(stream(), 1, 2))
+            assertEquals(2, server.requestCount)
+            assertEquals("/v4/magnet/upload", server.takeRequest().path)
+            assertEquals("/v4.1/magnet/status", server.takeRequest().path)
+        }
+    }
+
     private fun service(server: MockWebServer): AllDebridService = AllDebridService(
         Retrofit.Builder().baseUrl(server.url("/"))
-            .addConverterFactory(MoshiConverterFactory.create(Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()))
+            .addConverterFactory(MoshiConverterFactory.create(Moshi.Builder().add(com.nuvio.tv.data.remote.dto.AllDebridMagnetCollectionAdapterFactory).addLast(KotlinJsonAdapterFactory()).build()))
             .build().create(AllDebridApi::class.java)
     )
 

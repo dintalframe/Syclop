@@ -49,6 +49,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.nuvio.tv.R
+import com.nuvio.tv.core.debrid.NativeDebridSourceCards
 import com.nuvio.tv.ui.util.languageCodeToName
 
 @Composable
@@ -114,8 +115,13 @@ fun StreamInfoOverlay(
 
 @Composable
 private fun StreamInfoContent(data: StreamInfoData) {
+    val mpv = data.mpvSnapshot
+    val sourceName = NativeDebridSourceCards.displayText(data.streamName)
+    val sourceDescription = NativeDebridSourceCards.displayText(data.streamDescription)
+    // Recover vertical space for MPV diagnostics without adding another focus target or scroll trap.
+    val sectionGap = if (mpv != null) 4.dp else NuvioTheme.spacing.lg
     // SOURCE section
-    val hasSourceInfo = data.addonName != null || data.streamName != null
+    val hasSourceInfo = data.addonName != null || sourceName != null
     if (hasSourceInfo) {
         SectionLabel(stringResource(R.string.stream_info_section_source))
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.xs))
@@ -145,9 +151,9 @@ private fun StreamInfoContent(data: StreamInfoData) {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                if (data.streamName != null && data.streamName != data.addonName) {
+                if (sourceName != null && sourceName != data.addonName) {
                     Text(
-                        text = data.streamName.replace("\n", " · "),
+                        text = sourceName.replace("\n", " · "),
                         style = MaterialTheme.typography.bodyLarge,
                         color = NuvioTheme.colors.TextSecondary,
                         maxLines = 1,
@@ -156,9 +162,9 @@ private fun StreamInfoContent(data: StreamInfoData) {
                 }
             }
         }
-        if (!data.streamDescription.isNullOrBlank()) {
+        if (!sourceDescription.isNullOrBlank()) {
             Text(
-                text = data.streamDescription.replace("\n", " · "),
+                text = sourceDescription.replace("\n", " · "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = NuvioTheme.colors.TextSecondary,
                 maxLines = 1,
@@ -177,7 +183,7 @@ private fun StreamInfoContent(data: StreamInfoData) {
                 )
             }
         }
-        Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
+        Spacer(modifier = Modifier.height(sectionGap))
     }
 
     // FILE section
@@ -189,26 +195,27 @@ private fun StreamInfoContent(data: StreamInfoData) {
             InfoItem(label = stringResource(R.string.stream_info_filename), value = data.filename, modifier = Modifier.weight(1f))
             InfoItem(label = stringResource(R.string.stream_info_size), value = data.fileSize?.let { formatFileSize(it) })
         }
-        Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
+        Spacer(modifier = Modifier.height(sectionGap))
     }
 
     // VIDEO section
-    val hasVideoInfo = data.videoCodec != null || data.videoWidth != null ||
+    val unknown = stringResource(R.string.syclop_mpv_unknown)
+    val hasVideoInfo = mpv != null || data.videoCodec != null || data.videoWidth != null ||
         data.videoFrameRate != null || data.videoBitrate != null || data.fileBitrate != null
     if (hasVideoInfo) {
         SectionLabel(stringResource(R.string.stream_info_section_video))
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.xs))
         Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
-            InfoItem(label = stringResource(R.string.stream_info_codec), value = data.videoCodec)
+            InfoItem(label = stringResource(R.string.stream_info_codec), value = data.videoCodec ?: unknown.takeIf { mpv != null })
             InfoItem(
                 label = stringResource(R.string.stream_info_resolution),
                 value = if (data.videoWidth != null && data.videoHeight != null) {
                     formatResolution(data.videoWidth, data.videoHeight)
-                } else null
+                } else unknown.takeIf { mpv != null }
             )
             InfoItem(
-                label = stringResource(R.string.stream_info_frame_rate),
-                value = data.videoFrameRate?.let { "%.3f fps".format(it) }
+                label = stringResource(if (mpv != null) R.string.syclop_mpv_source_fps else R.string.stream_info_frame_rate),
+                value = data.videoFrameRate?.let { "%.3f fps".format(it) } ?: unknown.takeIf { mpv != null }
             )
             // A container that declares no track bitrate leaves only the whole file rate, which
             // includes audio and overhead, so it is labelled apart rather than shown as the video rate.
@@ -224,7 +231,33 @@ private fun StreamInfoContent(data: StreamInfoData) {
                 )
             }
         }
-        Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
+        if (mpv != null) {
+            Spacer(modifier = Modifier.height(NuvioTheme.spacing.xs))
+            Text(text = stringResource(R.string.syclop_mpv_snapshot), style = MaterialTheme.typography.labelSmall,
+                color = NuvioTheme.colors.TextTertiary)
+            Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+                val decoder = when (mpv.activeDecoder) {
+                    com.nuvio.tv.core.player.MpvInfoActiveDecoder.SOFTWARE -> stringResource(R.string.syclop_mpv_software)
+                    com.nuvio.tv.core.player.MpvInfoActiveDecoder.MEDIACODEC -> "MediaCodec"
+                    com.nuvio.tv.core.player.MpvInfoActiveDecoder.MEDIACODEC_COPY -> "MediaCodec (copy)"
+                    null -> unknown
+                }
+                InfoItem(stringResource(R.string.syclop_mpv_active_decoder), decoder)
+                InfoItem(stringResource(R.string.syclop_mpv_speed), mpv.speed?.let { "%.2f×".format(it) } ?: unknown)
+                InfoItem(stringResource(R.string.syclop_mpv_estimated_fps), mpv.estimatedFrameRate?.let { "%.3f fps".format(it) } ?: unknown)
+            }
+            Spacer(modifier = Modifier.height(NuvioTheme.spacing.xs))
+            Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+                InfoItem(stringResource(R.string.syclop_mpv_frame_drops), "${mpv.droppedFrames ?: unknown} / ${mpv.decoderDroppedFrames ?: unknown}")
+                InfoItem(stringResource(R.string.syclop_mpv_cache_buffer), mpv.cachedSeconds?.let { "%.1f s".format(it) } ?: unknown)
+                InfoItem(stringResource(R.string.syclop_mpv_waiting_cache), when (mpv.waitingForCache) {
+                    true -> stringResource(R.string.syclop_mpv_yes)
+                    false -> stringResource(R.string.syclop_mpv_no)
+                    null -> unknown
+                })
+            }
+        }
+        Spacer(modifier = Modifier.height(sectionGap))
     }
 
     // AUDIO section
@@ -244,7 +277,7 @@ private fun StreamInfoContent(data: StreamInfoData) {
                 value = data.audioLanguage?.let { languageCodeToName(it) }
             )
         }
-        Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
+        Spacer(modifier = Modifier.height(sectionGap))
     }
 
     // SUBTITLE section
@@ -295,12 +328,7 @@ private fun InfoItem(label: String, value: String?, modifier: Modifier = Modifie
 
 @Composable
 private fun formatFileSize(bytes: Long): String {
-    return when {
-        bytes >= 1_073_741_824L -> stringResource(R.string.unit_size_gb, "%.1f".format(bytes / 1_073_741_824.0))
-        bytes >= 1_048_576L -> stringResource(R.string.unit_size_mb, "%.1f".format(bytes / 1_048_576.0))
-        bytes >= 1024L -> stringResource(R.string.unit_size_kb, "%.1f".format(bytes / 1024.0))
-        else -> stringResource(R.string.unit_size_b, bytes)
-    }
+    return android.text.format.Formatter.formatShortFileSize(LocalContext.current, bytes)
 }
 
 private fun formatBitrate(bps: Int): String {

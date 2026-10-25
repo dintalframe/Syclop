@@ -486,7 +486,8 @@ internal fun ModernRowSection(
     onBackdropInteraction: () -> Unit,
     onExpandedCatalogFocusKeyChange: (String?) -> Unit,
     sharedPlaceholderShimmerOffsetState: State<Float>?,
-    itemFocusRequesters: StableRef<MutableMap<Int, FocusRequester>> = StableRef(mutableMapOf())
+    itemFocusRequesters: StableRef<MutableMap<Int, FocusRequester>> = StableRef(mutableMapOf()),
+    contentFocusEnabled: Boolean = true
 ) {
     // Unwrap StableRef wrappers
     @Suppress("NAME_SHADOWING") val focusedItemByRow = focusedItemByRow.value
@@ -494,6 +495,7 @@ internal fun ModernRowSection(
     @Suppress("NAME_SHADOWING") val loadMoreRequestedTotals = loadMoreRequestedTotals.value
     @Suppress("NAME_SHADOWING") val itemFocusRequesters = itemFocusRequesters.value
     val rowKey = row.key
+    val contentFocusEnabledState = rememberUpdatedState(contentFocusEnabled)
 
     // Per-row derived state: only invalidates when THIS row's focused index
     // changes, not when any other row's index changes in the shared map.
@@ -597,7 +599,7 @@ internal fun ModernRowSection(
         val loadMoreCatalogId = row.catalogId
         val loadMoreAddonId = row.addonId
         val loadMoreApiType = row.apiType
-        val canObserveLoadMore = row.supportsSkip &&
+        val canObserveLoadMore = contentFocusEnabled && row.supportsSkip &&
             row.hasMore &&
             !loadMoreCatalogId.isNullOrBlank() &&
             !loadMoreAddonId.isNullOrBlank() &&
@@ -957,7 +959,7 @@ internal fun ModernRowSection(
                                 (pendingRowFocusIndex.value ?: 0) == index
                             val isCurrent = isActiveRow() &&
                                 rowFocusedIndex.value == index
-                            isPending || isCurrent
+                            contentFocusEnabledState.value && (isPending || isCurrent)
                         }
                     }
 

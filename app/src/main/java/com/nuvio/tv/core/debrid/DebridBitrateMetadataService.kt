@@ -5,7 +5,6 @@ import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.model.StreamFileMetadata
 import com.nuvio.tv.domain.model.StreamDurationOrigin
 import java.io.IOException
-import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,20 +34,19 @@ class DebridBitrateMetadataService @Inject constructor(
     private val resolver: DirectDebridResolver,
     private val settings: DebridSettingsDataStore
 ) {
-    private val head = DebridSelectedFileHeadProbe()
     private val slots = Semaphore(2)
-    private data class CachedSize(val bytes: Long?, val untilMs: Long)
-    private val sizes = linkedMapOf<String, CachedSize>()
 
     suspend fun enrichKnownFiles(streams: List<Stream>, durationMillis: Long?,
-        durationOrigin: StreamDurationOrigin?, season: Int?, episode: Int?, expectedProfileId: Int): List<Pair<Stream,Stream>> = coroutineScope {
+        durationOrigin: StreamDurationOrigin?, season: Int?, episode: Int?, expectedProfileId: Int,
+        nativeVideoId: String? = null, nativeMediaType: String? = null,
+        activeFileDuration: ActivePlayerFileDuration? = null): List<Pair<Stream,Stream>> = coroutineScope {
         val scope = MetadataScope(expectedProfileId, settings.activeProfileSelectionRevision, settings.activeCredentialRevision)
         if (!sameViewer(scope)) return@coroutineScope emptyList()
         // Only a small visible window; no bulk link generation or torrent submission.
         val result = streams.take(12).map { original -> async {
             slots.withPermit {
                 val changed = try { withTimeoutOrNull(5_000L) {
-                    enrich(original, durationMillis, durationOrigin, season, episode, scope)
+                    enrich(original, durationMillis, durationOrigin, season, episode, scope, nativeVideoId, nativeMediaType, activeFileDuration)
                 } } catch (error: CancellationException) { throw error } catch (_: Exception) { null }
                 changed?.let { original to it }
             }
@@ -62,36 +60,40 @@ class DebridBitrateMetadataService @Inject constructor(
         settings.activeProfileId.value == scope.profile && settings.activeProfileSelectionRevision == scope.selection &&
         settings.activeCredentialRevision == scope.credentials
 
-    private suspend fun authorized(url: String, scope: MetadataScope) = sameViewer(scope) &&
-        resolver.isPlaybackAuthorized(url, scope.profile) && sameViewer(scope)
+    private suspend fun authorized(url: String, scope: MetadataScope, nativeVideoId: String?, season: Int?,
+        episode: Int?, nativeMediaType: String?) = sameViewer(scope) &&
+        resolver.isPlaybackAuthorized(url, scope.profile, nativeVideoId, season, episode, nativeMediaType) && sameViewer(scope)
 
     private suspend fun enrich(original: Stream, durationMillis: Long?, durationOrigin: StreamDurationOrigin?,
-        season: Int?, episode: Int?, scope: MetadataScope): Stream? {
+        season: Int?, episode: Int?, scope: MetadataScope, nativeVideoId: String?, nativeMediaType: String?,
+        activeFileDuration: ActivePlayerFileDuration?): Stream? {
         currentCoroutineContext().ensureActive()
         if (!sameViewer(scope)) return null
-        val candidate = if(original.getStreamUrl() == null) resolver.cachedPlayableStream(original, season, episode) ?: return null else original
+        val candidate = if(original.getStreamUrl() == null) resolver.cachedPlayableStream(original, season, episode, nativeVideoId, nativeMediaType) ?: return null else original
         val url = candidate.getStreamUrl() ?: return null
-        if (!authorized(url, scope)) return null
-        val key = digest("${scope.profile}|${scope.selection}|${scope.credentials}|$url")
-        val nativeBytes = candidate.nativeFileMetadata?.selectedFileBytes?.takeIf { it > 0L }
-        val cached = synchronized(sizes) { sizes[key]?.takeIf { it.untilMs > now() } }
-        val bytes = nativeBytes ?: cached?.bytes ?: try { if(durationMillis == null || cached != null) null else head.size(url) } catch (e: CancellationException) { throw e }
-            catch (_: Exception) { null }
+        if (!authorized(url, scope, nativeVideoId, season, episode, nativeMediaType)) return null
+        // Result-list enrichment is cache-only. Network verification belongs to a selected file.
+        // A source key can now resolve through a different connected service. Only an
+        // identical native URL can reuse older file-specific duration/tracks/bytes.
+        val previous = original.nativeFileMetadata?.takeIf { original.getStreamUrl() == url }
+        val bytes = candidate.nativeFileMetadata?.selectedFileBytes?.takeIf { it > 0L }
+            ?: previous?.selectedFileBytes?.takeIf { it > 0L }
         currentCoroutineContext().ensureActive()
-        if (!authorized(url, scope)) return null
-        synchronized(sizes) {
-            sizes[key] = CachedSize(bytes, now() + if(bytes != null) 10 * 60_000L else 30_000L)
-            while(sizes.size > 128) sizes.remove(sizes.keys.first())
-        }
-        val duration = durationMillis?.takeIf { it > 0L && durationOrigin != null }
-        val metadata = StreamFileMetadata(bytes, duration, durationOrigin.takeIf { duration != null }, original.stableKey(0).substringBeforeLast('|'))
+        if (!authorized(url, scope, nativeVideoId, season, episode, nativeMediaType)) return null
+        val playingDuration = activeFileDuration?.takeIf {
+            it.sourceKey == original.stableKey(0) && it.matches(scope.profile, scope.selection, scope.credentials,
+                nativeVideoId, nativeMediaType, season, episode, url)
+        }?.durationMillis
+        val measuredDuration = playingDuration ?: previous?.durationMillis?.takeIf { it > 0L && previous.durationOrigin == StreamDurationOrigin.NATIVE_CONTAINER }
+        val duration = measuredDuration ?: durationMillis?.takeIf { it > 0L && durationOrigin != null }
+        val metadata = (previous ?: StreamFileMetadata()).copy(selectedFileBytes = bytes,
+            durationMillis = duration, durationOrigin = if(measuredDuration != null) StreamDurationOrigin.NATIVE_CONTAINER else durationOrigin.takeIf { duration != null },
+            sourceIdentity = original.stableKey(0).substringBeforeLast('|'))
         // Cache resolution is private metadata input only. Keep the original source for a fresh
         // native resolve when selected; never promote an expiring signed URL into UI state.
         return original.copy(nativeFileMetadata = metadata)
     }
-    private fun now() = System.nanoTime() / 1_000_000L
-    private fun digest(value: String) = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
-        .joinToString("") { "%02x".format(it) }
+
 }
 
 /** HEAD only: no media body, credentials, addon headers, redirects, retries or logging. */

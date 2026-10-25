@@ -31,7 +31,9 @@ data class Stream(
     val subtitles: List<Subtitle> = emptyList(),
     val serverTarget: ServerPlaybackTarget? = null,
     val pluginSourceName: String? = null,
-    val nativeFileMetadata: StreamFileMetadata? = null
+    val nativeFileMetadata: StreamFileMetadata? = null,
+    /** Catalog-confirmed movie runtime for explicitly unverified provider-size averages only. */
+    val reportedMovieRuntimeMillis: Long? = null
 ) {
     /**
      * Returns the primary stream source URL

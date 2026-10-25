@@ -73,7 +73,9 @@ class AddonManagerViewModel @Inject constructor(
     private val profileManager: ProfileManager,
     private val tmdbCollectionSourceResolver: TmdbCollectionSourceResolver,
     private val traktPublicListSourceResolver: TraktPublicListSourceResolver,
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val providerInstallOptions: com.nuvio.tv.core.providers.ProviderInstallOptions,
+    private val providerUpdates: com.nuvio.tv.core.providers.ProviderUpdateCoordinator
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AddonManagerUiState())
@@ -104,6 +106,7 @@ class AddonManagerViewModel @Inject constructor(
         observeCatalogPreferences()
         observeCollections()
         loadLogoBytes()
+        viewModelScope.launch { providerUpdates.states.collect { statuses -> _uiState.update { it.copy(providerUpdateStatuses = statuses) } } }
     }
 
     fun requestAddonSyncNow() {
@@ -117,8 +120,36 @@ class AddonManagerViewModel @Inject constructor(
         } catch (_: Exception) { }
     }
 
+    private var installTask: kotlinx.coroutines.Job? = null
+    private val installRevision = java.util.concurrent.atomic.AtomicLong()
+    private var pendingInstallScope: Triple<Int, Long, Long>? = null
+
     fun onInstallUrlChange(url: String) {
-        _uiState.update { it.copy(installUrl = url, error = null) }
+        if (url.length > 4096) return
+        _uiState.update { it.copy(installUrl = url, error = null, providerInstallOptions = emptyList()) }
+        installRevision.incrementAndGet()
+        pendingInstallScope = null
+        installTask?.cancel()
+        _uiState.update { it.copy(isInstalling = false) }
+    }
+
+    fun dismissProviderOptions() {
+        installRevision.incrementAndGet()
+        pendingInstallScope = null
+        _uiState.update { it.copy(providerInstallOptions = emptyList()) }
+    }
+
+    fun updateProvidersNow() {
+        if (_uiState.value.isUpdatingProviders) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isUpdatingProviders = true, providerUpdateMessage = null) }
+            try {
+                providerUpdates.updateAll(force = true)
+                _uiState.update { it.copy(providerUpdateMessage = context.getString(R.string.provider_update_finished)) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { _uiState.update { it.copy(providerUpdateMessage = context.getString(R.string.provider_update_failed)) } }
+            finally { _uiState.update { it.copy(isUpdatingProviders = false) } }
+        }
     }
 
     fun clearTransientMessage() {
@@ -126,83 +157,64 @@ class AddonManagerViewModel @Inject constructor(
     }
 
     fun installAddon() {
-        val rawUrl = uiState.value.installUrl.trim()
-        if (rawUrl.isBlank()) {
-            val message = context.getString(R.string.addon_error_invalid_url)
-            _uiState.update {
-                it.copy(
-                    error = message,
-                    transientMessage = message,
-                    transientMessageIsError = true
-                )
-            }
-            return
+        if (isReadOnly || _uiState.value.isInstalling) return
+        val normalized = com.nuvio.tv.core.providers.ProviderInstallUrls.normalize(_uiState.value.installUrl)
+        if (normalized == null) {
+            _uiState.update { it.copy(error = context.getString(R.string.provider_install_invalid_url)) };return
         }
-
-        val normalizedUrl = normalizeAddonUrl(rawUrl)
-        if (normalizedUrl == null) {
-            val message = context.getString(R.string.addon_error_invalid_scheme)
-            _uiState.update {
-                it.copy(
-                    error = message,
-                    transientMessage = message,
-                    transientMessageIsError = true
-                )
-            }
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isInstalling = true, error = null, transientMessage = null) }
-
-            when (val result = addonRepository.fetchAddon(normalizedUrl)) {
-                is NetworkResult.Success -> {
-                    addonRepository.addAddon(normalizedUrl)
-                    val addonName = result.data.displayName.ifBlank { result.data.baseUrl }
-                    _uiState.update {
-                        it.copy(
-                            isInstalling = false,
-                            installUrl = "",
-                            transientMessage = context.getString(R.string.addon_install_success, addonName),
-                            transientMessageIsError = false
-                        )
-                    }
-                }
-                is NetworkResult.Error -> {
-                    val message = result.message
-                    _uiState.update {
-                        it.copy(
-                            isInstalling = false,
-                            error = message,
-                            transientMessage = message,
-                            transientMessageIsError = true
-                        )
-                    }
-                }
-                NetworkResult.Loading -> {
-                    _uiState.update { it.copy(isInstalling = true) }
-                }
-            }
+        val scope = Triple(profileManager.activeProfileId.value, profileManager.activeProfileSelectionRevision, installRevision.incrementAndGet())
+        pendingInstallScope = scope
+        installTask?.cancel()
+        installTask = viewModelScope.launch {
+            _uiState.update { it.copy(isInstalling = true, error = null, providerInstallOptions = emptyList()) }
+            try {
+                val options = kotlinx.coroutines.withTimeout(30_000L) { providerInstallOptions.inspect(normalized) }
+                if (!installScopeCurrent(scope)) return@launch
+                if (options.isNotEmpty()) {
+                    _uiState.update { it.copy(providerInstallOptions = options) }
+                } else installProviderManifest(normalized, scope)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                if (cancelled is kotlinx.coroutines.TimeoutCancellationException && installScopeCurrent(scope))
+                    _uiState.update { it.copy(error = context.getString(R.string.provider_install_failed)) }
+                else throw cancelled
+            } catch (_: Exception) {
+                if (installScopeCurrent(scope)) _uiState.update { it.copy(error = context.getString(R.string.provider_install_failed)) }
+            } finally { if (installRevision.get() == scope.third) _uiState.update { it.copy(isInstalling = false) } }
         }
     }
 
-    private fun normalizeAddonUrl(input: String): String? {
-        var trimmed = input.trim()
-        if (trimmed.startsWith("stremio://")) {
-            trimmed = trimmed.replaceFirst("stremio://", "https://")
+    fun chooseProviderOption(option: com.nuvio.tv.core.providers.ProviderInstallOption) {
+        val scope = pendingInstallScope ?: return
+        if (!installScopeCurrent(scope) || option !in _uiState.value.providerInstallOptions || isReadOnly) { dismissProviderOptions();return }
+        _uiState.update { it.copy(providerInstallOptions = emptyList(), isInstalling = true, error = null) }
+        installTask = viewModelScope.launch {
+            try { installProviderManifest(option.manifestUrl, scope) }
+            finally { if (installRevision.get() == scope.third) _uiState.update { it.copy(isInstalling = false) } }
         }
-        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-            return null
-        }
-
-        val withoutManifest = if (trimmed.endsWith("/manifest.json")) {
-            trimmed.removeSuffix("/manifest.json")
-        } else {
-            trimmed
-        }
-
-        return withoutManifest.trimEnd('/')
     }
+
+    private fun installScopeCurrent(scope: Triple<Int, Long, Long>) = pendingInstallScope == scope && profileManager.activeProfileId.value == scope.first &&
+        profileManager.activeProfileSelectionRevision == scope.second
+
+    private suspend fun installProviderManifest(url: String, scope: Triple<Int, Long, Long>) {
+        val result = try { kotlinx.coroutines.withTimeout(30_000L) { addonRepository.fetchAddon(url) } }
+        catch (cancelled: kotlinx.coroutines.CancellationException) {
+            if (cancelled !is kotlinx.coroutines.TimeoutCancellationException) throw cancelled
+            NetworkResult.Error(context.getString(R.string.provider_install_failed))
+        } catch (_: Exception) { NetworkResult.Error(context.getString(R.string.provider_install_failed)) }
+        if (!installScopeCurrent(scope)) return
+        when (result) {
+            is NetworkResult.Success -> {
+                val saved = (addonRepository as? com.nuvio.tv.data.repository.AddonRepositoryImpl)?.addAddonIfCurrent(url, scope.first, scope.second) { installRevision.get() == scope.third } ?: false
+                if (!saved || !installScopeCurrent(scope)) return
+                pendingInstallScope = null
+                _uiState.update { it.copy(installUrl = "", transientMessage = context.getString(R.string.addon_install_success, result.data.displayName), transientMessageIsError = false) }
+            }
+            else -> _uiState.update { it.copy(error = context.getString(R.string.provider_install_failed)) }
+        }
+    }
+
+    private fun normalizeAddonUrl(input: String): String? = com.nuvio.tv.core.providers.ProviderInstallUrls.normalize(input)
 
     private fun normalizeUrlForComparison(url: String): String {
         return url.trim().trimEnd('/').lowercase()
@@ -797,7 +809,7 @@ class AddonManagerViewModel @Inject constructor(
             }
             addonRepository.getInstalledAddons()
                 .catch { error ->
-                    _uiState.update { it.copy(isLoading = false, error = error.message) }
+                    _uiState.update { it.copy(isLoading = false, error = context.getString(R.string.provider_update_failed)) }
                 }
                 .collect { addons ->
                     _uiState.update { state ->
@@ -812,6 +824,9 @@ class AddonManagerViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        installRevision.incrementAndGet()
+        pendingInstallScope = null
+        installTask?.cancel()
         super.onCleared()
         stopServerInternal()
     }

@@ -12,6 +12,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.Authenticator
+import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -30,13 +32,19 @@ class OkHttpSimklV2OAuthTransport(
         .callTimeout(20, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
 ) : SimklV2OAuthTransport {
     private val client = client.newBuilder().followRedirects(false).followSslRedirects(false)
-        .retryOnConnectionFailure(false).cache(null).build()
+        .retryOnConnectionFailure(false).cache(null).cookieJar(CookieJar.NO_COOKIES)
+        .authenticator(Authenticator.NONE).proxyAuthenticator(Authenticator.NONE).build()
 
     override suspend fun post(path: String, fields: Map<String, String>): SimklRawHttpResponse {
         require(path in setOf("/oauth2/device", "/oauth2/token", "/oauth2/revoke"))
         val base = configuration.baseUrl.toHttpUrl()
         require(base.isHttps || base.host in setOf("127.0.0.1", "localhost", "::1"))
-        val url = base.newBuilder().encodedPath(path).query(null).fragment(null).build()
+        // Simkl requires application identity in every endpoint URL, including OAuth POSTs.
+        // Private device/refresh codes remain exclusively in the form body.
+        val url = base.newBuilder().encodedPath(path).query(null).fragment(null)
+            .addQueryParameter("client_id", configuration.clientId)
+            .addQueryParameter("app-name", configuration.appName)
+            .addQueryParameter("app-version", configuration.appVersion).build()
         val body = FormBody.Builder().apply { fields.forEach { (key, value) -> add(key, value) } }.build()
         val request = Request.Builder().url(url).post(body)
             .header("User-Agent", "Syclop/${configuration.appVersion}")

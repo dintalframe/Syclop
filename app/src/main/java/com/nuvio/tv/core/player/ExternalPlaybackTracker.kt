@@ -25,6 +25,7 @@ import com.nuvio.tv.data.repository.SkipInterval
 import com.nuvio.tv.ui.screens.player.PlayerNextEpisodeRules
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -386,15 +387,16 @@ class ExternalPlaybackTracker @Inject constructor(
         autoLaunch: Boolean = false,
         nextEpisodeSnapshot: ExternalNextEpisodeSnapshot? = null,
         cloudSessionToken: String? = null,
-        context: Context
+        context: Context,
+        launchStillCurrent: () -> Boolean = { true }
     ): Boolean {
-        if (shouldCancelPendingAutoLaunch(autoLaunch)) {
+        if (!launchStillCurrent() || shouldCancelPendingAutoLaunch(autoLaunch)) {
             Log.d(AUTO_NEXT_TAG, "auto launch cancelled before tracker setup")
             return false
         }
         val launchSettings = playerSettingsDataStore.playerSettings.first()
         val autoNextEnabled = launchSettings.streamAutoPlayNextEpisodeEnabled
-        if (shouldCancelPendingAutoLaunch(autoLaunch)) {
+        if (!launchStillCurrent() || shouldCancelPendingAutoLaunch(autoLaunch)) {
             Log.d(AUTO_NEXT_TAG, "auto launch cancelled while reading player settings")
             return false
         }
@@ -410,49 +412,63 @@ class ExternalPlaybackTracker @Inject constructor(
         // Resolve resume position (if not given) and intro/outro skip segments off the main
         // thread, then launch. Skip resolution is bounded so it never stalls the launch for long
         // and is cached, so an auto-next chain pays it only once.
-        val launched = coroutineScope {
-            val positionDeferred = async {
-                when {
-                    startFromBeginning -> 0L
-                    resumePositionMs > 0L -> resumePositionMs
-                    else -> getResumePosition(metadata)
+        val launched = try {
+            coroutineScope {
+                val positionDeferred = async {
+                    when {
+                        startFromBeginning -> 0L
+                        resumePositionMs > 0L -> resumePositionMs
+                        else -> getResumePosition(metadata)
+                    }
+                }
+                val skipSegmentsDeferred = async {
+                    resolveSkipSegmentsJson(metadata)
+                }
+                val position = positionDeferred.await()
+                val skipSegmentsJson = skipSegmentsDeferred.await()
+                if (!launchStillCurrent() || shouldCancelPendingAutoLaunch(autoLaunch)) {
+                    Log.d(AUTO_NEXT_TAG, "auto launch cancelled during player preparation")
+                    false
+                } else {
+                    withContext(Dispatchers.Main.immediate) {
+                        if (!launchStillCurrent()) false else doLaunch(
+                            url = url,
+                            title = title,
+                            headers = headers,
+                            resumePositionMs = position,
+                            startFromBeginning = startFromBeginning,
+                            subtitles = subtitles,
+                            skipSegmentsJson = skipSegmentsJson,
+                            playerPackage = launchSettings.externalPlayerPackage,
+                            context = context
+                        )
+                    }
                 }
             }
-            val skipSegmentsDeferred = async {
-                resolveSkipSegmentsJson(metadata)
-            }
-            val position = positionDeferred.await()
-            val skipSegmentsJson = skipSegmentsDeferred.await()
-            if (shouldCancelPendingAutoLaunch(autoLaunch)) {
-                Log.d(AUTO_NEXT_TAG, "auto launch cancelled during player preparation")
-                false
-            } else {
-                withContext(Dispatchers.Main.immediate) {
-                    doLaunch(
-                        url = url,
-                        title = title,
-                        headers = headers,
-                        resumePositionMs = position,
-                        startFromBeginning = startFromBeginning,
-                        subtitles = subtitles,
-                        skipSegmentsJson = skipSegmentsJson,
-                        playerPackage = launchSettings.externalPlayerPackage,
-                        context = context
-                    )
-                }
-            }
+        } catch (cancelled: CancellationException) {
+            // A cancelled old request must not clear a newer session's tracking state.
+            clearFailedLaunch(metadata)
+            throw cancelled
+        } catch (failure: Exception) {
+            clearFailedLaunch(metadata)
+            throw failure
         }
         if (!launched) {
-            if (shouldCancelPendingAutoLaunch(autoLaunch)) {
+            if (!launchStillCurrent() || shouldCancelPendingAutoLaunch(autoLaunch)) {
                 Log.d(AUTO_NEXT_TAG, "cancelled auto launch cleaned up before external intent")
             } else {
                 Log.w(TAG, "External player launch failed")
             }
-            releaseAutoNextOverlay(forceRelease = true)
-            clearPersistedMetadata()
-            stopTracking()
+            clearFailedLaunch(metadata)
         }
         return launched
+    }
+
+    private fun clearFailedLaunch(metadata: ExternalPlaybackMetadata) {
+        if (pendingMetadata !== metadata) return
+        releaseAutoNextOverlay(forceRelease = true)
+        clearPersistedMetadata()
+        stopTracking()
     }
 
     /**

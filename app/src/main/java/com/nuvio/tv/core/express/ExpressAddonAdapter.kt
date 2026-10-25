@@ -3,6 +3,11 @@ package com.nuvio.tv.core.express
 import android.util.Log
 
 import com.google.gson.JsonObject
+import com.google.gson.JsonArray
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.AddonResource
@@ -30,25 +35,27 @@ data class ExpressSearchReport(
         "$unsupported unsupported, $missingMetadata missing metadata, $sourceCount results" + if (timedOut) "; search time limit reached" else ""
 }
 
-/** Runtime configuration is fetched from the user's URL and kept only in memory. */
+/** User-selected immutable declarative configuration, with an atomic last-valid disk snapshot. */
 @Singleton
 class ExpressAddonAdapter internal constructor(
     private val http: ExpressHttpClient,
     private val metadata: ExpressMetadataSource,
-    private val clock: () -> Long
+    private val clock: () -> Long,
+    private val snapshots: ExpressConfigurationStore? = null
 ) {
-    @Inject constructor(http: ExpressHttpClient, metadata: ExpressMetadataResolver) : this(http, metadata, System::currentTimeMillis)
+    @Inject constructor(http: ExpressHttpClient, metadata: ExpressMetadataResolver, snapshots: AndroidExpressConfigurationStore) : this(http, metadata, System::currentTimeMillis, snapshots)
 
     private data class Package(val name: String, val version: String, val providers: List<Pair<String, JsonObject>>)
     private data class Configuration(val addon: Addon, val packages: List<Package>, val loadedAt: Long)
     private val configurations = ConcurrentHashMap<String, Configuration>()
+    private val configurationMutex = Mutex()
     private val reports = ConcurrentHashMap<String, ExpressSearchReport>()
 
     fun isExpress(addon: Addon): Boolean = addon.id.startsWith(ID_PREFIX)
     fun lastReport(addon: Addon): ExpressSearchReport? = reports[addon.id]
 
-    suspend fun discover(enteredUrl: String): NetworkResult<Addon> = try {
-        NetworkResult.Success(configuration(enteredUrl).addon)
+    suspend fun discover(enteredUrl: String, forceRefresh: Boolean = false): NetworkResult<Addon> = try {
+        NetworkResult.Success(configuration(enteredUrl, forceRefresh).addon)
     } catch (error: Exception) {
         if (error is CancellationException) throw error
         NetworkResult.Error((error as? ExpressException)?.message ?: "Express provider configuration is unavailable.")
@@ -60,6 +67,8 @@ class ExpressAddonAdapter internal constructor(
             val config = configuration(addon.baseUrl)
             stage = "metadata"
             val media = metadata.resolve(request)
+            if (request.videoId.startsWith("mal:") && media.nativeAnimeIdentity == null)
+                throw ExpressException("A confirmed anime title identity is unavailable.")
             stage = "provider search"
             val all = config.packages.flatMap { it.providers }
             val unsupported = AtomicInteger()
@@ -81,7 +90,10 @@ class ExpressAddonAdapter internal constructor(
                                 try {
                                     val document = http.get(url)
                                     val rows = ExpressParser.parse(provider, document.text)
-                                    for (row in rows.take(MAX_ROWS)) {
+                                    // Broad search engines can return unrelated rows for one term or a
+                                    // numeric episode. Reject them before subpage fetches or any result
+                                    // budget so unrelated matches cannot crowd out native MAL sources.
+                                    for (row in rows.asSequence().filter { media.acceptsNativeAnimeRow(it) }.take(MAX_ROWS)) {
                                         var resolved = row
                                         if (row.hash == null && row.url?.startsWith("magnet:", true) != true &&
                                             provider.get("source_is_in_sub_page")?.asBoolean == true) {
@@ -128,34 +140,102 @@ class ExpressAddonAdapter internal constructor(
         }
     }
 
-    private suspend fun configuration(enteredUrl: String): Configuration {
-        val url = http.validatedUrl(enteredUrl).toString().trimEnd('/')
-        configurations[url]?.takeIf { clock() - it.loadedAt < CONFIG_TTL_MS }?.let { return it }
-        val packages = discoverPackages(url)
+    private suspend fun configuration(enteredUrl: String, forceRefresh: Boolean = false): Configuration =
+        withContext(Dispatchers.IO) { loadConfiguration(enteredUrl, forceRefresh) }
+
+    private suspend fun loadConfiguration(enteredUrl: String, forceRefresh: Boolean): Configuration {
+        val parsed = http.validatedUrl(enteredUrl)
+        val normalized = parsed.newBuilder().encodedPath(parsed.encodedPath.trimEnd('/').ifEmpty { "/" }).build()
+        val url = if (normalized.encodedQuery == null) normalized.toString().trimEnd('/') else normalized.toString()
+        if (!forceRefresh) configurations[url]?.let { return it }
+        return configurationMutex.withLock {
+            if (!forceRefresh) {
+                configurations[url]?.let { return@withLock it }
+                val saved = snapshots?.read(url)
+                if (saved != null) runCatching { buildConfiguration(url, restorePackages(saved)) }.getOrNull()?.let { config ->
+                    configurations[url] = config
+                    return@withLock config
+                }
+            }
+            val packages = discoverPackages(url)
+            val config = buildConfiguration(url, packages)
+            // Validation/persistence complete before replacement; a failed refresh keeps last good.
+            snapshots?.write(url, snapshot(packages))
+            if (configurations.size >= 30) configurations.clear()
+            configurations[url] = config
+            config
+        }
+    }
+
+    private fun buildConfiguration(url: String, packages: List<Package>): Configuration {
         if (packages.isEmpty()) throw ExpressException("No supported Express package was found at this URL.")
+        val definitions = packages.flatMap { it.providers }
+        definitions.forEach { validateProviderConfiguration(it.second) }
+        if (definitions.size > MAX_PROVIDERS || definitions.none { ExpressParser.supported(it.second) })
+            throw ExpressException("The package has no supported declarative providers or exceeds the definition limit.")
         val types = listOf("movie", "series", "anime")
-        val unsupported = packages.sumOf { pkg -> pkg.providers.count { !ExpressParser.supported(it.second) } }
+        val unsupported = definitions.count { !ExpressParser.supported(it.second) }
         val addon = Addon(
             id = ID_PREFIX + fingerprint(url), name = packages.joinToString(" + ") { it.name }.take(120),
             version = packages.joinToString("+") { it.version }.take(120),
-            description = "User-selected Express source package. ${packages.sumOf { it.providers.size }} definitions; $unsupported unsupported.",
+            description = "User-selected Express source package. ${definitions.size} definitions; $unsupported unsupported.",
             logo = null, baseUrl = url, catalogs = emptyList(),
             types = listOf(ContentType.MOVIE, ContentType.SERIES, ContentType.UNKNOWN), rawTypes = types,
             resources = listOf(AddonResource("stream", types, null)))
-        return Configuration(addon, packages, clock()).also {
-            if (configurations.size >= 20) configurations.clear()
-            configurations[url] = it
+        return Configuration(addon, packages, clock())
+    }
+
+    private fun validateProviderConfiguration(provider: JsonObject) {
+        val scopes = listOf("movie", "episode", "season", "anime").mapNotNull { name ->
+            val scope = provider.get(name) ?: return@mapNotNull null
+            if (!scope.isJsonObject) throw ExpressException("Provider media scope is invalid.")
+            scope.asJsonObject
+        }
+        if (scopes.isEmpty()) throw ExpressException("Provider media scope is missing.")
+        scopes.forEach { scope ->
+            val query = scope.get("query")
+            if (query == null || !query.isJsonPrimitive || !query.asJsonPrimitive.isString ||
+                query.asString.length !in 1..4_096) throw ExpressException("Provider query configuration is invalid.")
+            val raw = scope.get("keywords") ?: throw ExpressException("Provider query configuration is invalid.")
+            val keywords = if (raw.isJsonArray) raw.asJsonArray.toList() else listOf(raw)
+            if (keywords.size !in 1..30 || keywords.any { !it.isJsonPrimitive || !it.asJsonPrimitive.isString ||
+                    it.asString.length !in 1..2_048 }) throw ExpressException("Provider query configuration is invalid.")
+        }
+        provider.get("source_is_in_sub_page")?.let {
+            if (!it.isJsonPrimitive || !it.asJsonPrimitive.isBoolean) throw ExpressException("Provider page configuration is invalid.")
+        }
+    }
+
+    private fun snapshot(packages: List<Package>): String = JsonObject().apply {
+        add("packages", JsonArray().apply { packages.forEach { pkg -> add(JsonObject().apply {
+            addProperty("name", pkg.name);addProperty("version", pkg.version)
+            add("providers", JsonObject().apply { pkg.providers.forEach { (name, config) -> add(name, config.deepCopy()) } })
+        }) } })
+    }.toString().also(::validateExpressJsonBounds)
+
+    private fun restorePackages(json: String): List<Package> {
+        validateExpressJsonBounds(json)
+        val root = parseExpressObject(json)
+        val values = root.get("packages")?.takeIf { it.isJsonArray }?.asJsonArray ?: throw ExpressException("Saved provider configuration is invalid.")
+        if (values.size() !in 1..5) throw ExpressException("Saved provider package limit exceeded.")
+        return values.map { element ->
+            val item = element.asJsonObject
+            val definitions = item.getAsJsonObject("providers").entrySet().map { it.key to it.value.asJsonObject.deepCopy() }
+            if (definitions.size !in 1..MAX_PROVIDERS) throw ExpressException("Saved provider definition limit exceeded.")
+            definitions.forEach { http.validatedUrl(it.second.string("base_url") ?: throw ExpressException("Provider base URL is missing.")) }
+            Package(item.string("name")?.take(120) ?: "Express sources", item.string("version")?.take(120) ?: "1", definitions)
         }
     }
 
     private suspend fun discoverPackages(url: String): List<Package> {
-        val candidates = listOf(url, url.trimEnd('/') + "/vendor", url.trimEnd('/') + "/manifest").distinct()
+        val candidates = expressDiscoveryUrls(url)
         for (candidate in candidates) {
             val document = try { http.get(candidate, CONFIG_MAX_BYTES) } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 continue
             }
             if (!document.text.trimStart().startsWith('{')) continue
+            validateExpressJsonBounds(document.text)
             return resolvePackage(document.url, parseExpressObject(document.text), linkedSetOf(), 0)
         }
         throw ExpressException("No Express manifest was found. Enter the package manifest or vendor URL.")
@@ -175,6 +255,7 @@ class ExpressAddonAdapter internal constructor(
             return selected.distinct().flatMap { reference ->
                 val destination = url.toHttpUrl().resolve(reference)?.toString() ?: throw ExpressException("Vendor package URL is invalid.")
                 val document = http.get(destination, CONFIG_MAX_BYTES)
+                validateExpressJsonBounds(document.text)
                 resolvePackage(document.url, parseExpressObject(document.text), visited, depth + 1)
             }
         }
@@ -184,6 +265,7 @@ class ExpressAddonAdapter internal constructor(
             val reference = root.string("url") ?: root.string("permaUrl") ?: throw ExpressException("Express manifest has no package URL.")
             val destination = url.toHttpUrl().resolve(reference)?.toString() ?: throw ExpressException("Express package URL is invalid.")
             val document = http.get(destination, CONFIG_MAX_BYTES)
+            validateExpressJsonBounds(document.text)
             return resolvePackage(document.url, parseExpressObject(document.text), visited, depth + 1)
         }
         val providers = root.entrySet().filter { (key, value) -> !key.startsWith('_') && value.isJsonObject && value.asJsonObject.string("base_url") != null }
@@ -196,7 +278,6 @@ class ExpressAddonAdapter internal constructor(
     }
 
     internal fun providerQueries(provider: JsonObject, media: ExpressMedia): List<String> {
-        val variables = media.variables()
         val scopes = when {
             media.type == "movie" -> listOf("movie")
             media.anime -> listOf("anime")
@@ -216,14 +297,17 @@ class ExpressAddonAdapter internal constructor(
                 throw ExpressException("Provider query configuration is invalid.")
             }
             val keywords = keywordValues.map { it.asString }
-            keywords.take(3).mapNotNull { keyword ->
-                val search = expressTemplate(keyword, variables) ?: return@mapNotNull null
-                val path = expressTemplate(query, variables.mapValues { expressEncode(it.value) } + ("query" to expressEncode(search))) ?: return@mapNotNull null
-                val base = provider.string("base_url") ?: return@mapNotNull null
-                // Query fragments are relative to the provider's configured path, not the host root.
-                http.validatedUrl(base.trimEnd('/') + "/" + path.trimStart('/')).toString()
+            keywords.take(3).flatMap { keyword ->
+                media.queryTitles().mapNotNull { title ->
+                    val variables = media.variables(title)
+                    val search = expressTemplate(keyword, variables) ?: return@mapNotNull null
+                    val path = expressTemplate(query, variables.mapValues { expressEncode(it.value) } + ("query" to expressEncode(search))) ?: return@mapNotNull null
+                    val base = provider.string("base_url") ?: return@mapNotNull null
+                    // Query fragments are relative to the provider's configured path, not the host root.
+                    http.validatedUrl(base.trimEnd('/') + "/" + path.trimStart('/')).toString()
+                }
             }
-        }.distinct()
+        }.distinct().let { if (media.anime) it.take(3) else it }
     }
 
     private fun fingerprint(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
@@ -232,7 +316,7 @@ class ExpressAddonAdapter internal constructor(
     companion object {
         const val ID_PREFIX = "syclop.express:"
         private const val CONFIG_MAX_BYTES = 2 * 1024 * 1024
-        private const val CONFIG_TTL_MS = 15 * 60 * 1000L
+        // Periodic ProviderUpdateCoordinator explicitly refreshes validated snapshots every24h.
         private const val MAX_PROVIDERS = 80
         private const val MAX_REQUESTS = 90
         private const val MAX_ROWS = 20

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="syclop_simkl_view_item">View on Simkl</string>
+    <string name="syclop_simkl_browser_unavailable">No browser is available to open this Simkl page.</string>
+</resources>

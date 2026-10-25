@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -164,8 +165,9 @@ class ContinueWatchingAiringRulesTest {
     @Test
     fun `watchableEpisodes excludes future mid-season episodes so checkmark can apply`() {
         // Documents a58809 behavior: only aired eps count → caught-up checkmark possible.
-        val tomorrow = LocalDate.now(ZoneId.systemDefault()).plusDays(1).toString()
-        val yesterday = LocalDate.now(ZoneId.systemDefault()).minusDays(1).toString()
+        val clock = Clock.fixed(Instant.parse("2026-10-25T00:34:00Z"), ZoneOffset.UTC)
+        val tomorrow = LocalDate.now(clock).plusDays(1).toString()
+        val yesterday = LocalDate.now(clock).minusDays(1).toString()
         val meta = CwMetaSummary(
             id = "tt-airing",
             name = "Airing",
@@ -184,7 +186,7 @@ class ContinueWatchingAiringRulesTest {
                 episode(1, 3, tomorrow),
             ),
         )
-        val watchable = meta.watchableEpisodes().map { it.season to it.episode }
+        val watchable = meta.watchableEpisodes(clock).map { it.season to it.episode }
         assertEquals(listOf(1 to 1, 1 to 2), watchable)
         // User watched all watchable → fully watched badge eligible, which then
         // used to trigger the CW drop on air day (covered above).
@@ -196,6 +198,28 @@ class ContinueWatchingAiringRulesTest {
                 watchedEpisodes = setOf(1 to 1, 1 to 2),
             ),
         )
+    }
+
+    @Test
+    fun `watchable eligibility preserves UTC date boundary and viewer zone for local timestamps`() {
+        // UTC has reached Oct25, while New York is still on Oct24. A date-only Oct25
+        // release has aired in both zones; a zone-less 00:30 timestamp has not aired in NY.
+        val instant = Instant.parse("2026-10-25T00:34:00Z")
+        val utc = Clock.fixed(instant, ZoneOffset.UTC)
+        val eastern = Clock.fixed(instant, ZoneId.of("America/New_York"))
+        assertEquals(LocalDate.of(2026, 10, 24), LocalDate.now(eastern))
+        val meta = CwMetaSummary(
+            id = "tt-zone-boundary", name = "Boundary", poster = null, backdropUrl = null,
+            logo = null, description = null, genres = emptyList(), releaseInfo = null,
+            imdbRating = null, language = null, country = null,
+            videos = listOf(
+                episode(1, 1, "2026-10-24"),
+                episode(1, 2, LocalDate.now(eastern).plusDays(1).toString()),
+                episode(1, 3, "2026-10-25T00:30:00"),
+            ),
+        )
+        assertEquals(listOf(1, 2, 3), meta.watchableEpisodes(utc).map { it.episode })
+        assertEquals(listOf(1, 2), meta.watchableEpisodes(eastern).map { it.episode })
     }
 
     private fun episode(season: Int, ep: Int, released: String) = CwVideoSummary(

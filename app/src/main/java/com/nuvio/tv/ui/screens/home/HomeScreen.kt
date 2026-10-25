@@ -51,7 +51,8 @@ import com.nuvio.tv.domain.model.localizedMembershipTitle
 import com.nuvio.tv.domain.model.LibrarySourceMode
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.components.ErrorState
-import com.nuvio.tv.ui.components.LoadingIndicator
+import com.nuvio.tv.ui.components.SyclopBrandAnimation
+import com.nuvio.tv.ui.components.SyclopBrandState
 import com.nuvio.tv.ui.components.LocalStartupLoadingState
 import com.nuvio.tv.ui.components.LocalStartupSplashEnabled
 import com.nuvio.tv.ui.components.shouldShowHomeStartupLoader
@@ -98,6 +99,10 @@ fun HomeScreen(
     onNavigateToFolderDetail: (String, String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val browseViewModel: HomeBrowseViewModel = hiltViewModel()
+    var browseSectionName by rememberSaveable { mutableStateOf(HomeBrowseSection.HOME.name) }
+    val browseSection = HomeBrowseSection.entries.firstOrNull { it.name == browseSectionName } ?: HomeBrowseSection.HOME
+    LaunchedEffect(browseSection, browseViewModel.selectionRevision) { browseViewModel.select(browseSection) }
 
     // Home was the only major screen without a lifecycle observer, so nothing ever told it to
     // look at its catalogs again.
@@ -111,6 +116,14 @@ fun HomeScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    DisposableEffect(lifecycleOwner, browseSection) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) browseViewModel.select(HomeBrowseSection.HOME)
+            if (event == Lifecycle.Event.ON_RESUME) browseViewModel.select(browseSection)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); browseViewModel.select(HomeBrowseSection.HOME) }
     }
     val modernPresentation by viewModel.modernHomePresentation.collectAsStateWithLifecycle()
     val initialCwResolved by viewModel.initialCwResolved.collectAsStateWithLifecycle()
@@ -255,6 +268,11 @@ fun HomeScreen(
         }
     }
 
+    HomeBrowseScaffold(browseSection, onSelect = {
+        if (it == browseSection && it != HomeBrowseSection.HOME) browseViewModel.retryFailedCatalogs()
+        browseSectionName = it.name
+    }) { tabFocus, entry ->
+        if (browseSection == HomeBrowseSection.HOME) {
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -418,7 +436,7 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                LoadingIndicator()
+                SyclopBrandAnimation(SyclopBrandState.Loading)
             }
         }
 
@@ -443,6 +461,12 @@ fun HomeScreen(
                     color = NuvioTheme.colors.TextPrimary
                 )
             }
+        }
+    }
+
+        } else {
+            HomeCategoryContent(browseSection, browseViewModel, viewModel, uiState, tabFocus, entry, posterCardStyle,
+                onNavigateToDetailStable, isCatalogItemWatched, onCatalogItemLongPress)
         }
     }
 

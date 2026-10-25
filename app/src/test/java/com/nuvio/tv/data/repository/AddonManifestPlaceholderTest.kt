@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -52,7 +53,7 @@ class AddonManifestPlaceholderTest {
         /** A placeholder carries no version; a resolved manifest does. */
         const val PLACEHOLDER_VERSION = ""
         /** Mirrors AddonRepositoryImpl.MANIFEST_CACHE_TTL_MS, which is private. */
-        const val MANIFEST_CACHE_TTL_MS = 6 * 60 * 60 * 1000L
+        const val MANIFEST_CACHE_TTL_MS = 24 * 60 * 60 * 1000L
     }
 
     @Test
@@ -93,7 +94,7 @@ class AddonManifestPlaceholderTest {
      * A failed manifest fetch is retried whenever the flow recomputes, because the placeholder is
      * never written to the cache, so the addon stays a cache miss. That is deliberate, and the TTL fix in the sibling commit does not
      * throttle it: an addon added while offline must be able to recover without waiting out a
-     * six-hour window that only governs manifests already cached. Pinned so it is not mistaken
+     * 24-hour window that only governs manifests already cached. Pinned so it is not mistaken
      * for a retry storm and optimised away.
      */
     @Test
@@ -225,6 +226,21 @@ class AddonManifestPlaceholderTest {
         )
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun `cold forced refresh waits for saved identity before accepting another provider`() = runTest {
+        val context=mockk<Context>(relaxed=true)
+        val prefs=mockk<android.content.SharedPreferences>(relaxed=true)
+        every { context.getSharedPreferences("addon_manifest_cache", Context.MODE_PRIVATE) } returns prefs
+        val saved=com.nuvio.tv.domain.model.Addon(id="saved-identity",name="Saved",version="1",description=null,
+            logo=null,baseUrl=addonUrl,catalogs=emptyList(),types=emptyList(),resources=emptyList())
+        every { prefs.getString("manifests_v2", null) } returns com.google.gson.Gson().toJson(mapOf(addonUrl to saved))
+        val harness=newRepository(reachable=true,dispatcher=kotlinx.coroutines.test.StandardTestDispatcher(testScheduler),context=context)
+        // Enter before the disk-load coroutine has been dispatched.
+        val result=async(start=kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { harness.repository.forceRefreshAddon(addonUrl) }
+        val error=result.await() as com.nuvio.tv.core.network.NetworkResult.Error
+        assertEquals(AddonRepositoryImpl.IDENTITY_CHANGED_CODE,error.code)
+    }
+
     private fun newContext(): Context = mockk(relaxed = true)
 
     private data class Harness(
@@ -238,7 +254,8 @@ class AddonManifestPlaceholderTest {
         userSetNames: kotlinx.coroutines.flow.Flow<Map<String, String>> = flowOf(emptyMap()),
         reachable: Boolean = false,
         dispatcher: CoroutineDispatcher = Dispatchers.IO,
-        clock: () -> Long = System::currentTimeMillis
+        clock: () -> Long = System::currentTimeMillis,
+        context: Context = newContext()
     ): Harness {
         val manifestCalls = AtomicInteger()
         val isReachable = AtomicBoolean(reachable)
@@ -263,7 +280,7 @@ class AddonManifestPlaceholderTest {
                 preferences = preferences,
                 addonSyncService = mockk<AddonSyncService>(relaxed = true),
                 authManager = mockk<AuthManager>(relaxed = true),
-                context = newContext(),
+                context = context,
                 dispatcher = dispatcher,
                 clock = clock
             ),

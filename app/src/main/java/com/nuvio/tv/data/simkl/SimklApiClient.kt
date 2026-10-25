@@ -1,6 +1,11 @@
 package com.nuvio.tv.data.simkl
 
 import android.util.Log
+import com.nuvio.tv.core.initialization.InitializationReadScope
+import com.nuvio.tv.core.initialization.InitializationProvider
+import com.nuvio.tv.core.initialization.InitializationReadException
+import com.nuvio.tv.core.initialization.InitializationFailure
+import kotlinx.coroutines.currentCoroutineContext
 import com.nuvio.tv.core.tracking.TRACKING_SCROBBLE_DIAGNOSTIC_TAG
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -82,6 +87,12 @@ class SimklApiClient(
         request: SimklApiRequest,
         expectedAuthScope: SimklAuthScope? = null
     ): SimklApiResponse {
+        val importScope = currentCoroutineContext()[InitializationReadScope]?.takeIf { it.provider == InitializationProvider.SIMKL }
+        importScope?.checkpoint()
+        val batchAuth = currentCoroutineContext()[SimklInitializationAuthScope]?.auth
+        if (batchAuth != null && expectedAuthScope != null && batchAuth != expectedAuthScope)
+            throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
+        val requiredAuthScope = batchAuth ?: expectedAuthScope
         if (configuration.clientId.isBlank()) throw SimklAuthException(SimklAuthError.MISSING_CLIENT_ID)
         val queuedAtEpochMs = nowEpochMs()
         if (request.path.startsWith("/scrobble/")) {
@@ -91,6 +102,7 @@ class SimklApiClient(
             )
         }
         return requestMutex.withLock {
+            importScope?.checkpoint()
             if (request.path.startsWith("/scrobble/")) {
                 Log.d(
                     TRACKING_SCROBBLE_DIAGNOSTIC_TAG,
@@ -101,20 +113,23 @@ class SimklApiClient(
             var requestAuthorization = if (request.requiresAuthentication) {
                 authorization()?.takeIf { it.accessToken.isNotBlank() }
                     ?.also { current ->
-                        if (expectedAuthScope != null && current.scope != expectedAuthScope) {
+                        if (requiredAuthScope != null && current.scope != requiredAuthScope) {
                             throw SimklApiException(409, "auth_scope_changed", "Simkl authentication profile changed")
                         }
                     } ?: throw SimklApiException(401, "authentication_required", "Simkl authentication is required")
             } else null
             val initialAuthorization = requestAuthorization
             if (initialAuthorization != null && renewAuthorization != null) {
+                importScope?.checkpoint()
                 requestAuthorization = renewAuthorization.invoke(initialAuthorization, false)
+                importScope?.checkpoint()
             }
             val maxAttempts = if (request.retryPolicy == SimklRetryPolicy.NEVER) 1 else MAX_ATTEMPTS
             var syncWriteLockRetried = false
             var authenticationRetried = false
             var attempt = 0
             while (attempt < maxAttempts) {
+                importScope?.checkpoint()
                 requestAuthorization?.let { current ->
                     if (authorization()?.scope != current.scope) {
                         throw SimklApiException(409, "auth_scope_changed", "Simkl authentication profile changed")
@@ -122,6 +137,7 @@ class SimklApiClient(
                 }
                 val response = try {
                     executeRateLimited(request.method) {
+                        importScope?.checkpoint()
                         engine.execute(
                             method = request.method.name,
                             url = buildSimklApiUrl(configuration, request.path, request.query),
@@ -131,6 +147,7 @@ class SimklApiClient(
                         )
                     }
                 } catch (error: CancellationException) { throw error }
+                catch (error: InitializationReadException) { throw error }
                 catch (error: Throwable) {
                     if (attempt == maxAttempts - 1) {
                         throw SimklApiException(null, "transport_failure", "Simkl request failed", error)
@@ -143,6 +160,7 @@ class SimklApiClient(
                         throw SimklApiException(409, "auth_scope_changed", "Simkl authentication profile changed")
                     }
                 }
+                importScope?.checkpoint()
                 logSyncResponse(request, response, attempt + 1)
                 if (request.path.startsWith("/scrobble/")) {
                     Log.d(TRACKING_SCROBBLE_DIAGNOSTIC_TAG,

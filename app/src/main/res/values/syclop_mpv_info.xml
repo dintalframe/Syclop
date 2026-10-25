@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="syclop_mpv_snapshot">MPV snapshot · reopen INFO to refresh</string>
+    <string name="syclop_mpv_source_fps">Container FPS (reported)</string>
+    <string name="syclop_mpv_active_decoder">Active video decoder</string>
+    <string name="syclop_mpv_speed">Requested speed</string>
+    <string name="syclop_mpv_estimated_fps">Estimated filter FPS</string>
+    <string name="syclop_mpv_frame_drops">Output / decoder drops</string>
+    <string name="syclop_mpv_cache_buffer">Cache buffer</string>
+    <string name="syclop_mpv_waiting_cache">Waiting for cache</string>
+    <string name="syclop_mpv_unknown">Unknown</string>
+    <string name="syclop_mpv_software">Software</string>
+    <string name="syclop_mpv_yes">Yes</string>
+    <string name="syclop_mpv_no">No</string>
+</resources>

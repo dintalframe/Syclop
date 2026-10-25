@@ -28,7 +28,7 @@ class DebridStreamPresentationTest {
     )
 
     @Test
-    fun `formats filtered debrid streams with the facts computed while filtering`() {
+    fun `formats eligible debrid streams and excludes unsupported direct URLs`() {
         val passthrough = Stream(
             name = "Regular",
             title = "Movie",
@@ -57,10 +57,10 @@ class DebridStreamPresentationTest {
 
         val expectedDebrid = DirectDebridStreamFilter.applyPreferences(debridStreams, settings)
             .map { formatter.format(it, settings) }
-        assertEquals(expectedDebrid + passthrough, result)
+        assertEquals(expectedDebrid, result)
         assertEquals(
             setOf("1080p WEB-DL HEVC", "2160p BluRay REMUX HEVC", "1440p HDTV AV1"),
-            result.dropLast(1).map { it.name }.toSet()
+            result.map { it.name }.toSet()
         )
     }
 
@@ -78,7 +78,7 @@ class DebridStreamPresentationTest {
         addonLogo = null,
         clientResolve = StreamClientResolve(
             type = "debrid",
-            infoHash = filename.hashCode().toString(),
+            infoHash = "a".repeat(40),
             fileIdx = 0,
             magnetUri = null,
             sources = null,

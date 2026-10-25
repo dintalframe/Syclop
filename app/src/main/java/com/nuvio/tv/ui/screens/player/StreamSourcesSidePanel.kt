@@ -277,6 +277,15 @@ internal fun StreamSourcesSidePanel(
 
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
 
+            Text(
+                text = "Bitrate confidence: native file estimate → reported estimate → unknown",
+                style = MaterialTheme.typography.labelSmall,
+                color = NuvioTheme.extendedColors.textSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(NuvioTheme.spacing.sm))
+
             AnimatedVisibility(
                 visible = uiState.sourceChips.isNotEmpty() || uiState.sourceAvailableAddons.isNotEmpty(),
                 enter = fadeIn(animationSpec = tween(200)),

@@ -436,5 +436,17 @@ data class StreamInfoData(
     val subtitleLanguage: String? = null,
     val subtitleSource: String? = null,
     val playerEngine: String? = null,
-    val serverPlayback: String? = null
+    val serverPlayback: String? = null,
+    val mpvSnapshot: com.nuvio.tv.core.player.MpvInfoSnapshot? = null,
+    val internalPlayerEngine: InternalPlayerEngine? = null,
+    val mediaOriginKey: String? = null
 )
+
+/** INFO identity only, never a playback grant; no raw signed URL is retained in the snapshot. */
+internal fun streamInfoMediaOriginKey(url: String?): String? = url
+    ?.takeIf { it.isNotBlank() && it.length <= 16_384 }
+    ?.let { value -> java.security.MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) } }
+
+internal fun StreamInfoData.isForPlayback(engine: InternalPlayerEngine, url: String?): Boolean =
+    internalPlayerEngine == engine && mediaOriginKey != null && mediaOriginKey == streamInfoMediaOriginKey(url)

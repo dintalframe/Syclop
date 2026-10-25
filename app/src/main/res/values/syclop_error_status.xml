@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="syclop_error_metadata_summary">Title details could not be loaded.</string>
+    <string name="syclop_error_metadata_retry">Retry in a moment, or open this title from another catalog.</string>
+</resources>

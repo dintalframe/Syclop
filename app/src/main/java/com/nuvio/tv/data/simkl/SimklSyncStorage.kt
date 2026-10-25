@@ -6,10 +6,18 @@ import com.nuvio.tv.data.local.ProfileDataStoreFactory
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 interface SimklSyncStorage {
     suspend fun load(profileId: Int): String?
     suspend fun save(profileId: Int, payload: String)
+    suspend fun saveIfCurrent(profileId: Int, payload: String, current: () -> Boolean): Boolean {
+        currentCoroutineContext().ensureActive()
+        if (!current()) return false
+        save(profileId, payload)
+        return current()
+    }
     suspend fun remove(profileId: Int)
 }
 
@@ -24,6 +32,17 @@ class AndroidSimklSyncStorage @Inject constructor(
         factory.get(profileId, FEATURE_NAME).edit { preferences ->
             preferences[SNAPSHOT_KEY] = payload
         }
+    }
+
+    override suspend fun saveIfCurrent(profileId: Int, payload: String, current: () -> Boolean): Boolean {
+        var saved = false
+        factory.get(profileId, FEATURE_NAME).edit { preferences ->
+            currentCoroutineContext().ensureActive()
+            if (!current()) return@edit
+            preferences[SNAPSHOT_KEY] = payload
+            saved = true
+        }
+        return saved && current()
     }
 
     override suspend fun remove(profileId: Int) {

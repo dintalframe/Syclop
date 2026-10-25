@@ -20,10 +20,22 @@ data class ExpressMedia(
     val season: Int?,
     val episode: Int?,
     val absoluteNumber: Int? = null,
-    val anime: Boolean = false
+    val anime: Boolean = false,
+    val titleAliases: List<String> = emptyList(),
+    /** Minted only from trusted native MAL metadata/mapping, never from an addon row. */
+    val nativeAnimeIdentity: com.nuvio.tv.core.anime.NativeAnimeTitleIdentity? = null
 ) {
-    fun variables(): Map<String, String> = buildMap {
-        put("title", title)
+    fun queryTitles(): List<String> {
+        if (!anime) return listOf(title)
+        val canonical = title.trim()
+        val nativeVariants = if (nativeAnimeIdentity != null) listOf(canonical,
+            canonical.replace(TERMINAL_NATIVE_SEASON, "").trim()) else listOf(canonical)
+        return (nativeVariants + titleAliases).map(String::trim)
+            .filter { it.isNotEmpty() && it.length <= 256 && it.none(Char::isISOControl) }.distinct().take(3)
+    }
+
+    fun variables(queryTitle: String = title): Map<String, String> = buildMap {
+        put("title", queryTitle)
         imdbId?.let { put("imdbId", it); put("showImdbId", it) }
         year?.let { put("year", it.toString()) }
         season?.let { put("season", it.toString()); put("seasonCode", "s${it.toString().padStart(2, '0')}") }
@@ -33,6 +45,12 @@ data class ExpressMedia(
     }
 }
 
+// Only a terminal, explicit season qualifier on trusted native MAL metadata is removed.
+// This is a bounded search variant, never a new identity, episode offset or catalog coordinate.
+private val TERMINAL_NATIVE_SEASON = Regex(
+    "\\s+(?:[1-9][0-9]{0,2}(?:st|nd|rd|th)\\s+season|season\\s+[1-9][0-9]{0,2}|s[1-9][0-9]{0,2})$",
+    RegexOption.IGNORE_CASE)
+
 fun interface ExpressMetadataSource { suspend fun resolve(request: ExpressMediaRequest): ExpressMedia }
 
 /** Metadata uses catalog IDs, never title-search guesses or season-to-absolute arithmetic. */
@@ -40,7 +58,8 @@ fun interface ExpressMetadataSource { suspend fun resolve(request: ExpressMediaR
 class ExpressMetadataResolver @Inject constructor(
     private val http: ExpressHttpClient,
     private val tmdb: TmdbService,
-    private val mal: MalMetadataService
+    private val mal: MalMetadataService,
+    private val animeMappings: com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings? = null
 ) : ExpressMetadataSource {
     private val cache = ConcurrentHashMap<String, JsonObject>()
 
@@ -55,12 +74,23 @@ class ExpressMetadataResolver @Inject constructor(
             val episode = if (isMovie) null else absoluteAnimeEpisodeNumber(request.videoId)
                 ?.takeIf { it > 0 && (source.episodeCount <= 0 || it <= source.episodeCount) }
                 ?: if (isMovie) null else throw ExpressException("A valid MyAnimeList episode ID is required.")
-            if (!isMovie && request.episode != null && request.episode != episode) {
+            if (!isMovie && ((request.season != null && request.season != 1) ||
+                (request.episode != null && request.episode != episode))) {
                 throw ExpressException("The MyAnimeList episode ID conflicts with the requested episode.")
             }
-            // This is the explicit episode in this MAL record, not a guessed franchise-wide offset.
+            // Keep MAL identity/relative episode untouched. Only a validated public episode record
+            // can supply the separate release-absolute coordinate used by declarative anime searches.
+            val proof = if (isMovie) null else animeMappings?.proof(request.videoId)
+                ?.takeIf { it.hasTrustedTitleIdentity }
+                ?: if (isMovie) null else throw ExpressException("A confirmed anime episode mapping is unavailable.")
+            val absolute = if (isMovie) null else proof?.absoluteEpisode
+                ?: if (isMovie) null else throw ExpressException("A confirmed anime episode mapping is unavailable.")
+            val identity = if (isMovie) com.nuvio.tv.core.anime.NativeAnimeTitleIdentity.create(
+                source.malId, source.title, source.alternativeTitles) else proof?.titleIdentity
+            if (identity == null) throw ExpressException("A confirmed anime title identity is unavailable.")
             return ExpressMedia(if (isMovie) "movie" else "series", source.title,
-                source.imdbId, source.year, null, episode, absoluteNumber = episode, anime = true)
+                source.imdbId, source.year, null, episode, absoluteNumber = absolute, anime = true,
+                titleAliases = source.alternativeTitles, nativeAnimeIdentity = identity)
         }
         val type = if (request.type == "movie") "movie" else "series"
         val parts = request.videoId.trim().split(':')
@@ -119,3 +149,10 @@ internal fun expressTemplate(template: String, variables: Map<String, String>): 
 }
 
 internal fun expressEncode(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+/** Native MAL rows must carry the trusted title in every supplied release-identity field. */
+internal fun ExpressMedia.acceptsNativeAnimeRow(row: ExpressRow): Boolean {
+    val identity = nativeAnimeIdentity ?: return true // Non-MAL metadata paths retain prior behavior.
+    val names = listOfNotNull(row.title, row.filename).filter { it.isNotBlank() }
+    return names.isNotEmpty() && names.all(identity::matchesRelease)
+}

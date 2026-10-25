@@ -17,7 +17,8 @@ data class MalSourceMetadata(
     val year: Int?,
     val mediaType: String?,
     val episodeCount: Int,
-    val imdbId: String? = null
+    val imdbId: String? = null,
+    val alternativeTitles: List<String> = emptyList()
 )
 
 object MalIdentity {
@@ -39,7 +40,8 @@ class MalMetadataService @Inject constructor(
     }
 
     suspend fun sourceMetadata(malId: Long): MalSourceMetadata = detail(malId).let {
-        MalSourceMetadata(it.id, it.title, MalIdentity.year(it.startDate), it.mediaType, it.totalEpisodes)
+        MalSourceMetadata(it.id, it.title, MalIdentity.year(it.startDate), it.mediaType, it.totalEpisodes,
+            alternativeTitles = it.alternativeTitles)
     }
 
     suspend fun meta(id: String): Meta = toMeta(detail(requireNotNull(MalIdentity.id(id))))

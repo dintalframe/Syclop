@@ -88,7 +88,8 @@ import com.nuvio.tv.ui.components.GridContinueWatchingSection
 import com.nuvio.tv.core.poster.withCustomPosterUrls
 import com.nuvio.tv.domain.model.ContinueWatchingCardStyle
 import com.nuvio.tv.ui.components.HeroCarousel
-import com.nuvio.tv.ui.components.LoadingIndicator
+import com.nuvio.tv.ui.components.SyclopBrandAnimation
+import com.nuvio.tv.ui.components.SyclopBrandState
 import com.nuvio.tv.ui.components.LocalStartupSplashEnabled
 import com.nuvio.tv.ui.components.PosterCardDefaults
 import com.nuvio.tv.ui.components.PosterCardStyle
@@ -360,7 +361,7 @@ fun GridHomeContent(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                LoadingIndicator()
+                SyclopBrandAnimation(SyclopBrandState.Loading)
             }
         }
         return

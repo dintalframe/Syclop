@@ -84,12 +84,87 @@ class DebridBitrateMetadataServiceTest {
         assertTrue(h.service.enrichKnownFiles(listOf(h.stream()),1000,StreamDurationOrigin.CATALOG_MOVIE,null,null,1).isEmpty())
         coVerify(exactly=0){h.resolver.isPlaybackAuthorized(any(),any())}
     }
+    @Test fun `cache-only enrichment preserves selected container facts and measured runtime`()=runTest {
+        val h=Fixture()
+        val facts=VerifiedSourceMediaFacts(video=VerifiedSourceVideo(3840,2160,VerifiedSourceVideoCodec.HEVC,VerifiedSourceHdr.PQ),durationMillis=2000)
+        val native=h.stream().copy(nativeFileMetadata=StreamFileMetadata(100,2000,StreamDurationOrigin.NATIVE_CONTAINER,verifiedTracks=facts))
+        val result=h.service.enrichKnownFiles(listOf(native),1000,StreamDurationOrigin.CATALOG_MOVIE,null,null,1).single().second
+        assertEquals(facts,result.nativeFileMetadata?.verifiedTracks)
+        assertEquals(2000L,result.nativeFileMetadata?.durationMillis)
+        assertEquals(StreamDurationOrigin.NATIVE_CONTAINER,result.nativeFileMetadata?.durationOrigin)
+        assertEquals(400L,StreamBitrateFacts.estimatedBitsPerSecond(result))
+    }
+    @Test fun `native MAL identity reaches both metadata authorization gates without generic fallback`()=runTest {
+        val h=Fixture();val native=h.stream().copy(nativeFileMetadata=StreamFileMetadata(100))
+        coEvery { h.resolver.isPlaybackAuthorized(native.url!!,1,"mal:59978:1",1,1,"series") } returns true
+        val result=h.service.enrichKnownFiles(listOf(native),1000,StreamDurationOrigin.CATALOG_EPISODE,1,1,1,
+            nativeVideoId="mal:59978:1",nativeMediaType="series").single().second
+        assertEquals(100L,result.nativeFileMetadata?.selectedFileBytes)
+        coVerify(exactly=2){h.resolver.isPlaybackAuthorized(native.url!!,1,"mal:59978:1",1,1,"series")}
+        coVerify(exactly=0){h.resolver.isPlaybackAuthorized(any(),any(),null,any(),any(),null)}
+    }
+    @Test fun `active player duration joins only exact authorized native file bytes and never sibling files`()=runTest {
+        val h=Fixture()
+        val raw=h.stream().copy(url=null,infoHash="c".repeat(40))
+        val sibling=raw.copy(infoHash="d".repeat(40))
+        val activeUrl="https://native.example/active-file"
+        val siblingUrl="https://native.example/other-file"
+        coEvery { h.resolver.cachedPlayableStream(raw,1,1,"mal:59978:1","series") } returns raw.copy(
+            url=activeUrl,nativeFileMetadata=StreamFileMetadata(selectedFileBytes=3_355_443_200L))
+        coEvery { h.resolver.cachedPlayableStream(sibling,1,1,"mal:59978:1","series") } returns sibling.copy(
+            url=siblingUrl,nativeFileMetadata=StreamFileMetadata(selectedFileBytes=2_000_000_000L))
+        coEvery { h.resolver.isPlaybackAuthorized(any(),any(),any(),any(),any(),any()) } returns true
+        val capture=ActivePlayerFileDuration(1,0,0,"mal:59978:1","series",1,1,
+            ActivePlayerFileDuration.originKey(activeUrl)!!,1_443_000L,raw.stableKey(0))
+        val shown=h.service.enrichKnownFiles(listOf(raw,sibling),null,null,1,1,1,"mal:59978:1","series",capture)
+            .associate { it.first.infoHash to it.second }
+        val playing=shown.getValue(raw.infoHash)
+        assertEquals(3_355_443_200L,playing.nativeFileMetadata?.selectedFileBytes)
+        assertEquals(1_443_000L,playing.nativeFileMetadata?.durationMillis)
+        assertEquals(StreamDurationOrigin.NATIVE_CONTAINER,playing.nativeFileMetadata?.durationOrigin)
+        assertEquals("Estimated avg 18.6 Mbps",StreamBitrateFacts.label(playing))
+        assertNull(shown.getValue(sibling.infoHash).nativeFileMetadata?.durationMillis)
+        assertNull(playing.url)
+        assertEquals(raw.behaviorHints,playing.behaviorHints)
+        assertNull(raw.nativeFileMetadata)
+        coVerify(exactly=0) { h.resolver.resolve(any(),any(),any(),any(),any(),any(),any(),any()) }
+    }
+
+    @Test fun `active duration rejects another file source viewer revision credential or episode and invalid time`()=runTest {
+        val h=Fixture()
+        val native=h.stream().copy(nativeFileMetadata=StreamFileMetadata(selectedFileBytes=100))
+        coEvery { h.resolver.isPlaybackAuthorized(any(),any(),any(),any(),any(),any()) } returns true
+        val capture=ActivePlayerFileDuration(1,0,0,"tt1234567","movie",null,null,
+            ActivePlayerFileDuration.originKey(native.url)!!,1_000L,native.stableKey(0))
+        val changed=listOf(capture.copy(profileId=2),capture.copy(selectionRevision=2),capture.copy(credentialRevision=1),
+            capture.copy(nativeVideoId="tt7654321"),capture.copy(mediaType="series"),capture.copy(season=1,episode=1),
+            capture.copy(mediaOriginKey="a".repeat(64)),capture.copy(sourceKey="another-source"),
+            capture.copy(durationMillis=0),capture.copy(durationMillis=-1),capture.copy(durationMillis=Long.MIN_VALUE+1))
+        for (other in changed) {
+            val shown=h.service.enrichKnownFiles(listOf(native),null,null,null,null,1,"tt1234567","movie",other).single().second
+            assertEquals(100L,shown.nativeFileMetadata?.selectedFileBytes)
+            assertNull(shown.nativeFileMetadata?.durationMillis)
+            assertNull(StreamBitrateFacts.estimatedBitsPerSecond(shown))
+        }
+    }
+
+    @Test fun `active native duration cannot promote an addon or season pack byte claim`()=runTest {
+        val h=Fixture();val reported=h.stream()
+        coEvery { h.resolver.isPlaybackAuthorized(any(),any(),any(),any(),any(),any()) } returns true
+        val capture=ActivePlayerFileDuration(1,0,0,"mal:59978:1","series",1,1,
+            ActivePlayerFileDuration.originKey(reported.url)!!,1_443_000L,reported.stableKey(0))
+        val shown=h.service.enrichKnownFiles(listOf(reported),null,null,1,1,1,"mal:59978:1","series",capture).single().second
+        assertNull(shown.nativeFileMetadata?.selectedFileBytes)
+        assertNull(StreamBitrateFacts.estimatedBitsPerSecond(shown))
+        assertEquals(100_000_000_000L,shown.behaviorHints?.videoSize)
+    }
+
     private class Fixture {
         val active=MutableStateFlow(1)
         var selectionRevision=0L
         var credentialRevision=0L
         val settings=mockk<DebridSettingsDataStore>{every{activeProfileId}returns active;every{activeProfileSelectionRevision}answers{selectionRevision};every{activeCredentialRevision}answers{credentialRevision}}
-        val resolver=mockk<DirectDebridResolver>{coEvery{isPlaybackAuthorized(any(),any())}returns true}
+        val resolver=mockk<DirectDebridResolver>{coEvery{isPlaybackAuthorized(any(),any(),null,any(),any(),null)}returns true}
         val service=DebridBitrateMetadataService(resolver,settings)
         fun stream()=Stream(null,"Fixture",null,"https://native.example/file",null,null,null,null,
             StreamBehaviorHints(null,null,null,null,videoSize=100_000_000_000L),"Magnify",null)

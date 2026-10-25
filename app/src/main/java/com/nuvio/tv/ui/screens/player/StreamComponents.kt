@@ -57,6 +57,10 @@ import coil3.request.crossfade
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import com.nuvio.tv.core.debrid.NativeDebridSourceCards
+import com.nuvio.tv.core.debrid.ReportedStreamFacts
+import com.nuvio.tv.core.debrid.StreamBitrateFacts
+import com.nuvio.tv.core.mediafacts.SourceMediaFormatFacts
 import com.nuvio.tv.core.streams.StreamBadgePlacement
 import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.ui.components.SourceChipItem
@@ -89,9 +93,14 @@ internal fun StreamItem(
     val context = LocalContext.current
     val density = LocalDensity.current
     val unknownStreamLabel = stringResource(R.string.stream_unknown)
-    val streamName = remember(stream, unknownStreamLabel) { stream.getDisplayNameOrNull() ?: unknownStreamLabel }
-    val streamDescription = remember(stream) { stream.getDisplayDescription() }
-    val hasBadges = stream.badges.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints?.videoSize != null)
+    val streamName = remember(stream, unknownStreamLabel) {
+        NativeDebridSourceCards.displayText(stream.getDisplayNameOrNull()) ?: unknownStreamLabel
+    }
+    val streamDescription = remember(stream) { NativeDebridSourceCards.displayDescription(stream) }
+    val visibleBadges = remember(stream.badges) {
+        stream.badges.filterNot { NativeDebridSourceCards.isSeederBadge(it.name) }
+    }
+    val hasBadges = visibleBadges.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints?.videoSize != null)
     // Pre-upscale: decode at 2× target pixels so the hardware compositor
     // has enough pixel data for smooth edges inside Card RenderNodes.
     val logoDecodeSize = remember(density) {
@@ -155,7 +164,7 @@ internal fun StreamItem(
             ) {
                 if (hasBadges && badgePlacement == StreamBadgePlacement.TOP) {
                     StreamBadgeChips(
-                        badges = stream.badges,
+                        badges = visibleBadges,
                         fileSizeBytes = stream.behaviorHints?.videoSize,
                         showFileSizeBadge = showFileSizeBadges
                     )
@@ -193,6 +202,37 @@ internal fun StreamItem(
                     }
                 }
 
+                stream.nativeFileMetadata?.verifiedTracks?.let { facts ->
+                    SourceMediaFormatFacts.summary(facts)?.let { summary ->
+                        Text(text = "Checked source file: $summary", style = MaterialTheme.typography.labelSmall,
+                            color = NuvioTheme.colors.TextPrimary)
+                    }
+                }
+                stream.nativeFileMetadata?.selectedFileBytes?.takeIf { it > 0L }?.let { bytes ->
+                    Text(text = "Selected file: ${android.text.format.Formatter.formatShortFileSize(context, bytes)}",
+                        style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary)
+                }
+                val reportedQuality = remember(stream) { ReportedStreamFacts.qualitySummary(stream) }
+                reportedQuality?.let { summary ->
+                    Text(text = "Reported quality (unverified): $summary", style = MaterialTheme.typography.labelSmall,
+                        color = NuvioTheme.extendedColors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                val nativeBitrate = StreamBitrateFacts.estimatedBitsPerSecond(stream)
+                val reportedBitrate = remember(stream) { ReportedStreamFacts.bitrateLabel(stream) }
+                if (nativeBitrate != null || reportedBitrate == null) {
+                    Text(text = StreamBitrateFacts.label(stream), style = MaterialTheme.typography.labelSmall,
+                        color = NuvioTheme.extendedColors.textSecondary)
+                }
+                reportedBitrate?.let { reported ->
+                    Text(text = reported, style = MaterialTheme.typography.labelSmall,
+                        color = NuvioTheme.extendedColors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                NativeDebridSourceCards.displayText(stream.pluginSourceName)
+                    ?.takeIf { it.isNotBlank() && it != stream.addonName }?.let { sourceName ->
+                    Text(text = sourceName, style = MaterialTheme.typography.labelSmall,
+                        color = NuvioTheme.extendedColors.textSecondary)
+                }
+
                 streamDescription?.let { description ->
                     if (description != streamName) {
                         Text(
@@ -208,7 +248,7 @@ internal fun StreamItem(
 
                 if (hasBadges && badgePlacement == StreamBadgePlacement.BOTTOM) {
                     StreamBadgeChips(
-                        badges = stream.badges,
+                        badges = visibleBadges,
                         fileSizeBytes = stream.behaviorHints?.videoSize,
                         showFileSizeBadge = showFileSizeBadges,
                         modifier = Modifier.padding(top = NuvioTheme.spacing.xxs)

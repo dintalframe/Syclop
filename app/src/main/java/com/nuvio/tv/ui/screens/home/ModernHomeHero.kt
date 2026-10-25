@@ -75,6 +75,7 @@ private data class ModernHeroSecondaryMeta(
 @Composable
 internal fun ModernHeroScene(
     state: () -> ModernHeroSceneState,
+    inheritPreviousHeroBackdrop: Boolean = true,
     isFullScreen: () -> Boolean,
     bgColor: Color,
     modifier: Modifier,
@@ -85,6 +86,7 @@ internal fun ModernHeroScene(
 ) {
     ModernHeroMediaLayer(
         heroBackdrop = { state().heroBackdrop },
+        inheritPreviousHeroBackdrop = inheritPreviousHeroBackdrop,
         enrichmentActive = { state().enrichmentActive },
         shouldPlayHeroTrailer = { state().shouldPlayTrailer },
         heroTrailerFirstFrameRendered = { state().trailerFirstFrameRendered },
@@ -113,6 +115,7 @@ internal fun ModernHeroScene(
 @Composable
 internal fun ModernHeroMediaLayer(
     heroBackdrop: () -> String?,
+    inheritPreviousHeroBackdrop: Boolean = true,
     enrichmentActive: () -> Boolean,
     shouldPlayHeroTrailer: () -> Boolean,
     heroTrailerFirstFrameRendered: () -> Boolean,
@@ -139,7 +142,11 @@ internal fun ModernHeroMediaLayer(
     // during rapid nav / scroll). Only update when enrichment is not active
     val rawBackdrop by remember { derivedStateOf { heroBackdrop() } }
     val enriching by remember { derivedStateOf { enrichmentActive() } }
-    var displayedBackdrop by remember { mutableStateOf(HeroBackdropState.lastDisplayedUrl ?: heroBackdrop()) }
+    // Category tabs start with their own scene (or black while it resolves), never another
+    // category's last image. Home keeps its existing seamless-navigation fallback.
+    var displayedBackdrop by remember {
+        mutableStateOf(if (inheritPreviousHeroBackdrop) HeroBackdropState.lastDisplayedUrl ?: heroBackdrop() else heroBackdrop())
+    }
     if (rawBackdrop != null && rawBackdrop != displayedBackdrop && !enriching) {
         displayedBackdrop = rawBackdrop!!
     }

@@ -4,6 +4,13 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.nuvio.tv.BuildConfig
+import com.nuvio.tv.core.initialization.InitializationFailure
+import com.nuvio.tv.core.initialization.InitializationReadException
+import com.nuvio.tv.core.initialization.InitializationReadGate
+import com.nuvio.tv.core.initialization.InitializationProvider
+import com.nuvio.tv.core.initialization.InitializationReadResult
+import com.nuvio.tv.core.initialization.InitializationReadScope
+import com.nuvio.tv.core.initialization.checkpointInitializationRead
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.data.local.TraktSettingsDataStore
@@ -28,7 +35,9 @@ import com.nuvio.tv.data.remote.dto.trakt.TraktWatchedMovieItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktWatchedShowItemDto
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.repository.MetaRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -163,6 +172,12 @@ class TraktProgressService @Inject constructor(
     }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private val refreshSignals = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val snapshotReadGate = InitializationReadGate()
+    private var importedScopeKey: String? = null
+    private var activeSnapshotScopeKey: String? = null
+    private var activeSnapshotSelection: Pair<Int, Long>? = null
+    private val projectionOwnerMutex = Mutex()
+    private var historyProjectionTruncated = false
     private val remoteProgress = MutableStateFlow<List<WatchProgress>>(emptyList())
     private val optimisticProgress = MutableStateFlow<Map<String, OptimisticProgressEntry>>(emptyMap())
     private val metadataState = MutableStateFlow<Map<String, ContentMetadata>>(emptyMap())
@@ -267,7 +282,7 @@ class TraktProgressService @Inject constructor(
         scope.launch {
             var isInitialEmission = true
             profileManager.activeProfileId
-                .collectLatest {
+                .collectLatest { profile ->
                     if (isInitialEmission) {
                         // The initial emission is the current profile loaded from storage
                         // on cold start. Don't emit a refresh signal here — the refresh
@@ -276,8 +291,14 @@ class TraktProgressService @Inject constructor(
                         isInitialEmission = false
                         return@collectLatest
                     }
-                    resetProfileScopedState()
-                    refreshSignals.tryEmit(Unit)
+                    val selected = profile to profileManager.activeProfileSelectionRevision
+                    val cleared = projectionOwnerMutex.withLock {
+                        if (profileManager.activeProfileId.value != profile ||
+                            selected.second != profileManager.activeProfileSelectionRevision ||
+                            activeSnapshotSelection == selected) false
+                        else { resetProfileScopedState(); true }
+                    }
+                    if (cleared) refreshSignals.tryEmit(Unit)
                 }
         }
         scope.launch {
@@ -290,8 +311,10 @@ class TraktProgressService @Inject constructor(
                 val success = try {
                     refreshRemoteSnapshot()
                     true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to refresh remote snapshot", e)
+                    Log.w(TAG, "Failed to refresh remote snapshot: ${e.javaClass.simpleName}")
                     false
                 }
                 updateRefreshBackoff(success)
@@ -304,6 +327,9 @@ class TraktProgressService @Inject constructor(
     }
 
     private suspend fun resetProfileScopedState() {
+        activeSnapshotScopeKey = null
+        activeSnapshotSelection = null
+        importedScopeKey = null
         remoteProgress.value = emptyList()
         optimisticProgress.value = emptyMap()
         metadataState.value = emptyMap()
@@ -417,6 +443,7 @@ class TraktProgressService @Inject constructor(
         )
 
         cacheMutex.withLock {
+            checkpointInitializationRead()
             cachedUserStats = TimedCache(value = stats, updatedAtMs = now)
         }
         return stats
@@ -1043,99 +1070,120 @@ class TraktProgressService @Inject constructor(
         refreshIntervalMs = nextInterval
     }
 
+    /** Reads only provider state. Concurrent polling and first-use callers share the same outcome. */
+    suspend fun awaitInitializationImport(expected: InitializationReadScope): InitializationReadResult {
+        require(expected.provider == InitializationProvider.TRAKT)
+        hideForeignInitializationProjection(expected)
+        snapshotReadGate.recentComplete(expected)?.let { return it }
+        var result = snapshotReadGate.run(expected) { refreshRemoteSnapshotBody(expected, fullImport = true) }
+        // A polling cycle can legitimately skip an unchanged activity watermark. It is not an import.
+        if (!result.complete) {
+            result = snapshotReadGate.run(expected) { refreshRemoteSnapshotBody(expected, fullImport = true) }
+        }
+        expected.checkpoint()
+        if (!result.complete) throw InitializationReadException(InitializationFailure.INCOMPLETE)
+        return result
+    }
+
+    /** Hide only a former account's provider-owned memory, before identity capture may fail. */
+    suspend fun hideForeignInitializationProjection(expected: InitializationReadScope) {
+        require(expected.provider == InitializationProvider.TRAKT)
+        projectionOwnerMutex.withLock {
+            expected.checkpoint()
+            if (activeSnapshotScopeKey != expected.operationKey) {
+                resetProfileScopedState()
+                expected.checkpoint()
+                activeSnapshotScopeKey = expected.operationKey
+                activeSnapshotSelection = profileManager.activeProfileId.value to profileManager.activeProfileSelectionRevision
+            }
+        }
+    }
+
     @VisibleForTesting
     internal suspend fun refreshRemoteSnapshot() {
-        if (!traktAuthService.isCircuitClosed()) {
-            trace("refreshRemoteSnapshot: circuit breaker open, skipping")
-            throw IOException("Trakt circuit breaker is open")
+        val expected = traktAuthService.captureInitializationReadScope()
+        snapshotReadGate.run(expected) {
+            // The first background read for this grant is also a complete initialization read.
+            refreshRemoteSnapshotBody(expected, fullImport = importedScopeKey != expected.operationKey)
         }
+    }
 
+    private suspend fun refreshRemoteSnapshotBody(
+        expected: InitializationReadScope,
+        fullImport: Boolean
+    ): InitializationReadResult {
+        expected.checkpoint()
+        hideForeignInitializationProjection(expected)
+        if (!traktAuthService.isCircuitClosed()) {
+            throw InitializationReadException(InitializationFailure.UNAVAILABLE)
+        }
+        val generation = refreshGeneration.get()
+        if (fullImport) {
+            continueWatchingWindowDays = traktSettingsDataStore.continueWatchingDaysCap.first()
+            expected.checkpoint()
+        }
         val now = System.currentTimeMillis()
         val forceDeadline = forceRefreshUntilMs
-        val force = now < forceDeadline
-
-        // Read last_activities on forced refreshes too, so the fingerprints and stale
-        // flags already include this refresh's changes and the next poll skips them.
+        val force = fullImport || now < forceDeadline
         val activityChanged = checkActivityChanged()
+        expected.checkpoint()
         if (activityChanged == true) activityRefreshPending = true
         val shouldRefresh = activityRefreshPending ||
             (activityChanged == null && !hasLoadedRemoteProgress.value)
         val progressRecheckDue = !force && progressRecheckAtMs in 1..now
         if (!force && !shouldRefresh && !progressRecheckDue) {
-            return
+            return InitializationReadResult(complete = false)
         }
-        // With last_activities read, the stale flags say which watched lists changed.
-        // Only refetch both when it could not be read.
-        val refetchWatched = force && activityChanged == null
+        val refetchWatched = fullImport || (force && activityChanged == null)
+        historyProjectionTruncated = !isAllHistoryWindow()
 
-        // Capture the generation at the start of the refresh. If the profile
-        // switches while this refresh is in-flight (collectLatest cancellation
-        // does NOT cancel in-flight HTTP), the generation will have been
-        // incremented by resetProfileScopedState. Before writing to shared
-        // state, we check the generation — stale results from a cancelled
-        // but still-running refresh are silently discarded.
-        val generation = refreshGeneration.get()
-
-        supervisorScope {
-            val hiddenDeferred = async { runCatching { ensureHiddenProgressShows(force = force) } }
-
-            val watchedMoviesDeferred: Deferred<Set<String>>? = if (refetchWatched || watchedMoviesStale || !hasLoadedWatchedMovies) {
-                async {
-                    try { getWatchedMoviesSnapshot(forceRefresh = refetchWatched || hasLoadedWatchedMovies) }
-                    catch (_: Exception) { emptySet() }
-                }
-            } else null
-
+        return supervisorScope {
+            val hiddenDeferred = async {
+                ensureHiddenProgressShows(force = force, requireRead = fullImport)
+            }
+            val watchedMoviesDeferred: Deferred<Set<String>>? =
+                if (refetchWatched || watchedMoviesStale || !hasLoadedWatchedMovies) {
+                    async { getWatchedMoviesSnapshot(forceRefresh = refetchWatched || hasLoadedWatchedMovies,
+                        requireRead = fullImport) }
+                } else null
             val needSeedsRefresh = refetchWatched || watchedShowSeedsStale || !hasLoadedWatchedShowSeeds
             val progressDeferred = async { fetchAllProgressSnapshot(force = force || progressRecheckDue) }
             val seedsDeferred: Deferred<List<WatchProgress>>? = if (needSeedsRefresh) {
-                async {
-                    try { getWatchedShowSeedsSnapshot(forceRefresh = refetchWatched || hasLoadedWatchedShowSeeds) }
-                    catch (_: Exception) { emptyList() }
-                }
+                async { getWatchedShowSeedsSnapshot(forceRefresh = refetchWatched || hasLoadedWatchedShowSeeds,
+                    requireRead = fullImport) }
             } else null
 
-            hiddenDeferred.await()
-
-            val snapshot = try {
-                progressDeferred.await()
-            } catch (e: Exception) {
-                Log.w(TAG, "fetchAllProgressSnapshot failed, keeping existing snapshot", e)
-                null
-            }
-            watchedMoviesDeferred?.let {
-                try { it.await() } catch (_: Exception) { }
-            }
-            seedsDeferred?.let {
-                try { it.await() } catch (_: Exception) { }
-            }
-
-            if (snapshot == null) {
-                // Keep the current snapshot, and let the next poll retry instead of
-                // treating this activity change as already fetched.
+            try {
+                hiddenDeferred.await()
+                val snapshot = progressDeferred.await()
+                watchedMoviesDeferred?.await()
+                seedsDeferred?.await()
+                projectionOwnerMutex.withLock {
+                    expected.checkpoint()
+                    if (refreshGeneration.get() != generation) {
+                        throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
+                    }
+                    val visibleSnapshot = suppressKnownWatchedPlayback(snapshot)
+                    remoteProgress.value = visibleSnapshot
+                    hasLoadedRemoteProgress.value = true
+                    reconcileOptimistic(visibleSnapshot)
+                    hydrateMetadata(visibleSnapshot, expected)
+                    activityRefreshPending = false
+                    if (progressRecheckDue) progressRecheckAtMs = 0L
+                    if (force && forceRefreshUntilMs == forceDeadline) {
+                        forceRefreshUntilMs = 0L
+                        if (forceDeadline > now) progressRecheckAtMs = forceDeadline
+                    }
+                    if (fullImport) importedScopeKey = expected.operationKey
+                    InitializationReadResult(count = visibleSnapshot.size,
+                        truncated = historyProjectionTruncated, complete = fullImport)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                expected.checkpoint()
                 lastKnownActivityFingerprint = null
-                throw IOException("Progress snapshot fetch failed")
-            }
-
-            // Guard: if the profile switched mid-refresh, discard stale data.
-            // The generation was incremented by resetProfileScopedState().
-            if (refreshGeneration.get() != generation) {
-                trace("refreshRemoteSnapshot: discarding stale snapshot (generation changed)")
-                return@supervisorScope
-            }
-
-            val visibleSnapshot = suppressKnownWatchedPlayback(snapshot)
-            remoteProgress.value = visibleSnapshot
-            hasLoadedRemoteProgress.value = true
-            reconcileOptimistic(visibleSnapshot)
-            hydrateMetadata(visibleSnapshot)
-            activityRefreshPending = false
-            if (progressRecheckDue) progressRecheckAtMs = 0L
-            // One completed forced refresh is enough; later changes show up in last_activities.
-            // Playback and history are still checked once more after the force window.
-            if (force && forceRefreshUntilMs == forceDeadline) {
-                forceRefreshUntilMs = 0L
-                progressRecheckAtMs = forceDeadline
+                throw failure
             }
         }
     }
@@ -1148,6 +1196,7 @@ class TraktProgressService @Inject constructor(
         if (!response.isSuccessful) return null
 
         val activities = response.body() ?: return true
+        checkpointInitializationRead()
         val moviesWatchedAt = activities.movies?.watchedAt
         if (moviesWatchedAt != lastKnownMoviesWatchedAt) {
             watchedMoviesStale = true
@@ -1242,6 +1291,7 @@ class TraktProgressService @Inject constructor(
             val result = fetchEpisodeProgressSnapshot(contentId = cacheKey)
             val fetchedAt = System.currentTimeMillis()
             val activityVersion = episodeProgressActivityVersion.get()
+            checkpointInitializationRead()
             episodeProgressState.update { current ->
                 current + (
                     cacheKey to EpisodeProgressCacheEntry(
@@ -1258,6 +1308,7 @@ class TraktProgressService @Inject constructor(
             )
             result.progress
         } catch (e: Exception) {
+            rethrowReadOwnershipFailure(e)
             Log.w(TAG, "Failed to fetch episode progress for show=$cacheKey", e)
             episodeProgressState.value[cacheKey]?.progress ?: cachedEntry?.progress.orEmpty()
         } finally {
@@ -1288,7 +1339,7 @@ class TraktProgressService @Inject constructor(
         return ids.contains(contentId) || ids.contains(canonical)
     }
 
-    private suspend fun ensureHiddenProgressShows(force: Boolean) {
+    private suspend fun ensureHiddenProgressShows(force: Boolean, requireRead: Boolean = false) {
         val now = System.currentTimeMillis()
         val ttlMs = 30 * 60_000L // refresh every 30 minutes
         hiddenProgressShowsMutex.withLock {
@@ -1297,8 +1348,13 @@ class TraktProgressService @Inject constructor(
             }
         }
         // Keep the previous set on failure; the next refresh retries.
-        val ids = fetchHiddenProgressShowIds() ?: return
+        val ids = fetchHiddenProgressShowIds() ?: run {
+            checkpointInitializationRead()
+            if (requireRead) throw InitializationReadException(InitializationFailure.NETWORK)
+            return
+        }
         hiddenProgressShowsMutex.withLock {
+            checkpointInitializationRead()
             hiddenProgressShowIds.value = ids
             hiddenProgressShowsLoadedAtMs = System.currentTimeMillis()
         }
@@ -1309,7 +1365,8 @@ class TraktProgressService @Inject constructor(
         val allIds = mutableSetOf<String>()
         var page = 1
         val limit = 1000
-        while (true) {
+        while (page <= WATCHED_MAX_PAGES) {
+            checkpointInitializationRead()
             val response = traktAuthService.executeAuthorizedRequest { authHeader ->
                 traktApi.getHiddenItems(
                     authorization = authHeader,
@@ -1323,7 +1380,7 @@ class TraktProgressService @Inject constructor(
                 Log.w(TAG, "fetchDroppedShows: failed code=${response.code()}")
                 return null
             }
-            val items = response.body().orEmpty()
+            val items = requiredReadBody(response).orEmpty()
             if (items.isEmpty()) break
             for (item in items) {
                 val ids = item.show?.ids ?: continue
@@ -1334,10 +1391,11 @@ class TraktProgressService @Inject constructor(
             if (items.size < limit) break
             page++
         }
+        if (page > WATCHED_MAX_PAGES) return null
         return allIds
     }
 
-    private suspend fun getWatchedMoviesSnapshot(forceRefresh: Boolean): Set<String> {
+    private suspend fun getWatchedMoviesSnapshot(forceRefresh: Boolean, requireRead: Boolean = false): Set<String> {
         val now = System.currentTimeMillis()
         return watchedMoviesMutex.withLock {
             val hasFreshCache = hasLoadedWatchedMovies &&
@@ -1354,6 +1412,8 @@ class TraktProgressService @Inject constructor(
 
             watchedMoviesLastAttemptAtMs = now
             val watchedMovieItems = fetchWatchedMoviePages() ?: run {
+                checkpointInitializationRead()
+                if (requireRead) throw InitializationReadException(InitializationFailure.NETWORK)
                 return@withLock watchedMoviesState.value
             }
 
@@ -1363,6 +1423,7 @@ class TraktProgressService @Inject constructor(
                 }
                 .toSet()
 
+            checkpointInitializationRead()
             watchedMoviesState.value = watchedMovies
             watchedMoviesUpdatedAtMs = System.currentTimeMillis()
             hasLoadedWatchedMovies = true
@@ -1372,7 +1433,7 @@ class TraktProgressService @Inject constructor(
         }
     }
 
-    private suspend fun getWatchedShowSeedsSnapshot(forceRefresh: Boolean): List<WatchProgress> {
+    private suspend fun getWatchedShowSeedsSnapshot(forceRefresh: Boolean, requireRead: Boolean = false): List<WatchProgress> {
         val now = System.currentTimeMillis()
         return watchedShowSeedsMutex.withLock {
             val hasFreshCache = hasLoadedWatchedShowSeeds &&
@@ -1389,6 +1450,8 @@ class TraktProgressService @Inject constructor(
 
             watchedShowSeedsLastAttemptAtMs = now
             val items = fetchWatchedShowPages() ?: run {
+                checkpointInitializationRead()
+                if (requireRead) throw InitializationReadException(InitializationFailure.NETWORK)
                 return@withLock watchedShowSeedsState.value
             }
 
@@ -1481,6 +1544,7 @@ class TraktProgressService @Inject constructor(
                     }
                 }
             }
+            checkpointInitializationRead()
             watchedShowEpisodesMap = episodesMap
             showIdToTraktPathId = idLookup
             showIdSiblingsMap = siblingsMap
@@ -1498,6 +1562,7 @@ class TraktProgressService @Inject constructor(
         val items = mutableListOf<TraktWatchedMovieItemDto>()
         var page = 1
         while (page <= WATCHED_MAX_PAGES) {
+            checkpointInitializationRead()
             trace("watched-movies fetch: requesting /sync/watched/movies page=$page limit=$WATCHED_PAGE_LIMIT")
             val response = traktAuthService.executeAuthorizedRequest { authHeader ->
                 traktApi.getWatched(
@@ -1514,7 +1579,7 @@ class TraktProgressService @Inject constructor(
                 trace("watched-movies fetch: non-success code=${response.code()} page=$page")
                 return null
             }
-            val pageItems = response.body().orEmpty()
+            val pageItems = requiredReadBody(response).orEmpty()
             if (pageItems.isEmpty()) break
             items.addAll(pageItems)
             val pageCount = response.headers()["X-Pagination-Page-Count"]?.toIntOrNull()
@@ -1532,6 +1597,7 @@ class TraktProgressService @Inject constructor(
         val items = mutableListOf<TraktWatchedShowItemDto>()
         var page = 1
         while (page <= WATCHED_MAX_PAGES) {
+            checkpointInitializationRead()
             trace("watched-shows fetch: requesting /sync/watched/shows page=$page limit=$WATCHED_PAGE_LIMIT")
             val response = traktAuthService.executeAuthorizedRequest { authHeader ->
                 traktApi.getWatchedShows(
@@ -1548,7 +1614,7 @@ class TraktProgressService @Inject constructor(
                 trace("watched-shows fetch: non-success code=${response.code()} page=$page")
                 return null
             }
-            val pageItems = response.body().orEmpty()
+            val pageItems = requiredReadBody(response).orEmpty()
             if (pageItems.isEmpty()) break
             items.addAll(pageItems)
             val pageCount = response.headers()["X-Pagination-Page-Count"]?.toIntOrNull()
@@ -1926,7 +1992,7 @@ class TraktProgressService @Inject constructor(
                 playback.map { item -> async {
                     try {
                         mappingSemaphore.withPermit { mapPlaybackMovie(item) }
-                    } catch (_: Exception) { null }
+                    } catch (error: Exception) { rethrowReadOwnershipFailure(error); null }
                 } }
                     .awaitAll()
                     .filterNotNull()
@@ -1939,13 +2005,13 @@ class TraktProgressService @Inject constructor(
                     async {
                         try {
                             mappingSemaphore.withPermit { mapPlaybackEpisode(item, applyAddonRemap = true) }
-                        } catch (_: Exception) { null }
+                        } catch (error: Exception) { rethrowReadOwnershipFailure(error); null }
                     }
                 }.awaitAll().filterNotNull()
             }
-            val history = try { historyDeferred.await() } catch (_: Exception) { null }
-            val movies = try { moviesDeferred.await() } catch (_: Exception) { null }
-            val episodes = try { episodesDeferred.await() } catch (_: Exception) { null }
+            val history = try { historyDeferred.await() } catch (error: Exception) { rethrowReadOwnershipFailure(error); null }
+            val movies = try { moviesDeferred.await() } catch (error: Exception) { rethrowReadOwnershipFailure(error); null }
+            val episodes = try { episodesDeferred.await() } catch (error: Exception) { rethrowReadOwnershipFailure(error); null }
             Triple(history, movies, episodes)
         }
         // A partial snapshot would drop items from Continue Watching, so fail the whole fetch.
@@ -2011,6 +2077,7 @@ class TraktProgressService @Inject constructor(
         val maxPages = if (isAllHistoryWindow()) 20 else 5
 
         while (page <= maxPages) {
+            checkpointInitializationRead()
             val response = traktAuthService.executeAuthorizedRequest { authHeader ->
                 traktApi.getEpisodeHistory(
                     authorization = authHeader,
@@ -2021,7 +2088,7 @@ class TraktProgressService @Inject constructor(
             } ?: return null
 
             if (!response.isSuccessful) return null
-            val items = response.body().orEmpty()
+            val items = requiredReadBody(response).orEmpty()
             if (items.isEmpty()) break
 
             // Filter items first (cheap), then map in parallel (expensive).
@@ -2061,7 +2128,7 @@ class TraktProgressService @Inject constructor(
                                 mappingSemaphore.withPermit {
                                     mapEpisodeHistoryItem(item, applyAddonRemap = true)
                                 }
-                            } catch (_: Exception) { null }
+                            } catch (error: Exception) { rethrowReadOwnershipFailure(error); null }
                         }
                     }.awaitAll()
                 }
@@ -2071,6 +2138,10 @@ class TraktProgressService @Inject constructor(
             }
 
             val pageCount = response.headers()["X-Pagination-Page-Count"]?.toIntOrNull()
+            checkpointInitializationRead()
+            if (shouldStop || (page == maxPages && items.size >= pageLimit && (pageCount == null || page < pageCount))) {
+                historyProjectionTruncated = true
+            }
             if (items.size < pageLimit || shouldStop || (pageCount != null && page >= pageCount)) break
             page += 1
         }
@@ -2220,9 +2291,10 @@ class TraktProgressService @Inject constructor(
         } ?: return null
         if (!response.isSuccessful) return null
 
-        val value = response.body().orEmpty()
+        val value = requiredReadBody(response).orEmpty()
         if (startAt == null && endAt == null) {
             cacheMutex.withLock {
+                checkpointInitializationRead()
                 val timed = TimedCache(value = value, updatedAtMs = now)
                 when (type) {
                     "movies" -> cachedMoviesPlayback = timed
@@ -2384,6 +2456,22 @@ class TraktProgressService @Inject constructor(
         season: Int,
         episode: Int
     ): String = "$contentId:$season:$episode"
+
+    private suspend fun <T> requiredReadBody(response: Response<T>): T? {
+        val body = response.body()
+        val owner = currentCoroutineContext()[InitializationReadScope]
+        if (body == null && owner != null) {
+            owner.checkpoint()
+            throw InitializationReadException(InitializationFailure.INCOMPLETE)
+        }
+        return body
+    }
+
+    private suspend fun rethrowReadOwnershipFailure(error: Exception) {
+        if (error is CancellationException) throw error
+        checkpointInitializationRead()
+        if (error is InitializationReadException) throw error
+    }
 
     private fun progressKey(progress: WatchProgress): String {
         return if (progress.season != null && progress.episode != null) {
@@ -2809,22 +2897,26 @@ class TraktProgressService @Inject constructor(
         return (initialMetadataHydrationDelayMs - elapsed).coerceAtLeast(0L)
     }
 
-    private fun shouldDelayMetadataHydration(): Boolean {
+    private fun shouldDelayMetadataHydration(owner: InitializationReadScope?): Boolean {
         val remainingDelayMs = remainingMetadataWarmupDelayMs()
         if (remainingDelayMs <= 0L) return false
         if (metadataWarmupScheduled) return true
         metadataWarmupScheduled = true
+        val generation = refreshGeneration.get()
         scope.launch {
             delay(remainingDelayMs)
+            if (generation != refreshGeneration.get()) return@launch
             metadataWarmupScheduled = false
-            hydrateMetadata(remoteProgress.value)
+            if (owner?.isCurrent() == false) return@launch
+            hydrateMetadata(remoteProgress.value, owner)
         }
         return true
     }
 
-    private fun hydrateMetadata(progressList: List<WatchProgress>) {
-        if (progressList.isEmpty()) return
-        if (shouldDelayMetadataHydration()) return
+    private fun hydrateMetadata(progressList: List<WatchProgress>, owner: InitializationReadScope? = null) {
+        if (progressList.isEmpty() || owner?.isCurrent() == false) return
+        if (shouldDelayMetadataHydration(owner)) return
+        val generation = refreshGeneration.get()
         val sorted = progressList.sortedByDescending { it.lastWatched }
         val uniqueByContent = linkedMapOf<String, WatchProgress>()
         sorted.forEach { progress ->
@@ -2842,6 +2934,7 @@ class TraktProgressService @Inject constructor(
             if (cached != null && (cached.runtimeMs > 0 || cached.episodes.values.any { it.runtimeMs > 0 })) return@forEach
 
             scope.launch {
+                if (owner?.isCurrent() == false || generation != refreshGeneration.get()) return@launch
                 val shouldFetch = metadataMutex.withLock {
                     val lockedCached = metadataState.value[contentId]
                     if (lockedCached != null && (lockedCached.runtimeMs > 0 || lockedCached.episodes.values.any { it.runtimeMs > 0 })) return@withLock false
@@ -2857,13 +2950,14 @@ class TraktProgressService @Inject constructor(
                             contentId = contentId,
                             contentType = progress.contentType
                         ) ?: return@launch
+                        if (owner?.isCurrent() == false || generation != refreshGeneration.get()) return@withPermit
                         metadataState.update { current ->
                             current + (contentId to metadata)
                         }
                     }
                 } finally {
                     metadataMutex.withLock {
-                        inFlightMetadataKeys.remove(contentId)
+                        if (generation == refreshGeneration.get()) inFlightMetadataKeys.remove(contentId)
                     }
                 }
             }

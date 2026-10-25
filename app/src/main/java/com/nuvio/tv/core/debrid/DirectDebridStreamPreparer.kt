@@ -32,8 +32,11 @@ class DirectDebridStreamPreparer @Inject constructor(
         episode: Int?,
         playerSettings: PlayerSettings,
         installedAddonNames: Set<String>,
+        nativeVideoId: String? = null,
         onPrepared: (original: Stream, prepared: Stream) -> Unit
     ) {
+        // MAL mapping is selected-episode/search metadata, never a background preparation request.
+        if (nativeVideoId?.startsWith("mal:", ignoreCase = true) == true) return
         val settings = dataStore.settings.first()
         val limit = settings.instantPlaybackPreparationLimit
         if (!settings.canResolvePlayableLinks || limit <= 0) return
@@ -57,7 +60,7 @@ class DirectDebridStreamPreparer @Inject constructor(
             }
 
             try {
-                when (val result = resolver.resolveToPlayableStream(stream, season, episode)) {
+                when (val result = resolver.resolveToPlayableStream(stream, season, episode, allowFallback = false)) {
                     is DirectDebridPlayableResult.Success -> {
                         if (result.stream.getStreamUrl() != null) {
                             onPrepared(stream, result.stream)

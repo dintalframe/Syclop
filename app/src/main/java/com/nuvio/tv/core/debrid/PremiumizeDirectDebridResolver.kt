@@ -51,7 +51,8 @@ class PremiumizeDirectDebridResolver @Inject constructor(
                 files = body.content.orEmpty(),
                 resolve = resolve,
                 season = season,
-                episode = episode
+                episode = episode,
+                animeProof = operation?.animeProof
             ) ?: return DirectDebridResolveResult.Stale
             val url = file.link?.takeIf { it.isNotBlank() } ?: return DirectDebridResolveResult.Stale
             DirectDebridResolveResult.Success(

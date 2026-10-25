@@ -10,6 +10,8 @@ import com.nuvio.tv.data.mediaserver.ServerItemRef
 import com.nuvio.tv.data.mediaserver.messageRes
 import com.nuvio.tv.data.mediaserver.serverFailure
 import com.nuvio.tv.data.mal.MalMetadataService
+import com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog
+import com.nuvio.tv.data.catalog.RatedKidsCatalog
 import com.nuvio.tv.data.remote.api.AddonApi
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.Meta
@@ -26,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.firstOrNull
@@ -43,7 +46,8 @@ class MetaRepositoryImpl @Inject constructor(
     private val api: AddonApi,
     private val addonRepository: AddonRepository,
     private val serverCatalog: ServerCatalog,
-    private val malMetadata: MalMetadataService? = null
+    private val malMetadata: MalMetadataService? = null,
+    private val simklCatalog: SimklPublicCatalog? = null
 ) : MetaRepository {
     companion object {
         private const val TAG = "MetaRepository"
@@ -144,6 +148,26 @@ class MetaRepositoryImpl @Inject constructor(
         type: String,
         id: String
     ): Flow<NetworkResult<Meta>> = flow {
+        if (RatedKidsCatalog.isNativeAddon(addonBaseUrl)) {
+            if (!RatedKidsCatalog.isNativeItemId(id) || type !in setOf("movie", "series")) {
+                emit(NetworkResult.Error("This rated Kids item has no supported exact metadata identity."))
+                return@flow
+            }
+            emitAll(getMeta(RatedKidsCatalog.CINEMETA_URL, type, id))
+            return@flow
+        }
+        if (SimklPublicCatalog.isNativeAddon(addonBaseUrl)) {
+            if (!SimklPublicCatalog.isNativeItemId(id) || type !in setOf("movie", "series", "anime")) {
+                emit(NetworkResult.Error("This Simkl item has no supported exact metadata identity."))
+                return@flow
+            }
+            val delegated = if (id.startsWith("mal:")) malMeta(id)
+                else getMeta(SimklPublicCatalog.CINEMETA_URL, if (type == "movie") "movie" else "series", id)
+            delegated.collect { result ->
+                emit(if (result is NetworkResult.Success) NetworkResult.Success(simklCatalog?.withAttribution(result.data) ?: result.data) else result)
+            }
+            return@flow
+        }
         if (id.startsWith("mal:")) {
             emitAll(malMeta(id))
             return@flow
@@ -171,7 +195,7 @@ class MetaRepositoryImpl @Inject constructor(
             val probeKey = addonMetaCacheKey(addonBaseUrl, probeType, id)
             metaCache[probeKey]?.let { cached ->
                 if (!cached.isExpired()) {
-                    emit(NetworkResult.Success(cached.meta))
+                    emit(NetworkResult.Success(withPublicAttribution(cached.meta)))
                     return@flow
                 }
                 metaCache.remove(probeKey)
@@ -236,7 +260,7 @@ class MetaRepositoryImpl @Inject constructor(
 
         val meta = deferred.await()
         if (meta != null) {
-            emit(NetworkResult.Success(meta))
+            emit(NetworkResult.Success(withPublicAttribution(meta)))
         } else {
             emit(NetworkResult.Error(context.getString(R.string.error_meta_not_found)))
         }
@@ -258,7 +282,7 @@ class MetaRepositoryImpl @Inject constructor(
         val cacheKey = metaLookupCacheKey(type, id)
         addonMetaCache[cacheKey]?.let { cached ->
             if (!cached.isExpired()) {
-                emit(NetworkResult.Success(cached.meta))
+                emit(NetworkResult.Success(withPublicAttribution(cached.meta)))
                 return@flow
             }
             addonMetaCache.remove(cacheKey)
@@ -267,7 +291,7 @@ class MetaRepositoryImpl @Inject constructor(
         inFlightAddonMeta[cacheKey]?.let { existingDeferred ->
             when (val lookupResult = existingDeferred.await()) {
                 is MetaLookupResult.Found -> {
-                    emit(NetworkResult.Success(lookupResult.meta))
+                    emit(NetworkResult.Success(withPublicAttribution(lookupResult.meta)))
                     return@flow
                 }
                 is MetaLookupResult.SourceSufficient -> {
@@ -351,7 +375,7 @@ class MetaRepositoryImpl @Inject constructor(
                             val cached = CachedMeta(meta, System.currentTimeMillis() + ttlMs)
                             addonMetaCache[cacheKey] = cached
                             metaCache[addonMetaCacheKey(addon.baseUrl, requestedType, id)] = cached
-                            emit(NetworkResult.Success(meta))
+                            emit(NetworkResult.Success(withPublicAttribution(meta)))
                             return@flow
                         } else {
                             attemptedFailures += buildMissingMetaFailure(addon)
@@ -481,7 +505,7 @@ class MetaRepositoryImpl @Inject constructor(
 
         when (val lookupResult = deferred.await()) {
             is MetaLookupResult.Found -> {
-                emit(NetworkResult.Success(lookupResult.meta))
+                emit(NetworkResult.Success(withPublicAttribution(lookupResult.meta)))
             }
             is MetaLookupResult.SourceSufficient -> {
                 emit(NetworkResult.Error("Source addon sufficient", NetworkResult.SOURCE_SUFFICIENT_CODE))
@@ -523,7 +547,7 @@ class MetaRepositoryImpl @Inject constructor(
         val cacheKey = metaLookupCacheKey(type, id)
         primaryAddonMetaCache[cacheKey]?.let { cached ->
             if (!cached.isExpired()) {
-                emit(NetworkResult.Success(cached.meta))
+                emit(NetworkResult.Success(withPublicAttribution(cached.meta)))
                 return@flow
             }
             primaryAddonMetaCache.remove(cacheKey)
@@ -580,7 +604,7 @@ class MetaRepositoryImpl @Inject constructor(
 
         val meta = deferred.await()
         if (meta != null) {
-            emit(NetworkResult.Success(meta))
+            emit(NetworkResult.Success(withPublicAttribution(meta)))
         } else {
             emit(NetworkResult.Error(buildAggregateFailureMessage(
                 type = requestedType,
@@ -802,10 +826,12 @@ class MetaRepositoryImpl @Inject constructor(
         inFlightPrimaryMeta.clear()
     }
 
+    private fun withPublicAttribution(meta: Meta): Meta = simklCatalog?.withAttribution(meta) ?: meta
+
     private fun malMeta(id: String): Flow<NetworkResult<Meta>> = flow {
         emit(NetworkResult.Loading)
         try {
-            emit(NetworkResult.Success(requireNotNull(malMetadata).meta(id)))
+            emit(NetworkResult.Success(withPublicAttribution(requireNotNull(malMetadata).meta(id))))
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
@@ -816,7 +842,7 @@ class MetaRepositoryImpl @Inject constructor(
     private fun serverMeta(ref: ServerItemRef): Flow<NetworkResult<Meta>> = flow {
         val key = ref.encode()
         serverMetaCache[key]?.takeIf { !it.isExpired() }?.let { cached ->
-            emit(NetworkResult.Success(cached.meta))
+            emit(NetworkResult.Success(withPublicAttribution(cached.meta)))
             return@flow
         }
         emit(NetworkResult.Loading)
@@ -829,7 +855,7 @@ class MetaRepositoryImpl @Inject constructor(
             return@flow
         }
         serverMetaCache[key] = CachedMeta(meta, System.currentTimeMillis() + SERVER_META_TTL_MS)
-        emit(NetworkResult.Success(meta))
+        emit(NetworkResult.Success(withPublicAttribution(meta)))
     }
 
     override fun getCachedMeta(type: String, id: String): Meta? {

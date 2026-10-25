@@ -83,6 +83,18 @@ class AddonPreferences @Inject constructor(
         }
     }
 
+    /** Explicit profile reads for background data updates; never changes active viewer or choices. */
+    suspend fun installedUrlsForProfiles(profileIds: List<Int>): List<String> = profileIds.distinct().flatMap { pid ->
+        getCurrentList(factory.get(pid, FEATURE).data.first())
+    }.distinct()
+
+    /** One authoritative explicit-profile snapshot for lazy category browsing; no active flow replay. */
+    suspend fun enabledUrlsForProfile(profileId: Int): List<String> {
+        val preferences = factory.get(profileId, FEATURE).data.first()
+        val enabled = getCurrentEnabledStates(preferences)
+        return getCurrentList(preferences).filter { enabled[canonicalizeUrl(it)] != false }
+    }
+
     suspend fun ensureMigrated() {
         val ds = store()
         val prefs = ds.data.first()
@@ -95,14 +107,18 @@ class AddonPreferences @Inject constructor(
         }
     }
 
-    suspend fun addAddon(url: String): Boolean {
-           val active = profileManager.activeProfile
-           if (active != null && !active.isPrimary && active.usesPrimaryAddons) return false
+    suspend fun addAddon(url: String): Boolean = addAddonIfCurrent(url, profileManager.activeProfileId.value, profileManager.activeProfileSelectionRevision)
+
+    suspend fun addAddonIfCurrent(url: String, expectedProfileId: Int, expectedSelectionRevision: Long, stillCurrent: () -> Boolean = { true }): Boolean {
+        val active = profileManager.activeProfile
+        if (active != null && !active.isPrimary && active.usesPrimaryAddons) return false
+        if (!stillCurrent() || profileManager.activeProfileId.value != expectedProfileId || profileManager.activeProfileSelectionRevision != expectedSelectionRevision) return false
         var changed = false
-        store().edit { preferences ->
+        store(expectedProfileId).edit { preferences ->
+            if (!stillCurrent() || profileManager.activeProfileId.value != expectedProfileId || profileManager.activeProfileSelectionRevision != expectedSelectionRevision) return@edit
             val current = getCurrentList(preferences)
             val normalizedUrl = canonicalizeUrl(url)
-            if (current.any { canonicalizeUrl(it).equals(normalizedUrl, ignoreCase = true) }) return@edit
+            if (current.any { canonicalizeUrl(it).equals(normalizedUrl, ignoreCase = true) }) { changed = true;return@edit }
             preferences[orderedUrlsKey] = gson.toJson(current + normalizedUrl)
             val states = getCurrentEnabledStates(preferences).toMutableMap()
             states[normalizedUrl] = true

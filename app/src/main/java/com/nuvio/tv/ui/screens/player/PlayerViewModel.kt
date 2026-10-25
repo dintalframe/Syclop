@@ -1,11 +1,14 @@
 package com.nuvio.tv.ui.screens.player
 
 import android.content.Context
+import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.exoplayer.ExoPlayer
 import com.nuvio.tv.core.debrid.DirectDebridResolver
+import com.nuvio.tv.core.debrid.ActivePlayerFileDuration
 import com.nuvio.tv.core.debrid.DirectDebridStreamPreparer
 import com.nuvio.tv.core.cloud.CloudLibraryPlaybackSessionStore
 import com.nuvio.tv.core.cloud.CloudLibraryPlaybackProgressStore
@@ -41,9 +44,19 @@ import com.nuvio.tv.data.repository.TraktRelatedService
 import com.nuvio.tv.data.trailer.TrailerService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
@@ -94,6 +107,9 @@ class PlayerViewModel @Inject constructor(
     private val cloudPlaybackProgressStore: CloudLibraryPlaybackProgressStore,
     private val cloudPlaybackSessionStore: CloudLibraryPlaybackSessionStore,
     private val streamBadgePresentation: com.nuvio.tv.core.streams.StreamBadgePresentation,
+    private val debridStreamPresentation: com.nuvio.tv.core.debrid.DebridStreamPresentation,
+    private val sourcePanelDebridSettings: com.nuvio.tv.data.local.DebridSettingsDataStore,
+    private val sourcePanelBitrateMetadata: com.nuvio.tv.core.debrid.DebridBitrateMetadataService,
     private val playbackIssueReportRepository: com.nuvio.tv.data.repository.PlaybackIssueReportRepository,
     private val externalPlaybackTracker: com.nuvio.tv.core.player.ExternalPlaybackTracker,
     private val subtitleFileCache: com.nuvio.tv.core.player.SubtitleFileCache,
@@ -101,7 +117,7 @@ class PlayerViewModel @Inject constructor(
     private val serverPlayback: com.nuvio.tv.data.mediaserver.ServerPlayback,
     private val serverStreams: com.nuvio.tv.data.mediaserver.ServerStreams,
     partyRepository: com.nuvio.tv.core.party.PartyRepository,
-    profileManager: com.nuvio.tv.core.profile.ProfileManager,
+    private val profileManager: com.nuvio.tv.core.profile.ProfileManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -203,8 +219,85 @@ class PlayerViewModel @Inject constructor(
         scope = viewModelScope
     )
 
-    val uiState: StateFlow<PlayerUiState>
-        get() = controller.uiState
+    private val sourcePanelProfileId = controller.profileId
+    private val sourcePanelSelectionRevision = profileManager.activeProfileSelectionRevision
+    private val sourcePanelPresentation = PlayerSourcePanelPresentation { streams, settings ->
+        debridStreamPresentation.rankAll(streams, settings)
+    }
+
+    private val sourcePanelMetadata = PlayerSourcePanelMetadata { streams, source, profile ->
+        sourcePanelBitrateMetadata.enrichKnownFiles(streams, source.durationMillis, source.durationOrigin,
+            source.season, source.episode, profile, source.nativeVideoId, source.mediaType, source.activeFileDuration)
+    }
+    private val sourcePanelActiveFileDuration = MutableStateFlow<ActivePlayerFileDuration?>(null)
+
+    private data class SourcePanelMetadataWork(val request: PlayerSourceMetadataRequest?,
+        val settings: com.nuvio.tv.domain.model.DebridSettings) {
+        override fun toString() = "SourcePanelMetadataWork([redacted])"
+    }
+
+    private fun sourcePanelScopeCurrent() = profileManager.activeProfileId.value == sourcePanelProfileId &&
+        profileManager.activeProfileSelectionRevision == sourcePanelSelectionRevision &&
+        sourcePanelDebridSettings.activeProfileId.value == sourcePanelProfileId
+
+    private fun sourceMetadataRequest(state: PlayerUiState): PlayerSourceMetadataRequest? {
+        if (!state.showSourcesPanel || state.sourceAllStreams.isEmpty() || !sourcePanelScopeCurrent() ||
+            controller.uiState.value !== state) return null
+        val selected = controller.currentSourceStreamsRequest() ?: return null
+        val sourceKey = controller.buildSourceRequestKey(selected.type, selected.videoId, selected.season, selected.episode)
+        if (controller.sourceStreamsCacheRequestKey != sourceKey) return null
+        val credentialRevision = sourcePanelDebridSettings.activeCredentialRevision
+        if (credentialRevision < 0L) return null
+        val cached = controller.contentId?.let { metaRepository.getCachedMeta(selected.type, it) }
+        val active = sourcePanelActiveFileDuration.value?.takeIf {
+            it.matches(sourcePanelProfileId, sourcePanelDebridSettings.activeProfileSelectionRevision, credentialRevision,
+                selected.videoId, selected.type, selected.season, selected.episode, state.currentStreamUrl)
+        }?.copy(sourceKey = PlayerSourcePanelMetadata.currentSourceKey(state))
+        val source = PlayerSourcePanelMetadata.context(selected.type, selected.videoId, selected.season,
+            selected.episode, controller.contentId, cached).copy(activeFileDuration = active)
+        return PlayerSourceMetadataRequest(source, state.sourceAllStreams, sourcePanelProfileId,
+            sourcePanelDebridSettings.activeProfileSelectionRevision, credentialRevision, sourceKey,
+            streamInfoMediaOriginKey(state.currentStreamUrl))
+    }
+
+    private fun sourceMetadataCurrent(request: PlayerSourceMetadataRequest): Boolean {
+        if (!sourcePanelScopeCurrent() || sourcePanelDebridSettings.activeProfileSelectionRevision != request.selectionRevision ||
+            sourcePanelDebridSettings.activeCredentialRevision != request.credentialRevision || request.credentialRevision < 0L) return false
+        return sourceMetadataRequest(controller.uiState.value) == request
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val sourceMetadataFacts: StateFlow<PlayerSourceMetadataSnapshot> = combine(controller.uiState,
+        sourcePanelDebridSettings.settings, profileManager.activeProfileId, sourcePanelActiveFileDuration) { state, settings, _, _ ->
+        SourcePanelMetadataWork(sourceMetadataRequest(state), settings)
+    }.distinctUntilChanged().transformLatest { work ->
+        emit(PlayerSourceMetadataSnapshot())
+        val request = work.request ?: return@transformLatest
+        emit(sourcePanelMetadata.enrich(request, { streams ->
+            debridStreamPresentation.rankAll(streams, work.settings, enforceLimits = false)
+        }) { sourceMetadataCurrent(request) })
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, PlayerSourceMetadataSnapshot())
+
+    // Project only source-list presentation: controller/resolver inputs and native episode IDs
+    // remain unchanged. Apply the shared global ranking before addon filtering and pagination,
+    // including cached, prepared and incrementally badged results.
+    val uiState: StateFlow<PlayerUiState> = combine(
+        controller.uiState,
+        sourcePanelDebridSettings.settings,
+        sourceMetadataFacts
+    ) { state, settings, facts ->
+        val request = sourceMetadataRequest(state)
+        val shown = if (request != null && sourceMetadataCurrent(request)) state.copy(sourceAllStreams =
+            sourcePanelMetadata.displayStreams(request, facts.takeIf { it.request == request } ?: PlayerSourceMetadataSnapshot())) else state
+        sourcePanelPresentation.apply(shown, settings) {
+            profileManager.activeProfileId.value == sourcePanelProfileId &&
+                profileManager.activeProfileSelectionRevision == sourcePanelSelectionRevision
+        }
+    }.flowOn(Dispatchers.Default).stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        PlayerSourcePanelPresentation.withoutSources(controller.uiState.value)
+    )
 
     val playbackTimeline: StateFlow<PlaybackTimelineState>
         get() = controller.playbackTimeline
@@ -289,7 +382,51 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onEvent(event: PlayerEvent) {
+        if (event == PlayerEvent.OnShowSourcesPanel) {
+            // Native player getters require the UI thread. One capture, never a timer/probe.
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                sourcePanelActiveFileDuration.value = captureSourcePanelDuration()
+                controller.onEvent(event)
+            }
+            return
+        }
+        if (event == PlayerEvent.OnDismissSourcesPanel || event is PlayerEvent.OnSourceStreamSelected ||
+            event is PlayerEvent.OnEpisodeStreamSelected) sourcePanelActiveFileDuration.value = null
         controller.onEvent(event)
+    }
+
+    private fun captureSourcePanelDuration(): ActivePlayerFileDuration? {
+        if (!sourcePanelScopeCurrent()) return null
+        val state = controller.uiState.value
+        val source = controller.currentSourceStreamsRequest() ?: return null
+        val url = state.currentStreamUrl?.takeIf { it == controller.currentStreamUrl } ?: return null
+        val digest = streamInfoMediaOriginKey(url) ?: return null
+        val selection = sourcePanelDebridSettings.activeProfileSelectionRevision
+        val credentials = sourcePanelDebridSettings.activeCredentialRevision
+        if (credentials < 0L || state.isLive) return null
+        val engine = controller.currentInternalPlayerEngine
+        val duration = runCatching {
+            when (engine) {
+                com.nuvio.tv.data.local.InternalPlayerEngine.EXOPLAYER -> {
+                    val player = controller._exoPlayer ?: return null
+                    if (player.currentMediaItem?.localConfiguration?.uri?.toString() != url || player.isCurrentMediaItemLive) return null
+                    player.duration.takeIf { controller._exoPlayer === player &&
+                        player.currentMediaItem?.localConfiguration?.uri?.toString() == url }
+                }
+                com.nuvio.tv.data.local.InternalPlayerEngine.MVP_PLAYER -> {
+                    val view = controller.mpvView ?: return null
+                    if (!view.isRequestedMediaActive(url) || view.isLiveStreamNow()) return null
+                    view.durationMs().takeIf { controller.mpvView === view && view.isRequestedMediaActive(url) }
+                }
+                else -> null
+            }
+        }.getOrNull()?.takeIf { it > 0L } ?: return null
+        if (controller.currentInternalPlayerEngine != engine || controller.currentStreamUrl != url ||
+            controller.uiState.value !== state || controller.currentSourceStreamsRequest() != source ||
+            !sourcePanelScopeCurrent() || sourcePanelDebridSettings.activeProfileSelectionRevision != selection ||
+            sourcePanelDebridSettings.activeCredentialRevision != credentials) return null
+        return ActivePlayerFileDuration(sourcePanelProfileId, selection, credentials, source.videoId, source.type,
+            source.season, source.episode, digest, duration)
     }
 
     fun playerMediaInfo(): PlayerMediaInfo = controller.playerMediaInfo()
@@ -361,7 +498,9 @@ class PlayerViewModel @Inject constructor(
             year = controller.year,
             profileId = controller.profileId
         )
-        val headers = controller.getCurrentHeaders()
+        val headers = controller.getCurrentHeaders().toMap()
+        val selectionRevision = profileManager.activeProfileSelectionRevision
+        val cloudSessionToken = controller.cloudSessionToken
         // Capture already-loaded addon subtitles before handing off. Preparation stays in the
         // ViewModel scope because the player screen remains alive until the intent is sent.
         val subtitleInputs = if (controller.uiState.value.subtitleStyle.preferredLanguage.trim().lowercase() != "none") {
@@ -378,35 +517,70 @@ class PlayerViewModel @Inject constructor(
         } else null
 
         viewModelScope.launch {
-            val cachedSubtitles = subtitleInputs?.let { inputs ->
-                try {
-                    withTimeoutOrNull(10_000L) {
-                        subtitleFileCache.cacheSubtitles(inputs)
-                    }
-                } catch (_: Exception) {
-                    // Subtitle forwarding is best-effort; the external launch must still proceed.
-                    null
-                }
+            val requestCurrent = {
+                isActive && profileManager.activeProfileId.value == metadata.profileId &&
+                    profileManager.activeProfileSelectionRevision == selectionRevision &&
+                    controller.getCurrentStreamUrl() == url &&
+                    (controller.currentVideoId ?: contentId) == videoId &&
+                    com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(url)
             }
-
-            // Stop the internal player only after preparation has completed and immediately
-            // before sending the external intent.
-            val nextEpisodeSnapshot = controller.metaVideos.takeIf { it.isNotEmpty() }?.let {
-                externalPlaybackTracker.resolveNextEpisodeSnapshot(metadata, it)
-            }
-            controller.stopAndRelease()
+            var cachedSubtitles: List<com.nuvio.tv.core.player.SubtitleInput>? = null
+            var nextEpisodeSnapshot: com.nuvio.tv.core.player.ExternalNextEpisodeSnapshot? = null
             val launched = try {
-                externalPlaybackTracker.launchPlayer(
-                    metadata = metadata,
-                    url = url,
-                    title = metadata.buildPlayerTitle(),
-                    headers = headers,
-                    resumePositionMs = resumePositionMs,
-                    subtitles = cachedSubtitles,
-                    nextEpisodeSnapshot = nextEpisodeSnapshot,
-                    cloudSessionToken = controller.cloudSessionToken,
-                    context = activityContext
+                com.nuvio.tv.core.player.ExternalPlayerHandoff.run(
+                    isCurrent = requestCurrent,
+                    preflight = {
+                        val settings = playerSettingsDataStore.playerSettings.first()
+                        if (!requestCurrent()) false else try {
+                            // Builds but never sends an intent: validates the installed handler,
+                            // header contract and native grant before downloads/tracking/teardown.
+                            com.nuvio.tv.core.player.ExternalPlayerIntentFactory.create(
+                                activityContext,
+                                com.nuvio.tv.core.player.ExternalPlayerInput(
+                                    url = url, headers = headers, playerPackage = settings.externalPlayerPackage
+                                )
+                            )
+                            true
+                        } catch (rejected: com.nuvio.tv.core.player.ExternalPlayerLaunchRejected) {
+                            Toast.makeText(activityContext, rejected.reason.userMessage, Toast.LENGTH_LONG).show()
+                            false
+                        }
+                    },
+                    prepare = {
+                        cachedSubtitles = subtitleInputs?.let { inputs ->
+                            try {
+                                withTimeoutOrNull(10_000L) { subtitleFileCache.cacheSubtitles(inputs) }
+                            } catch (cancelled: CancellationException) { throw cancelled }
+                            catch (_: Exception) { null }
+                        }
+                        nextEpisodeSnapshot = controller.metaVideos.takeIf { it.isNotEmpty() }?.let {
+                            externalPlaybackTracker.resolveNextEpisodeSnapshot(metadata, it)
+                        }
+                    },
+                    launch = {
+                        externalPlaybackTracker.launchPlayer(
+                            metadata = metadata,
+                            url = url,
+                            title = metadata.buildPlayerTitle(),
+                            headers = headers,
+                            resumePositionMs = controller.playbackTimeline.value.currentPosition.takeIf { it > 0L } ?: resumePositionMs,
+                            subtitles = cachedSubtitles,
+                            nextEpisodeSnapshot = nextEpisodeSnapshot,
+                            cloudSessionToken = cloudSessionToken,
+                            context = activityContext,
+                            launchStillCurrent = requestCurrent
+                        )
+                    },
+                    releaseInternal = {
+                        // The external Activity has accepted the intent. Failed/cancelled
+                        // preparation or rejected launch never tears down internal playback.
+                        try { controller.stopAndRelease() }
+                        catch (_: Exception) { Log.w("PlayerHandoff", "Internal cleanup failed after accepted external handoff") }
+                    }
                 )
+            } catch (cancelled: CancellationException) {
+                onResult(false)
+                throw cancelled
             } catch (_: Exception) {
                 false
             }

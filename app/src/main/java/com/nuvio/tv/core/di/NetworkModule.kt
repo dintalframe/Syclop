@@ -104,6 +104,7 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideMoshi(): Moshi = Moshi.Builder()
+        .add(com.nuvio.tv.data.remote.dto.AllDebridMagnetCollectionAdapterFactory)
         .add(KotlinJsonAdapterFactory())
         .build()
 

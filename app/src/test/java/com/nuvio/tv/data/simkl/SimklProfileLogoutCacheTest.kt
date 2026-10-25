@@ -17,7 +17,7 @@ class SimklProfileLogoutCacheTest {
         val active = MutableStateFlow(1)
         val profiles = mockk<ProfileManager> { every { activeProfileId } returns active }
         val storage = CacheStorage()
-        val repository = SimklSyncRepository(mockk(), storage, mockk(), mockk(), profiles,
+        val repository = SimklSyncRepository(mockk(), storage, mockk(), disconnectedAuth(), profiles,
             StandardTestDispatcher(testScheduler, "SimklIO"), backgroundScope)
         runCurrent()
         val clear = launch(start = CoroutineStart.UNDISPATCHED) { repository.clearCurrentProfile() }
@@ -32,7 +32,7 @@ class SimklProfileLogoutCacheTest {
         val active = MutableStateFlow(1)
         val profiles = mockk<ProfileManager> { every { activeProfileId } returns active }
         val storage = CacheStorage()
-        val repository = SimklSyncRepository(mockk(), storage, mockk(), mockk(), profiles,
+        val repository = SimklSyncRepository(mockk(), storage, mockk(), disconnectedAuth(), profiles,
             StandardTestDispatcher(testScheduler, "SimklIO"), backgroundScope)
         runCurrent()
         val clear = launch(start = CoroutineStart.UNDISPATCHED) { repository.clearProfile(1) }
@@ -40,6 +40,10 @@ class SimklProfileLogoutCacheTest {
         clear.join()
         assertEquals(listOf(1), storage.removed)
         assertTrue(storage.values.containsKey(2))
+    }
+
+    private fun disconnectedAuth() = mockk<SimklAuthStorage> {
+        every { state } returns MutableStateFlow(SimklAuthState())
     }
 
     private class CacheStorage : SimklSyncStorage {

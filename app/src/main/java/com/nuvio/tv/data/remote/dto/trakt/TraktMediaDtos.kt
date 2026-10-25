@@ -28,7 +28,8 @@ data class TraktMovieDto(
     @Json(name = "certification") val certification: String? = null,
     @Json(name = "languages") val languages: List<String>? = null,
     @Json(name = "original_title") val originalTitle: String? = null,
-    @Json(name = "images") val images: TraktImagesDto? = null
+    @Json(name = "images") val images: TraktImagesDto? = null,
+    @Json(name = "subgenres") val subgenres: List<String>? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -48,7 +49,8 @@ data class TraktShowDto(
     @Json(name = "certification") val certification: String? = null,
     @Json(name = "languages") val languages: List<String>? = null,
     @Json(name = "original_title") val originalTitle: String? = null,
-    @Json(name = "images") val images: TraktImagesDto? = null
+    @Json(name = "images") val images: TraktImagesDto? = null,
+    @Json(name = "subgenres") val subgenres: List<String>? = null
 )
 
 @JsonClass(generateAdapter = true)

@@ -25,7 +25,6 @@ data class AllDebridUserDto(
     val isTrial: Boolean = false
 )
 
-@JsonClass(generateAdapter = true)
 data class AllDebridMagnetsDataDto(val magnets: List<AllDebridMagnetDto> = emptyList())
 
 @JsonClass(generateAdapter = true)

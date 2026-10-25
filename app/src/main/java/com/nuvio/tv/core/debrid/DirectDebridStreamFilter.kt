@@ -234,8 +234,8 @@ object DirectDebridStreamFilter {
     ): Int {
         val direction = if (criterion.direction == DebridStreamSortDirection.ASC) 1 else -1
         return when (criterion.key) {
-            DebridStreamSortKey.BITRATE -> StreamBitrateFacts.compareNullable(left.estimatedBitrateBps, right.estimatedBitrateBps,
-                criterion.direction == DebridStreamSortDirection.DESC)
+            DebridStreamSortKey.BITRATE -> StreamBitrateFacts.compareConfidenceRanked(left.estimatedBitrateBps, left.reportedBitrateBps,
+                right.estimatedBitrateBps, right.reportedBitrateBps, criterion.direction == DebridStreamSortDirection.DESC)
             DebridStreamSortKey.RESOLUTION -> left.resolutionRank.compareTo(right.resolutionRank) * -direction
             DebridStreamSortKey.QUALITY -> left.qualityRank.compareTo(right.qualityRank) * -direction
             DebridStreamSortKey.VISUAL_TAG -> left.visualRank.compareTo(right.visualRank) * -direction
@@ -251,7 +251,14 @@ object DirectDebridStreamFilter {
     private fun streamFacts(stream: Stream, preferences: DebridStreamPreferences): StreamFacts {
         val parsed = stream.clientResolve?.stream?.raw?.parsed
         val searchText = streamSearchText(stream)
-        val resolution = streamResolution(parsed?.resolution, parsed?.quality, stream.quality, searchText)
+        val verifiedResolution = com.nuvio.tv.core.mediafacts.SourceMediaFormatFacts.resolutionClass(stream.nativeFileMetadata?.verifiedTracks?.video)
+        val resolution = verifiedResolution?.let { observed ->
+            when { observed.rank >= 2160 -> com.nuvio.tv.domain.model.DebridStreamResolution.P2160
+                observed.rank >= 1440 -> com.nuvio.tv.domain.model.DebridStreamResolution.P1440
+                observed.rank >= 1080 -> com.nuvio.tv.domain.model.DebridStreamResolution.P1080
+                observed.rank >= 720 -> com.nuvio.tv.domain.model.DebridStreamResolution.P720
+                else -> com.nuvio.tv.domain.model.DebridStreamResolution.P480 }
+        } ?: streamResolution(parsed?.resolution, parsed?.quality, stream.quality, searchText)
         val quality = streamQuality(parsed?.quality, searchText)
         val visualTags = streamVisualTags(parsed?.hdr.orEmpty(), searchText)
         val audioTags = streamAudioTags(parsed?.audio.orEmpty(), searchText)
@@ -273,6 +280,7 @@ object DirectDebridStreamFilter {
             releaseGroup = releaseGroup,
             size = streamSize(stream),
             estimatedBitrateBps = StreamBitrateFacts.estimatedBitsPerSecond(stream),
+            reportedBitrateBps = ReportedStreamFacts.rankingBitsPerSecond(stream),
             resolutionRank = rank(resolution, preferences.preferredResolutions),
             qualityRank = rank(quality, preferences.preferredQualities),
             visualRank = rankAny(visualTags, preferences.preferredVisualTags),
@@ -502,6 +510,7 @@ object DirectDebridStreamFilter {
         val channelRank: Int,
         val encodeRank: Int,
         val languageRank: Int,
-        val estimatedBitrateBps: Long? = null
+        val estimatedBitrateBps: Long? = null,
+        val reportedBitrateBps: Long? = null
     )
 }

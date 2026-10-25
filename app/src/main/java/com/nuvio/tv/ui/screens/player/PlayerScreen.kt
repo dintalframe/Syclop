@@ -1321,11 +1321,20 @@ fun PlayerScreen(
                 .zIndex(2.5f)
         )
 
+        // A cached INFO snapshot must not reappear after an engine or source handoff.
+        val matchingStreamInfo = remember(uiState.streamInfoData, uiState.internalPlayerEngine, uiState.currentStreamUrl) {
+            uiState.streamInfoData?.takeIf { it.isForPlayback(uiState.internalPlayerEngine, uiState.currentStreamUrl) }
+        }
+        LaunchedEffect(uiState.streamInfoData, uiState.internalPlayerEngine, uiState.currentStreamUrl) {
+            if (uiState.streamInfoData != null && matchingStreamInfo == null) {
+                viewModel.onEvent(PlayerEvent.OnDismissStreamInfo)
+            }
+        }
         StreamInfoOverlay(
-            visible = uiState.showStreamInfoOverlay && uiState.error == null &&
+            visible = matchingStreamInfo != null && uiState.showStreamInfoOverlay && uiState.error == null &&
                 !uiState.showLoadingOverlay && !postPlayRecommendationState.isVisible,
             onClose = dismissStreamInfoOverlay,
-            data = uiState.streamInfoData,
+            data = matchingStreamInfo,
             hudEnabled = uiState.playerStatsHudEnabled,
             hudButtonShown = uiState.playerStatsHudButtonAvailable,
             onToggleHud = { viewModel.onEvent(PlayerEvent.OnTogglePlayerStatsHud) },

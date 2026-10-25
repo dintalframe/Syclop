@@ -59,7 +59,7 @@ class TorboxDirectDebridResolver @Inject constructor(
             Log.d(TAG, "resolve: getTorrent done in ${System.currentTimeMillis() - getTorrentStartMs}ms code=${torrent.code()}")
             if (!torrent.isSuccessful) return DirectDebridResolveResult.Stale
             val files = torrent.body()?.data?.files.orEmpty()
-            val file = fileSelector.selectFile(files, resolve, season, episode)
+            val file = fileSelector.selectFile(files, resolve, season, episode, operation?.animeProof)
                 ?: return DirectDebridResolveResult.Stale
             val fileId = file.id ?: return DirectDebridResolveResult.Stale
 

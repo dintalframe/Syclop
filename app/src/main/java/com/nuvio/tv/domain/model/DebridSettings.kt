@@ -12,6 +12,7 @@ data class DebridSettings(
     val realDebridApiKey: String = "",
     val allDebridApiKey: String = "",
     val preferredResolverProviderId: String = "",
+    val connectedServiceFallbackEnabled: Boolean = true,
     val instantPlaybackPreparationLimit: Int = 0,
     val streamMaxResults: Int = 0,
     val streamSortMode: DebridStreamSortMode = DebridStreamSortMode.DEFAULT,
@@ -253,8 +254,16 @@ data class DebridStreamSortCriterion(
         val originalOrder = emptyList<DebridStreamSortCriterion>()
         fun bitrateFirstOrder(existing: List<DebridStreamSortCriterion> = defaultOrder): List<DebridStreamSortCriterion> =
             listOf(DebridStreamSortCriterion(DebridStreamSortKey.BITRATE, DebridStreamSortDirection.DESC),
+                DebridStreamSortCriterion(DebridStreamSortKey.RESOLUTION, DebridStreamSortDirection.DESC),
+                DebridStreamSortCriterion(DebridStreamSortKey.SIZE, DebridStreamSortDirection.DESC)) +
+                existing.filter { it.key !in setOf(DebridStreamSortKey.BITRATE, DebridStreamSortKey.RESOLUTION, DebridStreamSortKey.SIZE) }
+        /** Only the exact prior automatic default is upgraded; Original and custom orders stay intact. */
+        fun upgradeLegacySizeTie(existing: List<DebridStreamSortCriterion>): List<DebridStreamSortCriterion> {
+            val previous = listOf(DebridStreamSortCriterion(DebridStreamSortKey.BITRATE, DebridStreamSortDirection.DESC),
                 DebridStreamSortCriterion(DebridStreamSortKey.RESOLUTION, DebridStreamSortDirection.DESC)) +
-                existing.filter { it.key != DebridStreamSortKey.BITRATE && it.key != DebridStreamSortKey.RESOLUTION }
+                defaultOrder.filter { it.key != DebridStreamSortKey.BITRATE && it.key != DebridStreamSortKey.RESOLUTION }
+            return if (existing == previous) bitrateFirstOrder() else existing
+        }
         val defaultOrder = listOf(
             DebridStreamSortCriterion(DebridStreamSortKey.RESOLUTION, DebridStreamSortDirection.DESC),
             DebridStreamSortCriterion(DebridStreamSortKey.QUALITY, DebridStreamSortDirection.DESC),

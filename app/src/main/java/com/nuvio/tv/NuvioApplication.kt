@@ -88,6 +88,8 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        com.nuvio.tv.updater.SelfUpdatePolicy.cancelIfDisabled(this)
+        com.nuvio.tv.core.providers.ProviderUpdateJobService.schedule(this)
         SentryInitializer.start(this, sentrySettingsDataStore)
         PluginRuntimeHooks.onApplicationCreate(this)
         androidTvChannelSyncService.start()

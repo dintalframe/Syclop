@@ -157,6 +157,9 @@ class TraktAuthDataStore @Inject constructor(
             preferences[accessTokenKey] = credentialCipher.encrypt(token.accessToken, profileId, "trakt_access_token")
             preferences[refreshTokenKey] = credentialCipher.encrypt(token.refreshToken, profileId, "trakt_refresh_token")
             preferences[registrationClientIdKey] = clientId
+            // This is a new grant, not token rotation. Do not bind its imports to the prior login's identity.
+            preferences.remove(usernameKey)
+            preferences.remove(userSlugKey)
             preferences[tokenTypeKey] = token.tokenType
             preferences[createdAtKey] = token.createdAt
             preferences[expiresInKey] = normalizeTraktTokenLifetimeSeconds(token.expiresIn)
@@ -213,6 +216,20 @@ class TraktAuthDataStore @Inject constructor(
             }
             return cleared
         } finally { mutations.decrementAndGet() }
+    }
+
+    /** Cached identity belongs to exactly the login grant that fetched /users/settings. */
+    suspend fun saveUserIfCurrent(username: String?, userSlug: String?, profileId: Int,
+        expectedRevision: Long, isCurrent: () -> Boolean): Boolean {
+        var saved = false
+        store(profileId).edit { preferences ->
+            currentCoroutineContext().ensureActive()
+            if (expectedRevision < 0L || !isCurrent() || grantRevision(profileId) != expectedRevision) return@edit
+            if (username.isNullOrBlank()) preferences.remove(usernameKey) else preferences[usernameKey] = username
+            if (userSlug.isNullOrBlank()) preferences.remove(userSlugKey) else preferences[userSlugKey] = userSlug
+            saved = true
+        }
+        return saved && isCurrent() && grantRevision(profileId) == expectedRevision
     }
 
     suspend fun saveUser(username: String?, userSlug: String?, profileId: Int) {

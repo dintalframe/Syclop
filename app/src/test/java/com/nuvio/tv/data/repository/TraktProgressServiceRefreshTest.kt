@@ -2,6 +2,8 @@ package com.nuvio.tv.data.repository
 
 import android.content.Context
 import com.nuvio.tv.core.profile.ProfileManager
+import com.nuvio.tv.core.initialization.InitializationProvider
+import com.nuvio.tv.core.initialization.InitializationReadScope
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.local.TraktSettingsDataStore
@@ -184,6 +186,8 @@ class TraktProgressServiceRefreshTest {
 
         val authService = mockk<TraktAuthService>()
         every { authService.isCircuitClosed() } returns true
+        coEvery { authService.captureInitializationReadScope() } returns
+            InitializationReadScope(InitializationProvider.TRAKT, "test-profile-grant") { true }
         coEvery { authService.executeAuthorizedRequest<Any?>(any()) } coAnswers {
             firstArg<suspend (String) -> Response<Any?>>().invoke("Bearer test")
         }
@@ -197,6 +201,7 @@ class TraktProgressServiceRefreshTest {
         every { layout.nextUpFromFurthestEpisode } returns MutableStateFlow(false)
         val profileManager = mockk<ProfileManager>()
         every { profileManager.activeProfileId } returns MutableStateFlow(1)
+        every { profileManager.activeProfileSelectionRevision } returns 0L
         val watchedSeries = mockk<WatchedSeriesStateHolder>()
         every { watchedSeries.fullyWatchedSeriesIds } returns MutableStateFlow(emptySet())
 

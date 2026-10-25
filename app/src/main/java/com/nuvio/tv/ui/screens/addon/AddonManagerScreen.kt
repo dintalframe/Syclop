@@ -117,6 +117,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.TextStyle
 import com.nuvio.tv.R
+import com.nuvio.tv.core.logging.urlForLog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
 
@@ -185,18 +186,8 @@ fun AddonManagerScreen(
 
     BackHandler { onBackPress() }
 
-    val defaultRefreshAddonsSubtitle = stringResource(R.string.addon_refresh_default_subtitle)
-    val refreshedAddonsSubtitle = stringResource(R.string.addon_refresh_done_subtitle)
-    var refreshAddonsSubtitle by remember(defaultRefreshAddonsSubtitle) {
-        mutableStateOf(defaultRefreshAddonsSubtitle)
-    }
-
-    LaunchedEffect(refreshAddonsSubtitle) {
-        if (refreshAddonsSubtitle != defaultRefreshAddonsSubtitle) {
-            delay(5_000)
-            refreshAddonsSubtitle = defaultRefreshAddonsSubtitle
-        }
-    }
+    val refreshAddonsSubtitle = if (uiState.isUpdatingProviders) stringResource(R.string.provider_update_running)
+        else uiState.providerUpdateMessage ?: stringResource(R.string.provider_update_schedule)
 
     // When isEditing changes to true, focus the text field and show keyboard
     LaunchedEffect(isEditing) {
@@ -325,6 +316,8 @@ fun AddonManagerScreen(
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, textDirection = TextDirection.Content),
                                 color = NuvioTheme.colors.TextPrimary,
                             )
+                            Text(text = stringResource(R.string.provider_install_formats),
+                                style = MaterialTheme.typography.bodySmall, color = NuvioTheme.colors.TextSecondary)
                             Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -471,8 +464,7 @@ fun AddonManagerScreen(
                 RefreshAddonsEntryCard(
                     subtitle = refreshAddonsSubtitle,
                     onClick = {
-                        viewModel.requestAddonSyncNow()
-                        refreshAddonsSubtitle = refreshedAddonsSubtitle
+                        viewModel.updateProvidersNow()
                     },
                     modifier = Modifier.focusProperties {
                         down = firstAddonToggleFocusRequester
@@ -514,6 +506,8 @@ fun AddonManagerScreen(
                     AddonCard(
                         modifier = Modifier.bringIntoViewRequester(bringIntoViewRequester),
                         addon = addon,
+                        updateStatusText = if (com.nuvio.tv.core.providers.ProviderInstallUrls.normalize(addon.baseUrl) != null)
+                            providerUpdateStatusText(uiState.providerUpdateStatuses[com.nuvio.tv.core.providers.ProviderUpdatePolicy.key(addon.baseUrl)]) else null,
                         canMoveUp = index > 0,
                         canMoveDown = index < uiState.installedAddons.lastIndex,
                         onMoveUp = {
@@ -563,6 +557,24 @@ fun AddonManagerScreen(
                         onReject = viewModel::rejectPendingChange
                     )
                 }
+            }
+        }
+
+        if (uiState.providerInstallOptions.isNotEmpty()) {
+            val firstOptionFocus = remember { FocusRequester() }
+            NuvioDialog(onDismiss = viewModel::dismissProviderOptions,
+                title = stringResource(R.string.provider_vendor_choose),
+                subtitle = stringResource(R.string.provider_vendor_choose_sub)) {
+                Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    uiState.providerInstallOptions.forEachIndexed { index, option ->
+                        Button(onClick = { viewModel.chooseProviderOption(option) },
+                            modifier = Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstOptionFocus) else Modifier)) {
+                            Text(option.name + if (option.isDefault) stringResource(R.string.provider_vendor_default) else "")
+                        }
+                    }
+                }
+                LaunchedEffect(Unit) { withFrameNanos { };runCatching { firstOptionFocus.requestFocus() } }
             }
         }
 
@@ -1311,6 +1323,7 @@ internal fun ConfirmAddonChangesDialog(
 private fun AddonCard(
     modifier: Modifier = Modifier,
     addon: Addon,
+    updateStatusText: String? = null,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveUp: () -> Unit,
@@ -1340,7 +1353,7 @@ private fun AddonCard(
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(NuvioTheme.radii.md)),
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1f)
         ) {
-            AddonCardContent(addon = addon, isReadOnly = true)
+            AddonCardContent(addon = addon, isReadOnly = true, updateStatusText = updateStatusText)
         }
     } else {
         val internalToggleFocusRequester = remember { FocusRequester() }
@@ -1358,6 +1371,7 @@ private fun AddonCard(
         ) {
             AddonCardContent(
                 addon = addon,
+                updateStatusText = updateStatusText,
                 isReadOnly = false,
                 canMoveUp = canMoveUp,
                 canMoveDown = canMoveDown,
@@ -1377,6 +1391,7 @@ private fun AddonCard(
 private fun AddonCardContent(
     addon: Addon,
     isReadOnly: Boolean,
+    updateStatusText: String? = null,
     canMoveUp: Boolean = false,
     canMoveDown: Boolean = false,
     onMoveUp: () -> Unit = {},
@@ -1518,12 +1533,17 @@ private fun AddonCardContent(
 
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.sm))
         Text(
-            text = addon.baseUrl,
+            text = addon.baseUrl.urlForLog(),
             style = MaterialTheme.typography.bodySmall.copy(
-                textDirection = addon.baseUrl.contentTextDirection()
+                textDirection = addon.baseUrl.urlForLog().contentTextDirection()
             ),
             color = NuvioTheme.colors.TextTertiary
         )
+
+        if (updateStatusText != null) {
+            Spacer(modifier = Modifier.height(NuvioTheme.spacing.sm))
+            Text(text = updateStatusText, style = MaterialTheme.typography.bodySmall, color = NuvioTheme.colors.TextSecondary)
+        }
 
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.sm))
         Text(
@@ -1532,4 +1552,17 @@ private fun AddonCardContent(
             color = NuvioTheme.colors.TextTertiary
         )
     }
+}
+
+@Composable
+private fun providerUpdateStatusText(status: com.nuvio.tv.core.providers.ProviderUpdateStatus?): String {
+    if (status == null) return stringResource(R.string.provider_update_not_checked)
+    fun date(value: Long) = if (value <= 0L) "—" else java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(value))
+    val state = when {
+        status.running -> stringResource(R.string.provider_update_running)
+        status.error == com.nuvio.tv.core.providers.ProviderUpdateError.IDENTITY_CHANGED -> stringResource(R.string.provider_update_identity_changed)
+        status.error != null -> stringResource(R.string.provider_update_failed)
+        else -> stringResource(R.string.provider_update_valid)
+    }
+    return state + "\n" + stringResource(R.string.provider_update_times, date(status.lastAttemptMillis), date(status.lastSuccessMillis))
 }

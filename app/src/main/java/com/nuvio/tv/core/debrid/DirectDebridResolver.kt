@@ -1,6 +1,8 @@
 package com.nuvio.tv.core.debrid
 
 import android.util.Log
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeProof
 
 import com.nuvio.tv.data.local.DebridSettingsDataStore
 import com.nuvio.tv.domain.model.StreamBehaviorHints
@@ -25,25 +27,34 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class DirectDebridResolver @Inject constructor(
+class DirectDebridResolver internal constructor(
     private val dataStore: DebridSettingsDataStore,
     private val torboxResolver: TorboxDirectDebridResolver,
     private val realDebridResolver: RealDebridDirectDebridResolver,
     private val allDebridResolver: AllDebridDirectDebridResolver,
     private val premiumizeResolver: PremiumizeDirectDebridResolver,
-    private val localDebridService: LocalDebridService
+    private val localDebridService: LocalDebridService,
+    private val scope: CoroutineScope,
+    private val grants: ServicePlaybackGrantRegistry = ConnectedServicePlaybackGrants.registry,
+    private val animeMappings: NativeAnimeEpisodeMappings? = null
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    @Inject constructor(dataStore: DebridSettingsDataStore, torboxResolver: TorboxDirectDebridResolver,
+        realDebridResolver: RealDebridDirectDebridResolver, allDebridResolver: AllDebridDirectDebridResolver,
+        premiumizeResolver: PremiumizeDirectDebridResolver, localDebridService: LocalDebridService,
+        animeMappings: NativeAnimeEpisodeMappings? = null) : this(
+        dataStore, torboxResolver, realDebridResolver, allDebridResolver, premiumizeResolver, localDebridService,
+        CoroutineScope(SupervisorJob() + Dispatchers.Default), animeMappings = animeMappings)
     private val mutex = Mutex()
     private val resolvedCache = mutableMapOf<String, CachedDirectDebridResolve>()
-    private val inFlightResolves = mutableMapOf<String, Deferred<DirectDebridResolveResult>>()
+    private val inFlightResolves = mutableMapOf<String, Deferred<NativeDebridAttempt>>()
+    private data class AnimeOrigin(val binding: ServicePlaybackGrantRegistry.Scope, val proofKey: String)
+    private val animeOrigins = LinkedHashMap<String, AnimeOrigin>()
 
     init {
-        // Account or viewer changes invalidate all process-local grants. No portable grant exists.
         scope.launch {
             combine(dataStore.activeProfileId, dataStore.settings) { profile, settings ->
                 profile to DebridProviders.all().associate { it.id to settings.apiKeyFor(it.id).trim() }
-            }.collect { (profile, credentials) -> ConnectedServicePlaybackGrants.registry.observe(profile, credentials, dataStore.activeProfileSelectionRevision, dataStore.activeCredentialRevision) }
+            }.collect { (profile, credentials) -> grants.observe(profile, credentials, dataStore.activeProfileSelectionRevision, dataStore.activeCredentialRevision) }
         }
     }
 
@@ -54,133 +65,155 @@ class DirectDebridResolver @Inject constructor(
         if (accountRevision < 0L) return null
         val credentials = DebridProviders.all().associate { it.id to dataStore.credentialForProfile(profile, it.id).trim() }
         if (dataStore.activeProfileId.value != profile) return null
-        // Do not use the previous viewer's still-delivering settings emission for a new operation.
         val settings = dataStore.settings.first()
         if (credentials.any { (id, key) -> settings.apiKeyFor(id).trim() != key }) return null
-        if (dataStore.activeProfileId.value != profile) return null
-        if (dataStore.activeProfileSelectionRevision != selectionRevision || dataStore.activeCredentialRevision != accountRevision) return null
-        return ConnectedServicePlaybackGrants.registry.observe(profile, credentials, selectionRevision, accountRevision)
+        if (dataStore.activeProfileId.value != profile || dataStore.activeProfileSelectionRevision != selectionRevision ||
+            dataStore.activeCredentialRevision != accountRevision) return null
+        return grants.observe(profile, credentials, selectionRevision, accountRevision)
     }
 
-    suspend fun isPlaybackAuthorized(url: String, expectedProfileId: Int? = null): Boolean {
+    private fun bindingIsCurrent(binding: ServicePlaybackGrantRegistry.Scope): Boolean =
+        binding.accountRevision >= 0L && dataStore.activeProfileId.value == binding.profileId &&
+            dataStore.activeProfileSelectionRevision == binding.selectionRevision &&
+            dataStore.activeCredentialRevision == binding.accountRevision && grants.scopeIsCurrent(binding)
+
+    suspend fun isPlaybackAuthorized(url: String, expectedProfileId: Int? = null,
+        nativeVideoId: String? = null, season: Int? = null, episode: Int? = null, nativeMediaType: String? = null): Boolean {
         val binding = playbackScope() ?: return false
         if (expectedProfileId != null && binding.profileId != expectedProfileId) return false
-        return ConnectedServicePlaybackGrants.registry.permits(url, binding)
+        if (nativeVideoId.requiresNativeAnimeProof(nativeMediaType, season, episode)) {
+            if (!validNativeMalContext(nativeVideoId!!, season, episode, nativeMediaType)) return false
+            val proof = animeMappings?.cachedProof(nativeVideoId)?.takeIf { it.hasTrustedTitleIdentity } ?: return false
+            val origin = mutex.withLock { animeOrigins[url] } ?: return false
+            if (origin.binding != binding || origin.proofKey != proof.cacheKey || !bindingIsCurrent(binding)) return false
+        }
+        return grants.permits(url, binding)
     }
 
-    suspend fun resolve(stream: Stream, season: Int?, episode: Int?): DirectDebridResolveResult {
+    suspend fun resolve(stream: Stream, season: Int?, episode: Int?, allowFallback: Boolean = true,
+        nativeVideoId: String? = null, allowAnimeMappingFetch: Boolean = true,
+        nativeMediaType: String? = null, onProviderAttempt: (String) -> Unit = {}): DirectDebridResolveResult {
         val binding = playbackScope() ?: return DirectDebridResolveResult.MissingApiKey
         val settings = dataStore.settings.first()
-        val provider = if (stream.needsLocalDebridResolve()) settings.activeResolverProviderId
-            else DebridProviders.byId(stream.clientResolve?.service)?.id
-        val result = resolveInternal(stream, season, episode, binding, settings)
+        if (playbackScope() != binding) throw kotlinx.coroutines.CancellationException("The connected service changed.")
+        val animeProof = if (nativeVideoId.requiresNativeAnimeProof(nativeMediaType, season, episode)) {
+            if (!validNativeMalContext(nativeVideoId!!, season, episode, nativeMediaType) || !canSelectNativeAnimeFile(stream))
+                return DirectDebridResolveResult.Stale
+            (if (allowAnimeMappingFetch) animeMappings?.proof(nativeVideoId) { bindingIsCurrent(binding) }
+                else animeMappings?.cachedProof(nativeVideoId))?.takeIf { it.hasTrustedTitleIdentity }
+                ?: return DirectDebridResolveResult.Stale
+        } else null
+        if (animeProof != null && !stream.matchesNativeAnimeSource(animeProof)) return DirectDebridResolveResult.Stale
+        if (!bindingIsCurrent(binding)) throw kotlinx.coroutines.CancellationException("The selected viewer changed.")
+        val accounts = resolutionAccounts(stream, settings, allowFallback)
+        if (accounts.isEmpty()) return DirectDebridResolveResult.Stale
+        // The routing loop belongs to the caller, not the independent per-provider shared job.
+        // Cancelling a selection cannot start a later service attempt in the background.
+        val route = NativeDebridFallbackRouter.resolve(accounts,
+            isCurrent = { bindingIsCurrent(binding) },
+            onAttempt = onProviderAttempt) { account ->
+            resolveAttempt(stream, season, episode, binding, account, animeProof)
+        }
+        val result = route.result
         if (result is DirectDebridResolveResult.Success) {
-            if (provider == null) {
-                Log.w("DebridResolve", "stage=final_grant result=provider_missing")
-                return DirectDebridResolveResult.Error
-            }
+            val provider = route.providerId ?: return DirectDebridResolveResult.Error
             if (playbackScope() != binding) {
                 Log.w("DebridResolve", "stage=final_grant result=scope_changed")
                 return DirectDebridResolveResult.Error
             }
-            if (!ConnectedServicePlaybackGrants.registry.issue(result.url, provider, binding)) {
+            if (!grants.issue(result.url, provider, binding)) {
                 Log.w("DebridResolve", "stage=final_grant result=policy_rejected")
                 return DirectDebridResolveResult.Error
             }
+            rememberAnimeOrigin(result.url, binding, animeProof)
         }
         return result
     }
 
-    private suspend fun resolveInternal(
-        stream: Stream,
-        season: Int?,
-        episode: Int?,
-        binding: ServicePlaybackGrantRegistry.Scope,
-        capturedSettings: com.nuvio.tv.domain.model.DebridSettings
-    ): DirectDebridResolveResult {
-        if (!shouldResolveToPlayableStream(stream)) {
-            return DirectDebridResolveResult.Stale
-        }
-        val cacheKey = stream.directDebridResolveCacheKey(season, episode)?.let { "${binding.profileId}:${binding.revision}:$it" }
-        if (cacheKey == null) {
-            return resolveUncached(stream, season, episode, binding, capturedSettings)
-        }
-        getCachedResult(cacheKey, binding)?.let {
-            return it
-        }
+    private fun resolutionAccounts(stream: Stream, settings: com.nuvio.tv.domain.model.DebridSettings,
+        allowFallback: Boolean): List<DebridServiceCredential> {
+        if (!settings.canResolvePlayableLinks) return emptyList()
+        if (NativeDebridFallbackRouter.neutralHashSource(stream)) return NativeDebridFallbackRouter.accounts(settings, allowFallback)
+        // Provider-specific addon/hoster contracts and signed URLs are never rebound.
+        if (stream.needsLocalDebridResolve()) return emptyList()
+        val providerId = DebridProviders.byId(stream.clientResolve?.service)?.id ?: return emptyList()
+        val account = settings.activeResolverCredential?.takeIf { it.provider.id == providerId } ?: return emptyList()
+        val hoster = providerId in setOf(DebridProviders.REAL_DEBRID_ID, DebridProviders.ALL_DEBRID_ID) &&
+            stream.clientResolve?.type.let { it.equals("hoster", true) || it.equals("http", true) }
+        return if (hoster || (stream.isDirectDebrid() && stream.getStreamUrl() == null)) listOf(account) else emptyList()
+    }
 
+    private suspend fun resolveAttempt(stream: Stream, season: Int?, episode: Int?,
+        binding: ServicePlaybackGrantRegistry.Scope, account: DebridServiceCredential,
+        animeProof: NativeAnimeEpisodeProof?): NativeDebridAttempt {
+        val cacheKey = stream.directDebridResolveCacheKey(season, episode, account, animeProof)
+            ?.let { "${binding.profileId}:${binding.revision}:$it" }
+            ?: return resolveUncached(stream, season, episode, binding, account, animeProof)
+        getCachedResult(cacheKey, binding, account.provider.id)?.let { return NativeDebridAttempt(it) }
         var ownsResolve = false
-        val newResolve = scope.async(start = CoroutineStart.LAZY) {
-            resolveUncached(stream, season, episode, binding, capturedSettings)
-        }
+        val newResolve = scope.async(start = CoroutineStart.LAZY) { resolveUncached(stream, season, episode, binding, account, animeProof) }
         val activeResolve = mutex.withLock {
-            getCachedResultLocked(cacheKey, binding)?.let { cached ->
-                return@withLock null to cached
-            }
+            getCachedResultLocked(cacheKey, binding, account.provider.id)?.let { return@withLock null to it }
             val existing = inFlightResolves[cacheKey]
-            if (existing != null) {
-                existing to null
-            } else {
+            if (existing != null) existing to null else {
                 inFlightResolves[cacheKey] = newResolve
                 ownsResolve = true
                 newResolve to null
             }
         }
-        activeResolve.second?.let {
-            newResolve.cancel()
-            return it
-        }
-        val deferred = activeResolve.first ?: return DirectDebridResolveResult.Error
-        if (!ownsResolve) newResolve.cancel()
-        if (ownsResolve) deferred.start()
-
+        activeResolve.second?.let { newResolve.cancel(); return NativeDebridAttempt(it) }
+        val deferred = activeResolve.first ?: return NativeDebridAttempt(DirectDebridResolveResult.Error)
+        if (!ownsResolve) newResolve.cancel() else deferred.start()
         return try {
-            val result = deferred.await()
-            if (ownsResolve && result is DirectDebridResolveResult.Success) {
-                mutex.withLock {
-                    resolvedCache[cacheKey] = CachedDirectDebridResolve(
-                        result = result,
-                        origin = binding,
-                        cachedAtMs = System.currentTimeMillis()
-                    )
-                }
+            val outcome = deferred.await()
+            if (ownsResolve && outcome.result is DirectDebridResolveResult.Success &&
+                bindingIsCurrent(binding)) {
+                mutex.withLock { resolvedCache[cacheKey] = CachedDirectDebridResolve(outcome.result, binding,
+                    System.currentTimeMillis(), account.provider.id) }
             }
-            result
+            outcome
         } finally {
-            if (ownsResolve) {
-                mutex.withLock {
-                    if (inFlightResolves[cacheKey] === deferred) {
-                        inFlightResolves.remove(cacheKey)
-                    }
-                }
-            }
+            if (ownsResolve) mutex.withLock { if (inFlightResolves[cacheKey] === deferred) inFlightResolves.remove(cacheKey) }
         }
     }
 
-    suspend fun cachedPlayableStream(stream: Stream, season: Int?, episode: Int?): Stream? {
+    suspend fun cachedPlayableStream(stream: Stream, season: Int?, episode: Int?, nativeVideoId: String? = null, nativeMediaType: String? = null): Stream? {
         val binding = playbackScope() ?: return null
-        if (!shouldResolveToPlayableStream(stream)) return null
-        val cacheKey = stream.directDebridResolveCacheKey(season, episode)?.let { "${binding.profileId}:${binding.revision}:$it" } ?: return null
-        val result = getCachedResult(cacheKey, binding) ?: return null
+        val settings = dataStore.settings.first()
         if (playbackScope() != binding) return null
-        val provider = if (stream.needsLocalDebridResolve()) dataStore.settings.first().activeResolverProviderId
-            else DebridProviders.byId(stream.clientResolve?.service)?.id
-        if (provider == null || playbackScope() != binding ||
-            !ConnectedServicePlaybackGrants.registry.issue(result.url, provider, binding)) return null
-        return stream.withResolvedDebridUrl(result)
+        val animeProof = if (nativeVideoId.requiresNativeAnimeProof(nativeMediaType, season, episode)) {
+            if (!validNativeMalContext(nativeVideoId!!, season, episode, nativeMediaType) || !canSelectNativeAnimeFile(stream)) return null
+            animeMappings?.cachedProof(nativeVideoId)?.takeIf { it.hasTrustedTitleIdentity } ?: return null // Cache-only metadata may never start a mapping request.
+        } else null
+        if (animeProof != null && !stream.matchesNativeAnimeSource(animeProof)) return null
+        for (account in resolutionAccounts(stream, settings, true)) {
+            if (!bindingIsCurrent(binding)) return null
+            val key = stream.directDebridResolveCacheKey(season, episode, account, animeProof)
+                ?.let { "${binding.profileId}:${binding.revision}:$it" } ?: continue
+            val result = getCachedResult(key, binding, account.provider.id) ?: continue
+            if (playbackScope() != binding || !grants.issue(result.url, account.provider.id, binding)) return null
+            rememberAnimeOrigin(result.url, binding, animeProof)
+            return stream.withResolvedDebridUrl(result)
+        }
+        return null
     }
 
-    suspend fun resolveToPlayableStream(
-        stream: Stream,
-        season: Int?,
-        episode: Int?
-    ): DirectDebridPlayableResult {
+    suspend fun resolveToPlayableStream(stream: Stream, season: Int?, episode: Int?, allowFallback: Boolean = true,
+        nativeVideoId: String? = null, allowAnimeMappingFetch: Boolean = true,
+        nativeMediaType: String? = null, onProviderAttempt: (String) -> Unit = {}): DirectDebridPlayableResult {
         if (!shouldResolveToPlayableStream(stream)) {
             val url = stream.getStreamUrl()
+            if (nativeVideoId.requiresNativeAnimeProof(nativeMediaType, season, episode)) {
+                if (!validNativeMalContext(nativeVideoId!!, season, episode, nativeMediaType)) return DirectDebridPlayableResult.Stale
+                val proof = animeMappings?.cachedProof(nativeVideoId)?.takeIf { it.hasTrustedTitleIdentity } ?: return DirectDebridPlayableResult.Stale
+                if (!stream.matchesNativeAnimeSource(proof)) return DirectDebridPlayableResult.Stale
+                return if (url != null && animeOriginAllows(url, proof)) DirectDebridPlayableResult.Success(stream)
+                    else DirectDebridPlayableResult.Stale
+            }
             return if (url != null && isPlaybackAuthorized(url)) DirectDebridPlayableResult.Success(stream)
                 else DirectDebridPlayableResult.MissingApiKey
         }
-        return when (val result = resolve(stream, season, episode)) {
+        return when (val result = resolve(stream, season, episode, allowFallback, nativeVideoId, allowAnimeMappingFetch, nativeMediaType, onProviderAttempt)) {
             is DirectDebridResolveResult.Success -> DirectDebridPlayableResult.Success(stream.withResolvedDebridUrl(result))
             DirectDebridResolveResult.MissingApiKey -> DirectDebridPlayableResult.MissingApiKey
             DirectDebridResolveResult.NotCached -> DirectDebridPlayableResult.NotCached
@@ -189,160 +222,140 @@ class DirectDebridResolver @Inject constructor(
         }
     }
 
-    suspend fun shouldResolveToPlayableStream(stream: Stream): Boolean {
-        val settings = dataStore.settings.first()
-        if (!settings.canResolvePlayableLinks) return false
-        if (stream.needsLocalDebridResolve()) {
-            return localTorrentResolveCredential(settings) != null
-        }
-        val providerId = DebridProviders.byId(stream.clientResolve?.service)?.id ?: return false
-        val explicitHoster = providerId in setOf(DebridProviders.REAL_DEBRID_ID, DebridProviders.ALL_DEBRID_ID) &&
-            stream.clientResolve?.type.let { it.equals("hoster", true) || it.equals("http", true) }
-        if (!explicitHoster && (!stream.isDirectDebrid() || stream.getStreamUrl() != null)) return false
-        return providerId == settings.activeResolverProviderId &&
-            settings.apiKeyFor(providerId).isNotBlank()
+    suspend fun shouldResolveToPlayableStream(stream: Stream): Boolean =
+        resolutionAccounts(stream, dataStore.settings.first(), false).isNotEmpty()
+
+    private suspend fun getCachedResult(key: String, binding: ServicePlaybackGrantRegistry.Scope, providerId: String) =
+        mutex.withLock { getCachedResultLocked(key, binding, providerId) }
+
+    private fun getCachedResultLocked(key: String, binding: ServicePlaybackGrantRegistry.Scope, providerId: String): DirectDebridResolveResult.Success? {
+        val cached = resolvedCache[key] ?: return null
+        return if (cached.providerId == providerId && cached.isReusable(binding, System.currentTimeMillis())) cached.result
+            else { resolvedCache.remove(key); null }
     }
 
-    private suspend fun getCachedResult(cacheKey: String, binding: ServicePlaybackGrantRegistry.Scope): DirectDebridResolveResult.Success? =
-        mutex.withLock { getCachedResultLocked(cacheKey, binding) }
-
-    private fun getCachedResultLocked(cacheKey: String, binding: ServicePlaybackGrantRegistry.Scope): DirectDebridResolveResult.Success? {
-        val cached = resolvedCache[cacheKey] ?: return null
-        return if (cached.isReusable(binding, System.currentTimeMillis())) {
-            cached.result
-        } else {
-            resolvedCache.remove(cacheKey)
-            null
-        }
-    }
-
-    private suspend fun resolveUncached(
-        stream: Stream,
-        season: Int?,
-        episode: Int?,
-        binding: ServicePlaybackGrantRegistry.Scope,
-        capturedSettings: com.nuvio.tv.domain.model.DebridSettings
-    ): DirectDebridResolveResult {
-        if (stream.needsLocalDebridResolve()) {
-            return resolveLocalTorrentStream(stream, season, episode, binding, capturedSettings)
-        }
-        val providerId = DebridProviders.byId(stream.clientResolve?.service)?.id ?: return DirectDebridResolveResult.Error
-        val operation = CapturedDebridOperation(providerId, capturedSettings.apiKeyFor(providerId)) {
-            ConnectedServicePlaybackGrants.registry.scopeIsCurrent(binding)
-        }
-        return when (providerId) {
-            DebridProviders.TORBOX_ID -> torboxResolver.resolve(stream, season, episode, operation)
-            DebridProviders.PREMIUMIZE_ID -> premiumizeResolver.resolve(stream, season, episode, operation)
-            DebridProviders.REAL_DEBRID_ID -> realDebridResolver.resolve(stream, season, episode, operation)
-            DebridProviders.ALL_DEBRID_ID -> allDebridResolver.resolve(stream, season, episode, operation)
-            else -> DirectDebridResolveResult.Error
-        }
-    }
-
-    private suspend fun Stream.directDebridResolveCacheKey(season: Int?, episode: Int?): String? {
-        if (needsLocalDebridResolve()) {
-            val settings = dataStore.settings.first()
-            val account = localTorrentResolveCredential(settings) ?: return null
-            val apiKey = account.apiKey.trim().takeIf { it.isNotBlank() } ?: return null
-            val identity = getEffectiveInfoHash() ?: torrentMagnetUri() ?: behaviorHints?.filename ?: return null
-            return listOf(
-                account.provider.id,
-                apiKey.stableFingerprint(),
-                identity.trim().lowercase(),
-                getEffectiveFileIdx()?.toString().orEmpty(),
-                behaviorHints?.filename.orEmpty().trim().lowercase(),
-                season?.toString().orEmpty(),
-                episode?.toString().orEmpty()
-            ).joinToString("|")
-        }
-        val resolve = clientResolve ?: return null
-        val providerId = DebridProviders.byId(resolve.service)?.id ?: return null
-        val settings = dataStore.settings.first()
-        if (!settings.canResolvePlayableLinks || providerId != settings.activeResolverProviderId) return null
-        val apiKey = settings.apiKeyFor(providerId).trim().takeIf { it.isNotBlank() } ?: return null
-        val identity = resolve.infoHash
-            ?: resolve.magnetUri
-            ?: getStreamUrl()
-            ?: resolve.torrentName
-            ?: resolve.filename
-            ?: return null
-
-        return listOf(
-            providerId,
-            apiKey.stableFingerprint(),
-            identity.trim().lowercase(),
-            resolve.fileIdx?.toString().orEmpty(),
-            (resolve.filename ?: behaviorHints?.filename).orEmpty().trim().lowercase(),
-            (season ?: resolve.season)?.toString().orEmpty(),
-            (episode ?: resolve.episode)?.toString().orEmpty()
-        ).joinToString("|")
-    }
-
-    private suspend fun resolveLocalTorrentStream(
-        stream: Stream,
-        season: Int?,
-        episode: Int?,
-        binding: ServicePlaybackGrantRegistry.Scope,
-        settings: com.nuvio.tv.domain.model.DebridSettings
-    ): DirectDebridResolveResult {
-        val account = localTorrentResolveCredential(settings) ?: return DirectDebridResolveResult.MissingApiKey
+    private suspend fun resolveUncached(stream: Stream, season: Int?, episode: Int?,
+        binding: ServicePlaybackGrantRegistry.Scope, account: DebridServiceCredential,
+        animeProof: NativeAnimeEpisodeProof?): NativeDebridAttempt {
         val operation = CapturedDebridOperation(account.provider.id, account.apiKey) {
-            ConnectedServicePlaybackGrants.registry.scopeIsCurrent(binding)
-        }
-        val hash = stream.getEffectiveInfoHash()?.trim()?.lowercase()
-        if (stream.debridCacheStatus?.state == StreamDebridCacheState.NOT_CACHED) {
-            return DirectDebridResolveResult.NotCached
-        }
-        if (
-            !hash.isNullOrBlank() &&
-            stream.debridCacheStatus?.state != StreamDebridCacheState.CACHED &&
-            account.provider.supports(DebridProviderCapability.LocalTorrentCacheCheck)
-        ) {
-            when (scopedDebridRequest(operation) { localDebridService.isCached(account, hash) }) {
-                false -> return DirectDebridResolveResult.NotCached
-                true, null -> Unit
-            }
-        }
+            bindingIsCurrent(binding)
+        }.withAnimeProof(animeProof)
+        val rawResult = if (NativeDebridFallbackRouter.neutralHashSource(stream)) {
+            resolveNeutralHash(stream, season, episode, account, operation)
+        } else resolveProvider(stream, season, episode, account.provider.id, operation)
+        // A service response cannot authorize a URL that the final playback policy rejects.
+        // Treat that service attempt as failed before caching; never upgrade HTTP to HTTPS.
+        val result = if (rawResult is DirectDebridResolveResult.Success) {
+            // A final service filename that contradicts the exact selected-file proof is terminal.
+            if (animeProof != null && rawResult.filename?.let(animeProof::matchesFile) != true)
+                return NativeDebridAttempt(DirectDebridResolveResult.Stale)
+            if (com.nuvio.tv.core.streams.SyclopPlaybackPolicy.isHttps(rawResult.url))
+                rawResult.copy(videoSize = rawResult.videoSize?.takeIf { it > 0L }) else DirectDebridResolveResult.Error
+        } else rawResult
+        return NativeDebridAttempt(result)
+    }
 
-        val magnet = DebridMagnetBuilder.fromStream(stream)
-            ?: return DirectDebridResolveResult.Stale
-        val resolveStream = stream.copy(
-            clientResolve = StreamClientResolve(
-                type = "torrent",
-                infoHash = stream.getEffectiveInfoHash(),
-                fileIdx = stream.getEffectiveFileIdx(),
-                magnetUri = magnet,
-                sources = stream.sources,
-                torrentName = null,
-                filename = stream.behaviorHints?.filename,
-                mediaType = null,
-                mediaId = null,
-                mediaOnlyId = null,
-                title = stream.title ?: stream.name,
-                season = season,
-                episode = episode,
-                service = account.provider.id,
-                serviceIndex = null,
-                serviceExtension = null,
-                isCached = stream.debridCacheStatus?.state == StreamDebridCacheState.CACHED,
-                stream = null
-            )
-        )
+    private suspend fun resolveProvider(stream: Stream, season: Int?, episode: Int?, providerId: String,
+        operation: CapturedDebridOperation): DirectDebridResolveResult = when (providerId) {
+        DebridProviders.TORBOX_ID -> torboxResolver.resolve(stream, season, episode, operation)
+        DebridProviders.PREMIUMIZE_ID -> premiumizeResolver.resolve(stream, season, episode, operation)
+        DebridProviders.REAL_DEBRID_ID -> realDebridResolver.resolve(stream, season, episode, operation)
+        DebridProviders.ALL_DEBRID_ID -> allDebridResolver.resolve(stream, season, episode, operation)
+        else -> DirectDebridResolveResult.Error
+    }
 
-        return when (account.provider.id) {
-            DebridProviders.TORBOX_ID -> torboxResolver.resolve(resolveStream, season, episode, operation)
-            DebridProviders.PREMIUMIZE_ID -> premiumizeResolver.resolve(resolveStream, season, episode, operation)
-            DebridProviders.REAL_DEBRID_ID -> realDebridResolver.resolve(resolveStream, season, episode, operation)
-            DebridProviders.ALL_DEBRID_ID -> allDebridResolver.resolve(resolveStream, season, episode, operation)
-            else -> DirectDebridResolveResult.Error
+    private fun Stream.directDebridResolveCacheKey(season: Int?, episode: Int?, account: DebridServiceCredential,
+        animeProof: NativeAnimeEpisodeProof?): String? {
+        val resolve = clientResolve
+        val identity = if (NativeDebridFallbackRouter.neutralHashSource(this)) getEffectiveInfoHash()
+            else resolve?.infoHash ?: resolve?.magnetUri ?: getStreamUrl() ?: resolve?.torrentName ?: resolve?.filename
+        identity ?: return null
+        val identityKey = if (NativeDebridFallbackRouter.neutralHashSource(this) || resolve?.infoHash != null)
+            identity.trim().lowercase() else identity.trim()
+        return listOf(account.provider.id, account.apiKey.trim().stableFingerprint(), identityKey,
+            getEffectiveFileIdx()?.toString().orEmpty(), (resolve?.filename ?: behaviorHints?.filename).orEmpty().trim(),
+            (season ?: resolve?.season)?.toString().orEmpty(), (episode ?: resolve?.episode)?.toString().orEmpty(),
+            animeProof?.let { it.cacheKey + ":" + nativeAnimeHintKey() } ?: "not-mal").joinToString("|")
+    }
+
+    private fun String?.requiresNativeAnimeProof(mediaType: String?, season: Int?, episode: Int?): Boolean {
+        if (this?.startsWith("mal:", ignoreCase = true) != true) return false
+        // A native MAL movie has no episode identity. Never infer this exemption from addon fields.
+        return !(mediaType == "movie" && season == null && episode == null && Regex("^mal:[1-9][0-9]{0,9}$").matches(this))
+    }
+
+    private fun validNativeMalContext(videoId: String, season: Int?, episode: Int?, mediaType: String?): Boolean {
+        if (mediaType == "movie") return false
+        val identity = NativeAnimeEpisodeMappings.identity(videoId) ?: return false
+        return (season == null || season == 1) && (episode == null || episode == identity.second)
+    }
+
+    /** Reject an unrelated declared release before its hash can reach any account API. */
+    private fun Stream.matchesNativeAnimeSource(proof: NativeAnimeEpisodeProof): Boolean {
+        val identity = proof.titleIdentity ?: return false
+        val resolve = clientResolve
+        if (fileIdx != null && resolve?.fileIdx != null && fileIdx != resolve.fileIdx) return false
+        val filenameHints = listOfNotNull(behaviorHints?.filename, resolve?.filename, resolve?.stream?.raw?.filename)
+        if (filenameHints.any { it.isBlank() || !proof.matchesFile(it) }) return false
+        val basenames = filenameHints.map { it.trim().replace('\\', '/').substringAfterLast('/').lowercase(java.util.Locale.ROOT) }.distinct()
+        if (basenames.size > 1) return false // One actual file cannot satisfy different explicit basenames.
+        val names = listOfNotNull(title, behaviorHints?.filename, resolve?.filename, resolve?.torrentName,
+            resolve?.stream?.raw?.filename, resolve?.stream?.raw?.torrentName).filter { it.isNotBlank() }
+        return names.isNotEmpty() && names.all(identity::matchesRelease)
+    }
+
+    /** Every selector-relevant hint is bound, including absent versus present-empty values. */
+    private fun Stream.nativeAnimeHintKey(): String {
+        val resolve = clientResolve
+        val hints = listOf(fileIdx?.toString(), resolve?.fileIdx?.toString(), title, behaviorHints?.filename,
+            resolve?.filename, resolve?.torrentName, resolve?.stream?.raw?.filename, resolve?.stream?.raw?.torrentName)
+        val encoded = hints.joinToString("") { value -> if (value == null) "-1:" else "${value.length}:$value" }
+        // Preserve every UTF-16 code unit; a replacement encoder must not collapse malformed
+        // provider strings into a different explicit filename's cache identity.
+        val bytes = java.nio.ByteBuffer.allocate(encoded.length * 2)
+        for (character in encoded) bytes.putChar(character)
+        return java.security.MessageDigest.getInstance("SHA-256").digest(bytes.array())
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun canSelectNativeAnimeFile(stream: Stream): Boolean =
+        stream.getEffectiveInfoHash()?.matches(Regex("[0-9a-fA-F]{40}|[a-zA-Z2-7]{32}")) == true &&
+            stream.getStreamUrl().let { it == null || it.startsWith("magnet:", true) }
+
+    private suspend fun rememberAnimeOrigin(url: String, binding: ServicePlaybackGrantRegistry.Scope, proof: NativeAnimeEpisodeProof?) {
+        if (proof == null) return
+        mutex.withLock {
+            animeOrigins[url] = AnimeOrigin(binding, proof.cacheKey)
+            while (animeOrigins.size > 256) animeOrigins.remove(animeOrigins.keys.first())
         }
     }
 
-    private fun localTorrentResolveCredential(
-        settings: com.nuvio.tv.domain.model.DebridSettings
-    ): DebridServiceCredential? =
-        settings.activeResolverCredential
-            ?.takeIf { credential -> credential.provider.supports(DebridProviderCapability.LocalTorrentResolve) }
+    private suspend fun animeOriginAllows(url: String, proof: NativeAnimeEpisodeProof): Boolean {
+        val binding = playbackScope() ?: return false
+        val origin = mutex.withLock { animeOrigins[url] } ?: return false
+        return origin.binding == binding && origin.proofKey == proof.cacheKey && bindingIsCurrent(binding) && grants.permits(url, binding)
+    }
+
+    private suspend fun resolveNeutralHash(stream: Stream, season: Int?, episode: Int?, account: DebridServiceCredential,
+        operation: CapturedDebridOperation): DirectDebridResolveResult {
+        val hash = stream.getEffectiveInfoHash()?.trim()?.lowercase() ?: return DirectDebridResolveResult.Stale
+        val availability = stream.debridCacheStatus?.takeIf { it.providerId == account.provider.id }
+        if (availability?.state == StreamDebridCacheState.NOT_CACHED) return DirectDebridResolveResult.NotCached
+        if (availability?.state != StreamDebridCacheState.CACHED && account.provider.supports(DebridProviderCapability.LocalTorrentCacheCheck)) {
+            if (scopedDebridRequest(operation) { localDebridService.isCached(account, hash) } == false) return DirectDebridResolveResult.NotCached
+        }
+        // Rebuild only the validated neutral hash. Do not forward addon headers, hoster URLs,
+        // signed service URLs, tracker passkeys, serviceIndex or cached claims to another service.
+        val resolveStream = stream.copy(url = null, externalUrl = null, sources = null, debridCacheStatus = availability,
+            behaviorHints = stream.behaviorHints?.copy(proxyHeaders = null),
+            clientResolve = StreamClientResolve(type = "torrent", infoHash = hash, fileIdx = stream.getEffectiveFileIdx(),
+                magnetUri = "magnet:?xt=urn:btih:$hash", sources = null, torrentName = null,
+                filename = stream.behaviorHints?.filename, mediaType = null, mediaId = null, mediaOnlyId = null,
+                title = stream.title ?: stream.name, season = season, episode = episode, service = account.provider.id,
+                serviceIndex = null, serviceExtension = null, isCached = availability?.state == StreamDebridCacheState.CACHED))
+        return resolveProvider(resolveStream, season, episode, account.provider.id, operation)
+    }
+
 }
 
 private const val DIRECT_DEBRID_RESOLVE_CACHE_TTL_MS = 15L * 60L * 1000L
@@ -350,7 +363,8 @@ private const val DIRECT_DEBRID_RESOLVE_CACHE_TTL_MS = 15L * 60L * 1000L
 internal data class CachedDirectDebridResolve(
     val result: DirectDebridResolveResult.Success,
     val origin: ServicePlaybackGrantRegistry.Scope,
-    val cachedAtMs: Long
+    val cachedAtMs: Long,
+    val providerId: String? = null
 ) {
     fun isReusable(binding: ServicePlaybackGrantRegistry.Scope, nowMs: Long): Boolean =
         origin == binding && nowMs - cachedAtMs in 0..DIRECT_DEBRID_RESOLVE_CACHE_TTL_MS
@@ -374,6 +388,7 @@ private fun Stream.withResolvedDebridUrl(result: DirectDebridResolveResult.Succe
         url = result.url,
         externalUrl = null,
         clientResolve = null,
+        debridCacheStatus = null,
         behaviorHints = behaviorHints.mergeResolvedDebridHints(result),
         nativeFileMetadata = com.nuvio.tv.domain.model.StreamFileMetadata(
             selectedFileBytes = result.videoSize?.takeIf { it > 0L } ?: nativeFileMetadata?.selectedFileBytes?.takeIf { url == result.url },
@@ -391,7 +406,7 @@ private fun StreamBehaviorHints?.mergeResolvedDebridHints(
         return current.copy(
             proxyHeaders = null, // Authenticated service URLs do not inherit arbitrary addon proxy headers.
             filename = result.filename ?: current.filename,
-            videoSize = result.videoSize ?: current.videoSize
+            videoSize = result.videoSize
         )
     }
     return StreamBehaviorHints(

@@ -1,5 +1,9 @@
 package com.nuvio.tv.data.repository
 
+import com.nuvio.tv.core.initialization.InitializationProvider
+import com.nuvio.tv.core.initialization.InitializationReadScope
+import kotlinx.coroutines.currentCoroutineContext
+
 import android.content.Context
 import android.util.Log
 import com.nuvio.tv.BuildConfig
@@ -329,17 +333,17 @@ class TraktAuthService @Inject constructor(
     }
 
     suspend fun fetchUserSettings(): String? {
-        val profileId = getCurrentAuthState().profileId
-        val response = executeAuthorizedRequest { authHeader ->
+        val binding = captureRequestBinding()
+        if (!bindingCurrent(binding)) return null
+        val response = executeAuthorizedBoundRequest(binding) { authHeader ->
             traktApi.getUserSettings(authorization = authHeader)
         } ?: return null
-
-        if (!response.isSuccessful) return null
-
+        if (!response.isSuccessful || !bindingCurrent(binding)) return null
         val username = response.body()?.user?.username
         val slug = response.body()?.user?.ids?.slug
-        traktAuthDataStore.saveUser(username = username, userSlug = slug, profileId = profileId)
-        return username
+        val saved = traktAuthDataStore.saveUserIfCurrent(username, slug, binding.selection.first,
+            binding.grantRevision) { bindingCurrent(binding) }
+        return username.takeIf { saved }
     }
 
     private data class AuthorizedRequestBinding(val selection: Pair<Int, Long>,
@@ -352,6 +356,15 @@ class TraktAuthService @Inject constructor(
         currentSelection() == binding.selection && appRegistrationStore.current() == binding.registration &&
         traktAuthDataStore.grantRevision(binding.selection.first) == binding.grantRevision
 
+    /** One batch owner, independent from access-token rotation. No credential is exported. */
+    suspend fun captureInitializationReadScope(): InitializationReadScope {
+        val binding = captureRequestBinding()
+        return InitializationReadScope(InitializationProvider.TRAKT,
+            "${binding.selection.first}:${binding.selection.second}:${binding.grantRevision}:${binding.registration.clientId}") {
+            bindingCurrent(binding)
+        }.also { it.checkpoint() }
+    }
+
     suspend fun <T> executeAuthorizedRequest(
         call: suspend (authorizationHeader: String) -> Response<T>
     ): Response<T>? = executeAuthorizedBoundRequest(captureRequestBinding(), call)
@@ -361,8 +374,12 @@ class TraktAuthService @Inject constructor(
         val selection = binding.selection
         val registration = binding.registration
         val revision = binding.grantRevision
+        val importScope = currentCoroutineContext()[InitializationReadScope]
+            ?.takeIf { it.provider == InitializationProvider.TRAKT }
+        importScope?.checkpoint()
         fun requestCurrent() = revision >= 0L && currentSelection() == selection &&
-            appRegistrationStore.current() == registration && traktAuthDataStore.grantRevision(selection.first) == revision
+            appRegistrationStore.current() == registration && traktAuthDataStore.grantRevision(selection.first) == revision &&
+            (importScope == null || importScope.isCurrent())
         if (!requestCurrent()) return null
         if (isCircuitOpen()) {
             trace("authorized request: circuit breaker is OPEN, skipping request")

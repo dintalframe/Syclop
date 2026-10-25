@@ -2032,7 +2032,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             }
         }
         PlayerEvent.OnDismissStreamInfo -> {
-            _uiState.update { it.copy(showStreamInfoOverlay = false) }
+            _uiState.update { it.copy(showStreamInfoOverlay = false, streamInfoData = null) }
         }
         PlayerEvent.OnTogglePlayerStatsHud -> {
             val currentState = _uiState.value
@@ -2052,8 +2052,16 @@ internal fun PlayerRuntimeController.buildStreamInfoData(): StreamInfoData {
     val selectedSubtitle = state.subtitleTracks.firstOrNull { it.isSelected }
     val addonSub = state.selectedAddonSubtitle
 
-    val activeVideoFormat = _exoPlayer?.videoFormat
-    val matchedFormat = _exoPlayer?.currentTracks?.groups
+    val engineAtSnapshot = currentInternalPlayerEngine
+    val urlAtSnapshot = currentStreamUrl
+    val usingMpv = engineAtSnapshot == InternalPlayerEngine.MVP_PLAYER
+    val activeMpvView = mpvView.takeIf { usingMpv }
+    val sampledMpv = activeMpvView?.readInfoSnapshot()
+    val mpvSnapshot = if (usingMpv && currentInternalPlayerEngine == engineAtSnapshot &&
+        currentStreamUrl == urlAtSnapshot && mpvView === activeMpvView)
+        sampledMpv ?: com.nuvio.tv.core.player.MpvInfoSnapshot() else null
+    val activeVideoFormat = if (usingMpv) null else _exoPlayer?.videoFormat
+    val matchedFormat = if (usingMpv) null else _exoPlayer?.currentTracks?.groups
         ?.firstOrNull { it.type == androidx.media3.common.C.TRACK_TYPE_VIDEO && it.isSelected }
         ?.let { group ->
             (0 until group.length)
@@ -2061,13 +2069,17 @@ internal fun PlayerRuntimeController.buildStreamInfoData(): StreamInfoData {
                 .firstOrNull { it.id == activeVideoFormat?.id || (it.bitrate > 0 && it.bitrate == activeVideoFormat?.bitrate) }
         }
 
-    val videoWidth = matchedFormat?.width?.takeIf { it > 0 } ?: activeVideoFormat?.width?.takeIf { it > 0 } ?: currentVideoWidth
-    val videoHeight = matchedFormat?.height?.takeIf { it > 0 } ?: activeVideoFormat?.height?.takeIf { it > 0 } ?: currentVideoHeight
-    val videoBitrate = activeVideoFormat?.bitrate?.takeIf { it > 0 } ?: currentVideoBitrate
-    val videoCodec = activeVideoFormat?.let { format ->
+    // Reading a native property may run across an engine handoff; never publish the old engine's video facts.
+    val videoEngineIsCurrent = currentInternalPlayerEngine == engineAtSnapshot && currentStreamUrl == urlAtSnapshot
+    val videoWidth = if (!videoEngineIsCurrent) null else if (usingMpv) mpvSnapshot?.width else (
+        matchedFormat?.width?.takeIf { it > 0 } ?: activeVideoFormat?.width?.takeIf { it > 0 } ?: currentVideoWidth)
+    val videoHeight = if (!videoEngineIsCurrent) null else if (usingMpv) mpvSnapshot?.height else (
+        matchedFormat?.height?.takeIf { it > 0 } ?: activeVideoFormat?.height?.takeIf { it > 0 } ?: currentVideoHeight)
+    val videoBitrate = if (!videoEngineIsCurrent || usingMpv) null else (activeVideoFormat?.bitrate?.takeIf { it > 0 } ?: currentVideoBitrate)
+    val videoCodec = if (!videoEngineIsCurrent) null else if (usingMpv) mpvSnapshot?.videoCodec?.label else (activeVideoFormat?.let { format ->
         CustomDefaultTrackNameProvider.formatNameFromMime(format.sampleMimeType)
             ?: CustomDefaultTrackNameProvider.formatNameFromMime(format.codecs)
-    } ?: currentVideoCodec
+    } ?: currentVideoCodec)
 
     return StreamInfoData(
         addonName = currentAddonName,
@@ -2079,7 +2091,8 @@ internal fun PlayerRuntimeController.buildStreamInfoData(): StreamInfoData {
         videoCodec = videoCodec,
         videoWidth = videoWidth,
         videoHeight = videoHeight,
-        videoFrameRate = state.detectedFrameRate.takeIf { it > 0f },
+        videoFrameRate = if (!videoEngineIsCurrent) null else if (usingMpv) mpvSnapshot?.sourceFrameRate?.toFloat() else state.detectedFrameRate.takeIf { it > 0f },
+        mpvSnapshot = mpvSnapshot,
         videoBitrate = videoBitrate,
         fileBitrate = PlayerBitrateEstimator.fileBitrateBps(
             currentVideoSize,
@@ -2104,7 +2117,9 @@ internal fun PlayerRuntimeController.buildStreamInfoData(): StreamInfoData {
             com.nuvio.tv.data.local.InternalPlayerEngine.MVP_PLAYER -> context.getString(R.string.playback_engine_mvplayer)
             com.nuvio.tv.data.local.InternalPlayerEngine.AUTO -> null
         },
-        serverPlayback = serverPlaybackSummary()
+        serverPlayback = serverPlaybackSummary(),
+        internalPlayerEngine = engineAtSnapshot,
+        mediaOriginKey = streamInfoMediaOriginKey(urlAtSnapshot)
     )
 }
 

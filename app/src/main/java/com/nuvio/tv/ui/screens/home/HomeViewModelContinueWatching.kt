@@ -39,6 +39,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
+import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -93,9 +94,9 @@ internal data class CwMetaSummary(
     val country: String?,
     val videos: List<CwVideoSummary>
 ) {
-    fun watchableEpisodes(): List<CwVideoSummary> {
+    fun watchableEpisodes(clock: Clock = Clock.systemDefaultZone()): List<CwVideoSummary> {
         val candidates = videos.filter { it.season != null && it.episode != null && (it.season ?: 0) > 0 }
-        fun isFutureRelease(raw: String?): Boolean = isEpisodeReleaseAired(raw) == false
+        fun isFutureRelease(raw: String?): Boolean = isEpisodeReleaseAired(raw, clock) == false
         val unavailableSeasons = candidates.groupBy { it.season }
             .filter { (_, eps) ->
                 val first = eps.minByOrNull { it.episode ?: Int.MAX_VALUE } ?: return@filter false

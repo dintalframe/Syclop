@@ -1,5 +1,12 @@
 package com.nuvio.tv.data.repository
 
+import com.nuvio.tv.core.initialization.InitializationReadGate
+import com.nuvio.tv.core.initialization.InitializationReadScope
+import com.nuvio.tv.core.initialization.InitializationReadResult
+import com.nuvio.tv.core.initialization.InitializationReadException
+import com.nuvio.tv.core.initialization.InitializationFailure
+import kotlinx.coroutines.CancellationException
+
 import android.content.Context
 import com.nuvio.tv.R
 import com.nuvio.tv.core.profile.ProfileManager
@@ -62,6 +69,9 @@ class TraktLibraryService @Inject constructor(
     private val snapshotState = MutableStateFlow(Snapshot())
     private val refreshingState = MutableStateFlow(false)
     private val refreshMutex = Mutex()
+    private val initializationReads = InitializationReadGate()
+    private var lastLibraryScopeKey: String? = null
+    private var snapshotSelection: Pair<Int, Long>? = null
     private var lastRefreshMs: Long = 0L
 
     private val cacheTtlMs = 60_000L
@@ -304,35 +314,78 @@ class TraktLibraryService @Inject constructor(
 
     private suspend fun resetProfileScopedState() {
         refreshMutex.withLock {
+            val owner = profileManager.activeProfileId.value to profileManager.activeProfileSelectionRevision
+            if (snapshotSelection == owner) return@withLock
+            snapshotSelection = owner
             snapshotState.value = Snapshot()
             refreshingState.value = false
             lastRefreshMs = 0L
+            lastLibraryScopeKey = null
         }
     }
     suspend fun ensureFresh() {
         refresh(force = false)
     }
 
-    private suspend fun refresh(force: Boolean): Boolean {
-        val now = System.currentTimeMillis()
-        return refreshMutex.withLock {
-            if (!force && now - lastRefreshMs <= cacheTtlMs && snapshotState.value.updatedAtMs > 0L) {
-                return@withLock true
-            }
+    private suspend fun refresh(force: Boolean): Boolean = try {
+        readSnapshot(traktAuthService.captureInitializationReadScope(), force)
+        true
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        false
+    }
 
-            refreshingState.value = true
-            try {
-                val previous = snapshotState.value
-                val refreshed = runCatching { fetchSnapshot() }.getOrNull()
-                val snapshotToUse = refreshed ?: previous
-                snapshotState.value = snapshotToUse
-                lastRefreshMs = now
-                refreshed != null
-            } finally {
-                refreshingState.value = false
-            }
+    /** Hide only foreign provider-owned RAM before a failed/continued new-account initialization. */
+    fun hideForeignInitializationProjection(expected: InitializationReadScope) {
+        if (!expected.isCurrent()) throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
+        if (lastLibraryScopeKey != null && lastLibraryScopeKey != expected.operationKey) {
+            snapshotState.value = Snapshot()
+            lastRefreshMs = 0L
+            lastLibraryScopeKey = null
         }
     }
+
+    /** Await an actual current-account snapshot, not a fire-and-forget refresh signal. */
+    suspend fun awaitInitializationImport(expected: InitializationReadScope): InitializationReadResult =
+        initializationReads.recentComplete(expected) ?: readSnapshot(expected, force = true)
+
+    private suspend fun readSnapshot(expected: InitializationReadScope, force: Boolean): InitializationReadResult =
+        initializationReads.run(expected) {
+            refreshMutex.withLock {
+                expected.checkpoint()
+                val owner = profileManager.activeProfileId.value to profileManager.activeProfileSelectionRevision
+                if (snapshotSelection != owner) {
+                    snapshotSelection = owner
+                    snapshotState.value = Snapshot()
+                    lastRefreshMs = 0L
+                    lastLibraryScopeKey = null
+                }
+                if (lastLibraryScopeKey != null && lastLibraryScopeKey != expected.operationKey) {
+                    // Only provider-owned RAM is hidden on an account replacement; local history is untouched.
+                    snapshotState.value = Snapshot()
+                    lastRefreshMs = 0L
+                    lastLibraryScopeKey = null
+                }
+                val now = System.currentTimeMillis()
+                if (!force && lastLibraryScopeKey == expected.operationKey &&
+                    now - lastRefreshMs <= cacheTtlMs && snapshotState.value.updatedAtMs > 0L) {
+                    return@withLock InitializationReadResult(snapshotState.value.allEntries.size)
+                }
+                refreshingState.value = true
+                try {
+                    val refreshed = fetchSnapshot()
+                    expected.checkpoint()
+                    // No suspension between the captured-account check and publishing its snapshot.
+                    snapshotState.value = refreshed
+                    lastRefreshMs = System.currentTimeMillis()
+                    lastLibraryScopeKey = expected.operationKey
+                    InitializationReadResult(refreshed.allEntries.size)
+                } finally {
+                    refreshingState.value = false
+                }
+            }
+        }
 
     private suspend fun performOptimisticMutation(
         optimistic: (Snapshot) -> Snapshot,
@@ -546,8 +599,11 @@ class TraktLibraryService @Inject constructor(
             throw IllegalStateException("${appContext.getString(com.nuvio.tv.R.string.trakt_library_error_fetch_personal_lists)} (${response.code()})")
         }
 
-        val personal = response.body().orEmpty()
-            .filter { it.type.equals("personal", ignoreCase = true) }
+        com.nuvio.tv.core.initialization.checkpointInitializationRead()
+        val received = response.body()
+            ?: throw InitializationReadException(InitializationFailure.INCOMPLETE)
+        if (received.size > 100) throw InitializationReadException(InitializationFailure.INCOMPLETE)
+        val personal = received.filter { it.type.equals("personal", ignoreCase = true) }
 
         val tabs = personal.mapNotNull { mapListTab(it) }
         val entriesByList = coroutineScope {
@@ -877,8 +933,12 @@ class TraktLibraryService @Inject constructor(
             if (!response.isSuccessful) {
                 throw IllegalStateException(appContext.getString(com.nuvio.tv.R.string.trakt_library_error_paginated_fetch_failed, response.code()))
             }
-            allItems.addAll(response.body().orEmpty())
+            com.nuvio.tv.core.initialization.checkpointInitializationRead()
+            allItems.addAll(response.body() ?: throw InitializationReadException(InitializationFailure.INCOMPLETE))
             val pageCount = response.headers()["X-Pagination-Page-Count"]?.toIntOrNull() ?: 1
+            if (kotlin.coroutines.coroutineContext[InitializationReadScope] != null &&
+                (allItems.size > 20_000 || currentPage > 100 || pageCount > 100))
+                throw InitializationReadException(InitializationFailure.INCOMPLETE)
             if (currentPage >= pageCount) break
             currentPage++
         }

@@ -31,8 +31,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -77,6 +75,8 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import com.nuvio.tv.ui.components.SyclopBrandAnimation
+import com.nuvio.tv.ui.components.SyclopBrandState
 import com.nuvio.tv.core.party.PartySource
 import com.nuvio.tv.core.party.matches
 import com.nuvio.tv.ui.util.contentTextDirection
@@ -86,7 +86,6 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
@@ -99,7 +98,6 @@ import com.nuvio.tv.ui.components.SourceChipItem
 import com.nuvio.tv.ui.components.SourceChipStatus
 import com.nuvio.tv.ui.components.P2pConsentDialog
 import com.nuvio.tv.ui.components.StreamBadgeChips
-import com.nuvio.tv.ui.components.StreamsSkeletonList
 import com.nuvio.tv.ui.screens.player.LoadingOverlay
 import com.nuvio.tv.ui.screens.player.AddonFilterChips
 import com.nuvio.tv.ui.theme.NuvioTheme
@@ -473,7 +471,7 @@ fun StreamScreen(
                     hasBadgeRules = streamBadgeSettings.rules.hasImport,
                     onAddonFilterSelected = { viewModel.onEvent(StreamScreenEvent.OnAddonFilterSelected(it)) },
                     onRefresh = { viewModel.onEvent(StreamScreenEvent.OnRefresh) },
-                    sharedStream = sharedStream,
+                    sharedStream = sharedStream?.takeIf { viewModel.isNativeSourceDisplayEligible(it.stream) },
                     partySource = partySource,
                     onSharedStreamSelected = { stream ->
                         scope.coroutineLaunch {
@@ -949,6 +947,14 @@ private fun RightStreamSection(
                     }
                 }
 
+                Text(text = stringResource(R.string.syclop_debrid_playback_path),
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm))
+
+                Text(text = "Bitrate confidence: native file estimate → reported estimate → unknown",
+                    style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary,
+                    modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm))
+
                 // Streams / loading / error / empty
                 Box(
                     modifier = Modifier
@@ -958,7 +964,7 @@ private fun RightStreamSection(
                 ) {
                     when {
                         sharedStream == null && isLoading -> {
-                            LoadingState(showAddonLogo = showAddonLogo)
+                            LoadingState()
                         }
                         sharedStream == null && error != null -> {
                             ErrorState(
@@ -1006,8 +1012,21 @@ private fun RightStreamSection(
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun LoadingState(showAddonLogo: Boolean = true) {
-    StreamsSkeletonList(showAddonLogo = showAddonLogo)
+private fun LoadingState() {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(NuvioTheme.spacing.xxl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        SyclopBrandAnimation(SyclopBrandState.Loading)
+        Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
+        Text(
+            text = stringResource(R.string.stream_finding_source),
+            style = MaterialTheme.typography.bodyLarge,
+            color = NuvioTheme.extendedColors.textSecondary,
+            textAlign = TextAlign.Center
+        )
+    }
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -1021,12 +1040,7 @@ private fun ErrorState(
         verticalArrangement = Arrangement.Center,
         modifier = Modifier.padding(NuvioTheme.spacing.xxl)
     ) {
-        Icon(
-            imageVector = Icons.Default.Warning,
-            contentDescription = null,
-            modifier = Modifier.size(NuvioTheme.spacing.xxxl),
-            tint = NuvioTheme.colors.Error
-        )
+        SyclopBrandAnimation(SyclopBrandState.Error)
 
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
 
@@ -1351,9 +1365,12 @@ private fun StreamCard(
     val context = LocalContext.current
     val density = LocalDensity.current
     val unknownStreamLabel = stringResource(R.string.stream_unknown)
-    val streamName = remember(stream, unknownStreamLabel) { stream.getDisplayNameOrNull() ?: unknownStreamLabel }
-    val streamDescription = remember(stream) { stream.getDisplayDescription() }
-    val hasBadges = stream.badges.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints?.videoSize != null) || reserveBadgeSpace
+    val streamName = remember(stream, unknownStreamLabel) {
+        com.nuvio.tv.core.debrid.NativeDebridSourceCards.displayText(stream.getDisplayNameOrNull()) ?: unknownStreamLabel
+    }
+    val streamDescription = remember(stream) { com.nuvio.tv.core.debrid.NativeDebridSourceCards.displayDescription(stream) }
+    val visibleBadges = remember(stream.badges) { stream.badges.filterNot { com.nuvio.tv.core.debrid.NativeDebridSourceCards.isSeederBadge(it.name) } }
+    val hasBadges = visibleBadges.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints?.videoSize != null) || reserveBadgeSpace
     val cardShape = RoundedCornerShape(NuvioTheme.radii.md)
     val hasGradientFocusRing = NuvioTheme.palette.focusRingGradient.size > 1
 
@@ -1362,8 +1379,8 @@ private fun StreamCard(
     // Track whether badges transitioned from empty to non-empty while this
     // card was composed. If they did, we animate. If the card enters
     // composition with badges already present (tab switch), no animation.
-    val hadBadgesOnFirstComposition = remember { stream.badges.isNotEmpty() }
-    val shouldAnimateBadges = stream.badges.isNotEmpty() && !hadBadgesOnFirstComposition
+    val hadBadgesOnFirstComposition = remember { visibleBadges.isNotEmpty() }
+    val shouldAnimateBadges = visibleBadges.isNotEmpty() && !hadBadgesOnFirstComposition
     // Pre-upscale: decode at 2× target pixels so the hardware compositor
     // has enough pixel data for smooth edges inside Card RenderNodes.
     val logoDecodeSize = remember(density) {
@@ -1424,9 +1441,9 @@ private fun StreamCard(
                 verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs)
             ) {
                 if (hasBadges && badgePlacement == StreamBadgePlacement.TOP) {
-                    if (stream.badges.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints?.videoSize != null)) {
+                    if (visibleBadges.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints?.videoSize != null)) {
                         StreamBadgeChips(
-                            badges = stream.badges,
+                            badges = visibleBadges,
                             fileSizeBytes = stream.behaviorHints?.videoSize,
                             showFileSizeBadge = showFileSizeBadges,
                             animate = shouldAnimateBadges,
@@ -1461,14 +1478,34 @@ private fun StreamCard(
                     }
                 }
 
-                Text(text = com.nuvio.tv.core.debrid.StreamBitrateFacts.label(stream),
-                    style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary)
-                com.nuvio.tv.core.debrid.StreamBitrateFacts.providerClaimMbps(stream)?.let { claim ->
-                    Text(text = "Provider claim: $claim Mbps (unverified)",
+                stream.nativeFileMetadata?.verifiedTracks?.let { facts ->
+                    com.nuvio.tv.core.mediafacts.SourceMediaFormatFacts.summary(facts)?.let { summary ->
+                        Text(text = "Checked source file: $summary", style = MaterialTheme.typography.labelSmall,
+                            color = NuvioTheme.colors.TextPrimary)
+                    }
+                }
+                stream.nativeFileMetadata?.selectedFileBytes?.takeIf { it > 0L }?.let { bytes ->
+                    Text(text = "Selected file: ${android.text.format.Formatter.formatShortFileSize(context, bytes)}",
                         style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary)
                 }
+                val reportedQuality = remember(stream) { com.nuvio.tv.core.debrid.ReportedStreamFacts.qualitySummary(stream) }
+                reportedQuality?.let { summary ->
+                    Text(text = "Reported quality (unverified): $summary", style = MaterialTheme.typography.labelSmall,
+                        color = NuvioTheme.extendedColors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                val nativeBitrate = com.nuvio.tv.core.debrid.StreamBitrateFacts.estimatedBitsPerSecond(stream)
+                val reportedBitrate = remember(stream) { com.nuvio.tv.core.debrid.ReportedStreamFacts.bitrateLabel(stream) }
+                if (nativeBitrate != null || reportedBitrate == null) {
+                    Text(text = com.nuvio.tv.core.debrid.StreamBitrateFacts.label(stream),
+                        style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary)
+                }
+                reportedBitrate?.let { reported ->
+                    Text(text = reported, style = MaterialTheme.typography.labelSmall,
+                        color = NuvioTheme.extendedColors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
 
-                stream.pluginSourceName?.takeIf { it.isNotBlank() && it != stream.addonName }?.let { sourceName ->
+                com.nuvio.tv.core.debrid.NativeDebridSourceCards.displayText(stream.pluginSourceName)
+                    ?.takeIf { it.isNotBlank() && it != stream.addonName }?.let { sourceName ->
                     Text(
                         text = sourceName,
                         style = MaterialTheme.typography.labelSmall.copy(
@@ -1492,9 +1529,9 @@ private fun StreamCard(
                 }
 
                 if (hasBadges && badgePlacement == StreamBadgePlacement.BOTTOM) {
-                    if (stream.badges.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints?.videoSize != null)) {
+                    if (visibleBadges.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints?.videoSize != null)) {
                         StreamBadgeChips(
-                            badges = stream.badges,
+                            badges = visibleBadges,
                             fileSizeBytes = stream.behaviorHints?.videoSize,
                             showFileSizeBadge = showFileSizeBadges,
                             animate = shouldAnimateBadges,

@@ -1,10 +1,20 @@
 package com.nuvio.tv.data.simkl
 
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.currentCoroutineContext
+import com.nuvio.tv.core.initialization.checkpointInitializationRead
+
+
 import javax.inject.Inject
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.decodeFromJsonElement
+
+internal class SimklInitializationAuthScope(val auth: SimklAuthScope) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<SimklInitializationAuthScope>
+}
 
 sealed interface SimklAllItemsRequest {
     val type: SimklMediaType?
@@ -31,7 +41,7 @@ class SimklApiSyncRemote @Inject constructor(
 ) : SimklSyncRemote {
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
-    override suspend fun fetchActivities(): SimklActivities = client.execute(
+    override suspend fun fetchActivities(): SimklActivities = execute(
         SimklApiRequest(SimklHttpMethod.GET, "/sync/activities")
     ).body.decode()
 
@@ -55,14 +65,22 @@ class SimklApiSyncRemote @Inject constructor(
             )
             SimklAllItemsRequest.CurrentIds -> mapOf("extended" to "simkl_ids_only")
         }
-        return client.execute(
+        return execute(
             SimklApiRequest(SimklHttpMethod.GET, path, query)
         ).body.decodeAllItems()
     }
 
-    override suspend fun fetchPlayback(): List<SimklPlaybackSession> = client.execute(
+    override suspend fun fetchPlayback(): List<SimklPlaybackSession> = execute(
         SimklApiRequest(SimklHttpMethod.GET, "/sync/playback")
     ).body.decode()
+
+    private suspend fun execute(request: SimklApiRequest): SimklApiResponse {
+        checkpointInitializationRead()
+        val response = client.execute(request,
+            expectedAuthScope = currentCoroutineContext()[SimklInitializationAuthScope]?.auth)
+        checkpointInitializationRead()
+        return response
+    }
 
     private inline fun <reified T> String.decode(): T = json.decodeFromString(this)
 

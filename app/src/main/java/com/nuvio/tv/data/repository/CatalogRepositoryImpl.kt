@@ -10,6 +10,8 @@ import com.nuvio.tv.data.mediaserver.ServerCatalog
 import com.nuvio.tv.data.mediaserver.messageRes
 import com.nuvio.tv.data.mediaserver.serverFailure
 import com.nuvio.tv.data.mal.MalCatalog
+import com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog
+import com.nuvio.tv.data.catalog.RatedKidsCatalog
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.remote.api.AddonApi
 import com.nuvio.tv.domain.model.CatalogRow
@@ -30,7 +32,9 @@ class CatalogRepositoryImpl @Inject constructor(
     private val api: AddonApi,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
     private val serverCatalog: ServerCatalog,
-    private val malCatalog: MalCatalog? = null
+    private val malCatalog: MalCatalog? = null,
+    private val simklCatalog: SimklPublicCatalog? = null,
+    private val ratedKidsCatalog: RatedKidsCatalog? = null
 ) : CatalogRepository {
     companion object {
         private const val TAG = "CatalogRepository"
@@ -50,6 +54,31 @@ class CatalogRepositoryImpl @Inject constructor(
         posterScreen: com.nuvio.tv.core.poster.CustomPosterScreen
     ): Flow<NetworkResult<CatalogRow>> = flow {
         emit(NetworkResult.Loading)
+
+        if (RatedKidsCatalog.isNativeAddon(addonBaseUrl)) {
+            try {
+                require(addonId == RatedKidsCatalog.ADDON_ID && type in setOf("movie", "series"))
+                emit(NetworkResult.Success(requireNotNull(ratedKidsCatalog).catalog(ContentType.fromString(type), catalogId, skip, extraArgs)))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                emit(NetworkResult.Error("Could not load rated Kids discovery. Try again after checking the public catalog connection."))
+            }
+            return@flow
+        }
+
+        if (SimklPublicCatalog.isNativeAddon(addonBaseUrl)) {
+            try {
+                require(addonId == SimklPublicCatalog.ADDON_ID)
+                emit(NetworkResult.Success(requireNotNull(simklCatalog).catalog(catalogId,
+                    extraArgs["skip"]?.toIntOrNull() ?: skip)))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                emit(NetworkResult.Error("Could not load Simkl Trending. Check Syclop's application configuration and try again."))
+            }
+            return@flow
+        }
 
         if (MalCatalog.isNativeAddon(addonBaseUrl)) {
             try {
@@ -79,7 +108,7 @@ class CatalogRepositoryImpl @Inject constructor(
         val url = buildCatalogUrl(addonBaseUrl, type, catalogId, skip, extraArgs)
         Log.d(
             TAG,
-            "Fetching catalog addonId=$addonId addonName=$addonName type=$type catalogId=$catalogId skip=$skip skipStep=$skipStep supportsSkip=$supportsSkip url=$url"
+            "Catalog request skip=$skip supportsSkip=$supportsSkip"
         )
 
         when (val result = safeApiCall(context) { api.getCatalog(url) }) {
@@ -97,7 +126,7 @@ class CatalogRepositoryImpl @Inject constructor(
                     )
                 Log.d(
                     TAG,
-                    "Catalog fetch success addonId=$addonId type=$type catalogId=$catalogId items=${items.size}"
+                    "Catalog request result=success items=${items.size}"
                 )
 
                 val catalogRow = CatalogRow(
@@ -122,7 +151,7 @@ class CatalogRepositoryImpl @Inject constructor(
             is NetworkResult.Error -> {
                 Log.w(
                     TAG,
-                    "Catalog fetch failed addonId=$addonId type=$type catalogId=$catalogId code=${result.code} message=${result.message} url=$url"
+                    "Catalog request result=failed status=${result.code?.takeIf { it in 100..599 } ?: "none"}"
                 )
                 emit(result)
             }

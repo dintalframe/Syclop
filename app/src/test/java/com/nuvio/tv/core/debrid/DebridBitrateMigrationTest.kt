@@ -32,10 +32,27 @@ class DebridBitrateMigrationTest {
         val next=h.store.settings.first()
         assertTrue(next.streamPreferences.sortCriteria.isEmpty());assertEquals(9,next.streamPreferences.maxResults)
     }
-    private class Fixture(prior:DebridStreamPreferences) {
+    @Test fun `file size tie migration upgrades exact prior automatic order only`()=runTest {
+        val previous = listOf(DebridStreamSortCriterion(DebridStreamSortKey.BITRATE,DebridStreamSortDirection.DESC),
+            DebridStreamSortCriterion(DebridStreamSortKey.RESOLUTION,DebridStreamSortDirection.DESC)) +
+            DebridStreamSortCriterion.defaultOrder.filter { it.key != DebridStreamSortKey.RESOLUTION }
+        val h=Fixture(DebridStreamPreferences(maxResults=11,sortCriteria=previous),alreadyV1=true)
+        val migrated=h.store.settings.first()
+        assertEquals(DebridStreamSortCriterion.bitrateFirstOrder(),migrated.streamPreferences.sortCriteria)
+        assertEquals(11,migrated.streamPreferences.maxResults)
+        assertEquals(true,h.memory.data.first()[booleanPreferencesKey("stream_size_order_v2")])
+    }
+    @Test fun `file size migration preserves previous custom and original order`()=runTest {
+        for(criteria in listOf(emptyList(),listOf(DebridStreamSortCriterion(DebridStreamSortKey.SIZE,DebridStreamSortDirection.ASC)))) {
+            val h=Fixture(DebridStreamPreferences(sortCriteria=criteria),alreadyV1=true)
+            assertEquals(criteria,h.store.settings.first().streamPreferences.sortCriteria)
+        }
+    }
+    private class Fixture(prior:DebridStreamPreferences,alreadyV1:Boolean=false) {
         val memory=MemoryStore(mutablePreferencesOf(stringPreferencesKey("stream_preferences") to Gson().toJson(prior),
             intPreferencesKey("instant_playback_preparation_limit") to 0,
-            stringPreferencesKey("debrid_stream_name_template") to "My formatter"))
+            stringPreferencesKey("debrid_stream_name_template") to "My formatter",
+            booleanPreferencesKey("stream_bitrate_order_v1") to alreadyV1))
         private val active=MutableStateFlow(1)
         private val profiles=mockk<ProfileManager>{every{activeProfileId}returns active}
         private val factory=mockk<ProfileDataStoreFactory>{every{get(1,any())}returns memory}

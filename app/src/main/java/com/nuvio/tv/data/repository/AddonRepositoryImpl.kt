@@ -9,6 +9,8 @@ import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.network.safeApiCall
 import com.nuvio.tv.core.express.ExpressAddonAdapter
 import com.nuvio.tv.data.mal.MalCatalog
+import com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog
+import com.nuvio.tv.data.catalog.RatedKidsCatalog
 import com.nuvio.tv.data.local.AddonPreferences
 import com.nuvio.tv.data.mapper.toDomain
 import com.nuvio.tv.data.remote.api.AddonApi
@@ -40,6 +42,7 @@ import com.nuvio.tv.core.sync.AddonSyncService
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Scoped @Singleton on the class, not only on the @Binds in RepositoryModule. The binding scopes
@@ -62,7 +65,10 @@ class AddonRepositoryImpl(
     /** Source of the refresh clock, injectable so the TTL policy can be tested without waiting. */
     private val clock: () -> Long,
     private val expressAdapter: ExpressAddonAdapter? = null,
-    private val malCatalog: MalCatalog? = null
+    private val malCatalog: MalCatalog? = null,
+    private val providerManifestClient: com.nuvio.tv.core.providers.ProviderManifestClient? = null,
+    private val simklCatalog: SimklPublicCatalog? = null,
+    private val ratedKidsCatalog: RatedKidsCatalog? = null
 ) : AddonRepository {
 
     @Inject
@@ -73,7 +79,10 @@ class AddonRepositoryImpl(
         authManager: AuthManager,
         @ApplicationContext context: Context,
         expressAdapter: ExpressAddonAdapter,
-        malCatalog: MalCatalog
+        malCatalog: MalCatalog,
+        providerManifestClient: com.nuvio.tv.core.providers.ProviderManifestClient,
+        simklCatalog: SimklPublicCatalog,
+        ratedKidsCatalog: RatedKidsCatalog
     ) : this(
         api = api,
         preferences = preferences,
@@ -83,7 +92,10 @@ class AddonRepositoryImpl(
         dispatcher = Dispatchers.IO,
         clock = System::currentTimeMillis,
         expressAdapter = expressAdapter,
-        malCatalog = malCatalog
+        malCatalog = malCatalog,
+        providerManifestClient = providerManifestClient,
+        simklCatalog = simklCatalog,
+        ratedKidsCatalog = ratedKidsCatalog
     )
 
     companion object {
@@ -92,7 +104,8 @@ class AddonRepositoryImpl(
         private const val MANIFEST_CACHE_KEY = "manifests_v2"
         private const val LEGACY_MANIFEST_CACHE_KEY = "manifests"
         private const val MANIFEST_SUFFIX = "/manifest.json"
-        private const val MANIFEST_CACHE_TTL_MS = 6 * 60 * 60 * 1000L 
+        private const val MANIFEST_CACHE_TTL_MS = 24 * 60 * 60 * 1000L
+        const val IDENTITY_CHANGED_CODE = -2001
     }
 
     private val syncScope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -134,6 +147,8 @@ class AddonRepositoryImpl(
         }
     }
 
+    private val providerFetchLocks = Array(16) { kotlinx.coroutines.sync.Mutex() }
+
     private val gson = Gson()
     private val manifestCache = mutableMapOf<String, Addon>()
     private val manifestCacheLock = Any()
@@ -143,9 +158,7 @@ class AddonRepositoryImpl(
     private var manifestRefreshJob: Job? = null
     private val manifestRefreshLock = Any()
 
-    init {
-        syncScope.launch { loadManifestCacheFromDisk() }
-    }
+    private val manifestCacheLoadJob = syncScope.launch { loadManifestCacheFromDisk() }
 
     private fun isCacheStale(): Boolean =
         clock() - lastManifestRefreshAttemptTime > MANIFEST_CACHE_TTL_MS
@@ -216,7 +229,7 @@ class AddonRepositoryImpl(
             bumpManifestCacheRevision()
             Log.d(TAG, "Loaded ${cached.size} cached manifests from disk")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to load manifest cache from disk", e)
+            Log.w(TAG, "Failed to load manifest cache class=${e.javaClass.simpleName}")
         }
     }
 
@@ -227,7 +240,7 @@ class AddonRepositoryImpl(
                 val prefs = context.getSharedPreferences(MANIFEST_CACHE_PREFS, Context.MODE_PRIVATE)
                 prefs.edit().putString(MANIFEST_CACHE_KEY, gson.toJson(snapshot)).apply()
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to persist manifest cache to disk", e)
+                Log.w(TAG, "Failed to persist manifest cache class=${e.javaClass.simpleName}")
             }
         }
     }
@@ -302,46 +315,77 @@ class AddonRepositoryImpl(
         }
         .stateIn(syncScope, SharingStarted.Eagerly, emptyList<Addon>())
 
-    override fun getInstalledAddons(): Flow<List<Addon>> = malCatalog?.let { catalog ->
-        combine(installedAddonsFlow, catalog.addon) { installed, builtin -> installed + listOfNotNull(builtin) }
-    } ?: installedAddonsFlow
+    override fun getInstalledAddons(): Flow<List<Addon>> = combine(installedAddonsFlow,
+        malCatalog?.addon ?: kotlinx.coroutines.flow.flowOf(null),
+        simklCatalog?.addon ?: kotlinx.coroutines.flow.flowOf(null),
+        ratedKidsCatalog?.addon ?: kotlinx.coroutines.flow.flowOf(null)) { installed, mal, simkl, kids ->
+        installed + listOfNotNull(mal, simkl, kids)
+    }
 
-    override suspend fun fetchAddon(baseUrl: String): NetworkResult<Addon> {
-        val cleanBaseUrl = canonicalizeUrl(baseUrl)
+    override suspend fun fetchAddon(baseUrl: String): NetworkResult<Addon> = fetchAddonData(baseUrl, false)
+
+    suspend fun forceRefreshAddon(baseUrl: String): NetworkResult<Addon> = fetchAddonData(baseUrl, true)
+
+    private suspend fun fetchAddonData(baseUrl: String, forceRefresh: Boolean): NetworkResult<Addon> {
+        // A cold background job must not publish over a still-loading last-valid identity.
+        manifestCacheLoadJob.join()
+        val canonical = canonicalizeUrl(baseUrl)
+        return providerFetchLocks[(canonical.hashCode() and Int.MAX_VALUE) % providerFetchLocks.size].withLock {
+            fetchAddonDataLocked(canonical, forceRefresh)
+        }
+    }
+
+    private suspend fun fetchAddonDataLocked(cleanBaseUrl: String, forceRefresh: Boolean): NetworkResult<Addon> {
         if (getCachedManifest(cleanBaseUrl)?.id?.startsWith(ExpressAddonAdapter.ID_PREFIX) == true) {
-            return fetchExpressAddon(cleanBaseUrl)
+            return fetchExpressAddon(cleanBaseUrl, forceRefresh)
         }
         val queryStart = cleanBaseUrl.indexOf('?')
         val basePath = if (queryStart >= 0) cleanBaseUrl.substring(0, queryStart).trimEnd('/') else cleanBaseUrl
         val baseQuery = if (queryStart >= 0) cleanBaseUrl.substring(queryStart) else ""
         val manifestUrl = "$basePath/manifest.json$baseQuery"
 
-        return when (val result = safeApiCall(context) { api.getManifest(manifestUrl) }) {
+        val response = if (providerManifestClient == null) safeApiCall(context) { api.getManifest(manifestUrl) }
+        else try { NetworkResult.Success(providerManifestClient.fetch(manifestUrl)) }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { NetworkResult.Error("Provider manifest is unavailable or invalid.") }
+        return when (val result = response) {
             is NetworkResult.Success -> {
                 if (result.data.resources.isEmpty() && result.data.catalogs.isEmpty() && expressAdapter != null) {
-                    val express = fetchExpressAddon(cleanBaseUrl)
+                    val express = fetchExpressAddon(cleanBaseUrl, forceRefresh)
                     if (express is NetworkResult.Success) return express
                 }
                 val addon = result.data.toDomain(cleanBaseUrl)
+                val previous = getCachedManifest(cleanBaseUrl)
+                if (previous != null && previous.id != addon.id) return NetworkResult.Error("Provider identity changed; the last valid version was kept.", IDENTITY_CHANGED_CODE)
                 if (putCachedManifestIfChanged(cleanBaseUrl, addon)) {
-                    Log.d(TAG, "Updated addon manifest host=${cleanBaseUrl.urlForLog()} version=${addon.version} configVersion=${addon.configVersion}")
+                    Log.d(TAG, "Updated addon manifest host=${cleanBaseUrl.urlForLog()}")
                 }
                 NetworkResult.Success(addon)
             }
             is NetworkResult.Error -> {
                 Log.w(TAG, "Failed to fetch addon manifest host=${manifestUrl.urlForLog()} code=${result.code}")
-                if (expressAdapter != null) fetchExpressAddon(cleanBaseUrl) else result
+                if (expressAdapter != null) fetchExpressAddon(cleanBaseUrl, forceRefresh) else result
             }
             NetworkResult.Loading -> NetworkResult.Loading
         }
     }
 
-    private suspend fun fetchExpressAddon(url: String): NetworkResult<Addon> {
-        val result = expressAdapter?.discover(url) ?: return NetworkResult.Error("Express source support is unavailable.")
+    private suspend fun fetchExpressAddon(url: String, forceRefresh: Boolean): NetworkResult<Addon> {
+        val result = expressAdapter?.discover(url, forceRefresh) ?: return NetworkResult.Error("Express source support is unavailable.")
+        if (result is NetworkResult.Success) {
+            val previous = getCachedManifest(url)
+            if (previous != null && previous.id != result.data.id) return NetworkResult.Error("Provider identity changed; the last valid version was kept.", IDENTITY_CHANGED_CODE)
+        }
         if (result is NetworkResult.Success && putCachedManifestIfChanged(url, result.data)) {
             Log.d(TAG, "Updated Express source configuration host=${url.urlForLog()}")
         }
         return result
+    }
+
+    suspend fun addAddonIfCurrent(url: String, profileId: Int, selectionRevision: Long, stillCurrent: () -> Boolean = { true }): Boolean {
+        val saved = preferences.addAddonIfCurrent(canonicalizeUrl(url), profileId, selectionRevision, stillCurrent)
+        if (saved) triggerRemoteSync()
+        return saved
     }
 
     override suspend fun addAddon(url: String) {

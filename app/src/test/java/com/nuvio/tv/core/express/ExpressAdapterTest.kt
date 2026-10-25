@@ -119,7 +119,9 @@ class ExpressAdapterTest {
     @Test
     fun `unsupported expression is counted and never executed or requested`() = runTest {
         MockWebServer().use { server ->
-            server.enqueue(json("""{"_manifest":{"name":"Unsupported"},"example":{"base_url":"${server.url("/search")}","movie":{"query":"/?q={query}","keywords":"{title}"},"html_parser":{"row":"doc.querySelectorAll('tr')","title":"eval('downloaded code')"}}}"""))
+            // A compatible series provider keeps this mixed package valid; the movie expression
+            // still must be counted/skipped without executing or issuing a request.
+            server.enqueue(json("""{"_manifest":{"name":"Mixed declarative"},"compatible":{"base_url":"${server.url("/unused")}","episode":{"query":"/?q={query}","keywords":"{title}"},"json_format":{"results":"streams","hash":"infoHash"}},"example":{"base_url":"${server.url("/search")}","movie":{"query":"/?q={query}","keywords":"{title}"},"html_parser":{"row":"doc.querySelectorAll('tr')","title":"eval('downloaded code')"}}}"""))
             val adapter = adapter(server)
             val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
             assertTrue(withContext(Dispatchers.IO) { adapter.search(addon, ExpressMediaRequest("movie", "tt123")) } is NetworkResult.Error)
@@ -207,11 +209,16 @@ class ExpressAdapterTest {
 
 
     @Test
-    fun `malformed provider query does not cancel healthy sources`() = runTest {
+    fun `one provider response failure does not cancel healthy sources`() = runTest {
         MockWebServer().use { server ->
-            val bad = """{"name":"Broken definition","base_url":"${server.url("/unused")}","movie":{"query":"/?q={query}","keywords":{"unexpected":"object"}},"json_format":{"results":"streams","hash":"infoHash"}}"""
-            server.enqueue(json("""{"_manifest":{"name":"Mixed package"},"bad":$bad,"healthy":${jsonDefinition(server.url("/backend").toString())}}"""))
-            server.enqueue(json("""{"streams":[{"infoHash":"$HASH","fileIdx":2,"behaviorHints":{"filename":"Big.Buck.Bunny.2008.mkv"}}]}"""))
+            val bad = jsonDefinition(server.url("/broken").toString())
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse = when {
+                    request.path == "/config" -> json("""{"_manifest":{"name":"Mixed package"},"bad":$bad,"healthy":${jsonDefinition(server.url("/backend").toString())}}""")
+                    request.path?.startsWith("/broken/") == true -> MockResponse().setResponseCode(500)
+                    else -> json("""{"streams":[{"infoHash":"$HASH","fileIdx":2,"behaviorHints":{"filename":"Big.Buck.Bunny.2008.mkv"}}]}""")
+                }
+            }
             val adapter = adapter(server, ExpressMedia("movie", "Big Buck Bunny", "tt1254207", 2008, null, null))
             val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
             val result = withContext(Dispatchers.IO) {
@@ -221,7 +228,7 @@ class ExpressAdapterTest {
             assertEquals(2, result.data.single().fileIdx)
             assertEquals(1, adapter.lastReport(addon)?.failed)
             assertEquals(1, adapter.lastReport(addon)?.completed)
-            assertEquals(2, server.requestCount)
+            assertEquals(3, server.requestCount)
         }
     }
 

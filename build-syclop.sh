@@ -89,14 +89,29 @@ if [ "$run_tests" -eq 1 ]; then
     --tests 'com.nuvio.tv.core.auth.SyclopGuestStartupTest' \
     --tests 'com.nuvio.tv.core.logging.LogDiagnosticsTest' \
     --tests 'com.nuvio.tv.core.debrid.*' \
+    --tests 'com.nuvio.tv.core.anime.*' \
+    --tests 'com.nuvio.tv.data.remote.dto.AllDebridMagnetCollectionAdapterTest' \
+    --tests 'com.nuvio.tv.core.mediafacts.*' \
+    --tests 'com.nuvio.tv.core.providers.*' \
+    --tests 'com.nuvio.tv.updater.SelfUpdateDisabledPolicyTest' \
     --tests 'com.nuvio.tv.core.cloud.RealDebridCloudLibraryProviderApiTest' \
     --tests 'com.nuvio.tv.data.local.DebridCredentialStorageTest' \
+    --tests 'com.nuvio.tv.data.local.DebridFallbackPreferenceTest' \
+    --tests 'com.nuvio.tv.data.local.TrailerSettingsProfileDefaultsTest' \
+    --tests 'com.nuvio.tv.data.local.AddonInstallCommitGuardTest' \
+    --tests 'com.nuvio.tv.data.local.AddonProfileCatalogSnapshotTest' \
+    --tests 'com.nuvio.tv.data.local.ContinueWatchingCacheCodecTest' \
+    --tests 'com.nuvio.tv.data.local.ContinueWatchingEnrichmentCacheTest' \
+    --tests 'com.nuvio.tv.core.sync.WatchStateMutationPersistenceTest' \
+    --tests 'com.nuvio.tv.core.sync.WatchStateMutationStoreTest' \
+    --tests 'com.nuvio.tv.data.repository.AddonManifestPlaceholderTest' \
     --tests 'com.nuvio.tv.core.trakt.*' \
     --tests 'com.nuvio.tv.data.local.TraktAuthDataStoreTest' \
     --tests 'com.nuvio.tv.data.local.TraktCredentialStorageTest' \
     --tests 'com.nuvio.tv.data.repository.TraktAuthServiceTest' \
     --tests 'com.nuvio.tv.data.mal.*' \
     --tests 'com.nuvio.tv.data.simkl.*' \
+    --tests 'com.nuvio.tv.data.catalog.*' \
     --tests 'com.nuvio.tv.core.streams.*' \
     --tests 'com.nuvio.tv.core.torrent.*' \
     --tests 'com.nuvio.tv.core.plugin.RemoteExecutablePluginPolicyTest' \
@@ -110,8 +125,18 @@ if [ "$run_tests" -eq 1 ]; then
     --tests 'com.nuvio.tv.core.backup.*' \
     --tests 'com.nuvio.tv.core.player.ExternalPlayer*' \
     --tests 'com.nuvio.tv.core.player.ExternalAutoNext*' \
+    --tests 'com.nuvio.tv.core.player.ExternalHandoffTrackerScopeTest' \
+    --tests 'com.nuvio.tv.core.player.MpvInfoSnapshotTest' \
+    --tests 'com.nuvio.tv.ui.screens.player.MpvStreamInfoDataTest' \
+    --tests 'com.nuvio.tv.ui.screens.player.PlayerSourcePanelPresentationTest' \
+    --tests 'com.nuvio.tv.ui.screens.player.PlayerSourcePanelMetadataTest' \
     --tests 'com.nuvio.tv.ui.screens.player.PlayerInitialBufferingTimeoutPolicyTest' \
     --tests 'com.nuvio.tv.ui.screens.settings.SettingsStructureTest' \
+    --tests 'com.nuvio.tv.ui.screens.home.*' \
+    --tests 'com.nuvio.tv.core.initialization.*' \
+    --tests 'com.nuvio.tv.data.repository.TraktProgressInitializationTest' \
+    --tests 'com.nuvio.tv.data.repository.TraktProgressServiceRefreshTest' \
+    --tests 'com.nuvio.tv.data.repository.TraktProgressServiceFailureTest' \
     --tests 'com.nuvio.tv.core.deeplink.DeepLinkParser*' \
     --tests 'com.nuvio.tv.data.local.MDBListRatingCredentialStorage*' \
     --tests 'com.nuvio.tv.ui.screens.settings.MDBListSettingsViewModel*' \

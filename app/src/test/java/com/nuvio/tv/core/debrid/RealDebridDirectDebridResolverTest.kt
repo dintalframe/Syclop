@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.Response
@@ -114,6 +115,89 @@ class RealDebridDirectDebridResolverTest {
         assertEquals(DirectDebridResolveResult.Stale, resolver(api).resolve(stream(7), null, null))
         assertEquals(0, api.deleteCalls)
         assertEquals(0, api.unrestrictCalls)
+    }
+
+    @Test
+    fun `initial processing without selectable files reports not cached without selecting polling or deleting`() = runTest {
+        for (status in listOf("magnet_conversion", "queued", "downloading", "compressing", "uploading")) {
+            val api = FakeRealDebridApi(
+                addResponse = Response.success(201, RealDebridAddTorrentDto(id = "preserved_cloud_job")),
+                infoResponses = mutableListOf(Response.success(RealDebridTorrentInfoDto(status = status, files = emptyList())))
+            )
+            assertEquals(DirectDebridResolveResult.NotCached, resolver(api).resolve(stream(7), null, null))
+            assertEquals(1, api.addCalls)
+            assertEquals(1, api.infoCalls)
+            assertEquals(0, api.selectCalls)
+            assertEquals(0, api.unrestrictCalls)
+            assertEquals(0, api.deleteCalls)
+        }
+    }
+
+    @Test
+    fun `initial downloaded waiting selection unknown and error states do not hide missing files as processing`() = runTest {
+        for (status in listOf("downloaded", "waiting_files_selection", "magnet_error", "error", "virus", "dead", "unexpected", null)) {
+            val api = FakeRealDebridApi(
+                addResponse = Response.success(201, RealDebridAddTorrentDto(id = "preserved_cloud_job")),
+                infoResponses = mutableListOf(Response.success(RealDebridTorrentInfoDto(status = status)))
+            )
+            assertEquals(DirectDebridResolveResult.Stale, resolver(api).resolve(stream(7), null, null))
+            assertEquals(1, api.infoCalls)
+            assertEquals(0, api.selectCalls)
+            assertEquals(0, api.unrestrictCalls)
+            assertEquals(0, api.deleteCalls)
+        }
+    }
+
+    @Test
+    fun `present file mismatch or ambiguous names remain terminal even during processing`() = runTest {
+        val candidates = listOf(
+            listOf(RealDebridTorrentFileDto(id = 7, path = "/other.mkv")),
+            listOf(RealDebridTorrentFileDto(id = 7, path = "/pack-a/right.mkv"),
+                RealDebridTorrentFileDto(id = 8, path = "/pack-b/right.mkv"))
+        )
+        for (status in listOf("downloaded", "magnet_conversion")) for (files in candidates) {
+            val api = FakeRealDebridApi(
+                addResponse = Response.success(201, RealDebridAddTorrentDto(id = "preserved_cloud_job")),
+                infoResponses = mutableListOf(Response.success(RealDebridTorrentInfoDto(status = status, files = files)))
+            )
+            assertEquals(DirectDebridResolveResult.Stale, resolver(api).resolve(stream(0), null, null))
+            assertEquals(1, api.infoCalls)
+            assertEquals(0, api.selectCalls)
+            assertEquals(0, api.unrestrictCalls)
+            assertEquals(0, api.deleteCalls)
+        }
+    }
+
+    @Test
+    fun `RD diagnostics retain only fixed labels counts and booleans`() {
+        val privateValue = "private-token https://private.invalid/id secret-file.mkv"
+        val metadata = stream(7).clientResolve!!.copy(filename = privateValue, magnetUri = privateValue)
+        val info = RealDebridTorrentInfoDto(id = privateValue, filename = privateValue, status = privateValue,
+            files = listOf(RealDebridTorrentFileDto(id = 1234567, path = "/private/secret-file.mkv", selected = 1)),
+            links = listOf(privateValue))
+        val fields = RealDebridResolveDiagnostics.fields(privateValue, privateValue, 9999, info, metadata, null, null)
+        assertTrue(fields.contains("stage=unknown result=unknown httpStatus=none status=unknown"))
+        assertTrue(fields.contains("fileCount=1 playableCount=1 selectedCount=1 linkCount=1"))
+        assertTrue(fields.contains("filenameHint=true rawFilenameHint=false fileIndexHint=true episodeHint=false"))
+        for (fragment in listOf(privateValue, "private-token", "private.invalid", "secret-file", "1234567"))
+            assertFalse(fields.contains(fragment))
+        val known = RealDebridResolveDiagnostics.fields("file_select", "not_cached", 200,
+            info.copy(status = "magnet_conversion"), metadata, null, null)
+        assertTrue(known.contains("stage=file_select result=not_cached httpStatus=200 status=magnet_conversion"))
+    }
+
+    @Test
+    fun `HTTP 451 add refusal is a service error without metadata requests or cloud deletion`() = runTest {
+        val api = FakeRealDebridApi(
+            addResponse = Response.error(451, "restricted".toResponseBody()),
+            infoResponses = mutableListOf()
+        )
+        assertEquals(DirectDebridResolveResult.Error, resolver(api).resolve(stream(7), null, null))
+        assertEquals(1, api.addCalls)
+        assertEquals(0, api.infoCalls)
+        assertEquals(0, api.selectCalls)
+        assertEquals(0, api.unrestrictCalls)
+        assertEquals(0, api.deleteCalls)
     }
 
     private fun resolver(api: RealDebridApi): RealDebridDirectDebridResolver {

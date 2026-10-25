@@ -2,7 +2,6 @@ package com.nuvio.tv.core.sync
 
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import com.google.gson.Gson
 import com.nuvio.tv.data.local.ProfileDataStoreFactory
 import com.nuvio.tv.data.mediaserver.ServerItemRef
 import com.nuvio.tv.domain.model.WatchProgress
@@ -13,16 +12,6 @@ import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private data class PendingProgressUpsert(
-    val key: String,
-    val progress: WatchProgress
-)
-
-private data class PendingWatchedUpsert(
-    val key: WatchedMutationKey,
-    val item: WatchedItem
-)
-
 @Singleton
 class WatchStateMutationStore @Inject constructor(
     private val factory: ProfileDataStoreFactory
@@ -31,7 +20,6 @@ class WatchStateMutationStore @Inject constructor(
         private const val FEATURE = "watch_state_pending_mutations"
     }
 
-    private val gson = Gson()
     private val progressUpsertsKey = stringSetPreferencesKey("progress_upserts")
     private val progressDeletesKey = stringSetPreferencesKey("progress_deletes")
     private val watchedUpsertsKey = stringSetPreferencesKey("watched_upserts")
@@ -51,7 +39,7 @@ class WatchStateMutationStore @Inject constructor(
                 pending[key] = progress
             }
             preferences[progressUpsertsKey] = pending.map { (key, progress) ->
-                gson.toJson(PendingProgressUpsert(key, progress))
+                PendingWatchMutationJson.writeProgress(key, progress)
             }.toSet()
             preferences[progressDeletesKey] = preferences[progressDeletesKey].orEmpty() - entries.keys
         }
@@ -63,7 +51,7 @@ class WatchStateMutationStore @Inject constructor(
         store(profileId).edit { preferences ->
             val pending = parseProgressUpserts(preferences[progressUpsertsKey]) - normalized
             preferences[progressUpsertsKey] = pending.map { (key, progress) ->
-                gson.toJson(PendingProgressUpsert(key, progress))
+                PendingWatchMutationJson.writeProgress(key, progress)
             }.toSet()
             preferences[progressDeletesKey] = preferences[progressDeletesKey].orEmpty() + normalized
         }
@@ -89,7 +77,7 @@ class WatchStateMutationStore @Inject constructor(
                 if (pending[key] == progress) pending.remove(key)
             }
             preferences[progressUpsertsKey] = pending.map { (key, progress) ->
-                gson.toJson(PendingProgressUpsert(key, progress))
+                PendingWatchMutationJson.writeProgress(key, progress)
             }.toSet()
         }
     }
@@ -110,12 +98,12 @@ class WatchStateMutationStore @Inject constructor(
                 pending[item.mutationKey()] = item
             }
             preferences[watchedUpsertsKey] = pending.map { (key, item) ->
-                gson.toJson(PendingWatchedUpsert(key, item))
+                PendingWatchMutationJson.writeWatched(key, item)
             }.toSet()
             val upsertKeys = items.mapTo(mutableSetOf(), WatchedItem::mutationKey)
             preferences[watchedDeletesKey] = parseWatchedDeletes(preferences[watchedDeletesKey])
                 .minus(upsertKeys)
-                .map(gson::toJson)
+                .map(PendingWatchMutationJson::writeWatchedKey)
                 .toSet()
         }
     }
@@ -126,10 +114,10 @@ class WatchStateMutationStore @Inject constructor(
         store(profileId).edit { preferences ->
             val pending = parseWatchedUpserts(preferences[watchedUpsertsKey]) - normalized
             preferences[watchedUpsertsKey] = pending.map { (key, item) ->
-                gson.toJson(PendingWatchedUpsert(key, item))
+                PendingWatchMutationJson.writeWatched(key, item)
             }.toSet()
             preferences[watchedDeletesKey] = (parseWatchedDeletes(preferences[watchedDeletesKey]) + normalized)
-                .map(gson::toJson)
+                .map(PendingWatchMutationJson::writeWatchedKey)
                 .toSet()
         }
     }
@@ -152,7 +140,7 @@ class WatchStateMutationStore @Inject constructor(
                 if (pending[key] == item) pending.remove(key)
             }
             preferences[watchedUpsertsKey] = pending.map { (key, item) ->
-                gson.toJson(PendingWatchedUpsert(key, item))
+                PendingWatchMutationJson.writeWatched(key, item)
             }.toSet()
         }
     }
@@ -165,7 +153,7 @@ class WatchStateMutationStore @Inject constructor(
         store(profileId).edit { preferences ->
             preferences[watchedDeletesKey] = parseWatchedDeletes(preferences[watchedDeletesKey])
                 .minus(keys.toSet())
-                .map(gson::toJson)
+                .map(PendingWatchMutationJson::writeWatchedKey)
                 .toSet()
         }
     }
@@ -182,21 +170,12 @@ class WatchStateMutationStore @Inject constructor(
             !preferences[watchedDeletesKey].isNullOrEmpty()
     }
 
-    private fun parseProgressUpserts(raw: Set<String>?): Map<String, WatchProgress> {
-        return raw.orEmpty().mapNotNull { json ->
-            runCatching { gson.fromJson(json, PendingProgressUpsert::class.java) }.getOrNull()
-        }.associate { it.key to it.progress }
-    }
+    private fun parseProgressUpserts(raw: Set<String>?): Map<String, WatchProgress> =
+        raw.orEmpty().mapNotNull(PendingWatchMutationJson::readProgress).toMap()
 
-    private fun parseWatchedUpserts(raw: Set<String>?): Map<WatchedMutationKey, WatchedItem> {
-        return raw.orEmpty().mapNotNull { json ->
-            runCatching { gson.fromJson(json, PendingWatchedUpsert::class.java) }.getOrNull()
-        }.associate { it.key to it.item }
-    }
+    private fun parseWatchedUpserts(raw: Set<String>?): Map<WatchedMutationKey, WatchedItem> =
+        raw.orEmpty().mapNotNull(PendingWatchMutationJson::readWatched).toMap()
 
-    private fun parseWatchedDeletes(raw: Set<String>?): Set<WatchedMutationKey> {
-        return raw.orEmpty().mapNotNullTo(mutableSetOf()) { json ->
-            runCatching { gson.fromJson(json, WatchedMutationKey::class.java) }.getOrNull()
-        }
-    }
+    private fun parseWatchedDeletes(raw: Set<String>?): Set<WatchedMutationKey> =
+        raw.orEmpty().mapNotNullTo(mutableSetOf(), PendingWatchMutationJson::readWatchedKey)
 }

@@ -133,7 +133,8 @@ import com.nuvio.tv.domain.model.TraktCommentReview
 import com.nuvio.tv.domain.model.Video
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.ui.components.ErrorState
-import com.nuvio.tv.ui.components.MetaDetailsSkeleton
+import com.nuvio.tv.ui.components.SyclopBrandAnimation
+import com.nuvio.tv.ui.components.SyclopBrandState
 import com.nuvio.tv.ui.components.NuvioDialog
 import com.nuvio.tv.ui.components.PlayManualOverrideDialog
 import com.nuvio.tv.ui.components.SynopsisOverlay
@@ -679,7 +680,21 @@ fun MetaDetailsScreen(
                             alignment = Alignment.TopEnd
                         )
                     }
-                    MetaDetailsSkeleton(backdropAware = !heroBackdropUrl.isNullOrBlank())
+                    Column(
+                        modifier = Modifier.fillMaxSize().background(
+                            NuvioTheme.colors.Background.copy(alpha = if (heroBackdropUrl.isNullOrBlank()) 1f else 0.84f)
+                        ),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        SyclopBrandAnimation(SyclopBrandState.Loading)
+                        Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
+                        Text(
+                            text = stringResource(R.string.discover_loading),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = NuvioTheme.extendedColors.textSecondary
+                        )
+                    }
                 }
             }
             uiState.error != null -> {

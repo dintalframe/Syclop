@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text as CoreText
 import androidx.compose.runtime.Composable
@@ -40,12 +42,15 @@ fun ErrorState(
     ).annotated
 
     Column(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        SyclopBrandAnimation(SyclopBrandState.Error)
+        Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
         CoreText(
             text = displayMessage,
+            modifier = Modifier.widthIn(max = 640.dp),
             style = MaterialTheme.typography.bodyLarge,
             color = NuvioTheme.colors.TextSecondary,
             textAlign = TextAlign.Center
@@ -110,7 +115,8 @@ private data class ErrorStateStrings(
     val noAddonForIdPrefix: String,
     val noSupportedMetadataFix: String,
     val triedMetaAddonsPrefix: String,
-    val triedMetaAddonsFix: String,
+    val metadataAggregateIssue: String,
+    val metadataAggregateRetry: String,
     val missingMetadataForIdIssue: String,
     val missingMetadataForIdFix: String,
     val addonUnreachableIssue: String,
@@ -138,7 +144,8 @@ private fun rememberErrorStateStrings(): ErrorStateStrings {
         noAddonForIdPrefix = stringResource(R.string.error_state_prefix_no_addon_for_id),
         noSupportedMetadataFix = stringResource(R.string.error_state_fix_no_supported_metadata),
         triedMetaAddonsPrefix = stringResource(R.string.error_state_prefix_tried_meta_addons),
-        triedMetaAddonsFix = stringResource(R.string.error_state_fix_tried_meta_addons),
+        metadataAggregateIssue = stringResource(R.string.syclop_error_metadata_summary),
+        metadataAggregateRetry = stringResource(R.string.syclop_error_metadata_retry),
         missingMetadataForIdIssue = stringResource(R.string.error_state_issue_missing_metadata_for_id),
         missingMetadataForIdFix = stringResource(R.string.error_state_fix_missing_metadata_for_id),
         addonUnreachableIssue = stringResource(R.string.error_state_issue_addon_unreachable),
@@ -166,7 +173,8 @@ private fun defaultErrorStateStrings(): ErrorStateStrings {
         noAddonForIdPrefix = "No installed addon could provide metadata for id=",
         noSupportedMetadataFix = "install or update an addon that supports this content type, then retry.",
         triedMetaAddonsPrefix = "Tried meta addons:",
-        triedMetaAddonsFix = "install an addon that supports this id, or reconfigure/update the addon and retry.",
+        metadataAggregateIssue = "Title details could not be loaded.",
+        metadataAggregateRetry = "Retry in a moment, or open this title from another catalog.",
         missingMetadataForIdIssue = "does not have metadata for this id",
         missingMetadataForIdFix = "open this id from a different addon, disable \"Prefer external meta addon\", or check that the addon supports this id.",
         addonUnreachableIssue = "could not be reached",
@@ -195,6 +203,16 @@ private fun buildErrorStatePresentation(
         )
     }
 
+    // The aggregate includes lookup IDs and per-provider diagnostics, not useful TV copy.
+    // Its production prefix is English; also recognize the existing translated prefix.
+    if (trimmed.startsWith("Tried meta addons:", ignoreCase = true) ||
+        trimmed.startsWith(strings.triedMetaAddonsPrefix, ignoreCase = true)) {
+        return ErrorStatePresentation(
+            text = strings.metadataAggregateIssue + "\n\n" + strings.metadataAggregateRetry,
+            boldRanges = emptyList()
+        )
+    }
+
     val addonName = trimmed.substringBefore(':', missingDelimiterValue = "").trim()
         .takeIf { it.isNotBlank() && it.length < trimmed.length }
     val reason = trimmed.substringAfter(':', missingDelimiterValue = trimmed).trim()
@@ -216,13 +234,6 @@ private fun buildErrorStatePresentation(
             messageWithFix(
                 issue = trimmed,
                 fix = strings.noSupportedMetadataFix
-            )
-        }
-
-        trimmed.startsWith(strings.triedMetaAddonsPrefix, ignoreCase = true) -> {
-            messageWithFix(
-                issue = trimmed,
-                fix = strings.triedMetaAddonsFix
             )
         }
 
@@ -276,14 +287,6 @@ private fun buildErrorStatePresentation(
     }
 
     val boldRanges = linkedSetOf<IntRange>()
-
-    val aggregatePrefix = "${strings.triedMetaAddonsPrefix} "
-    if (displayMessage.startsWith(aggregatePrefix)) {
-        val listStart = aggregatePrefix.length
-        displayMessage.indexOf('.', startIndex = listStart)
-            .takeIf { it > listStart }
-            ?.let { boldRanges += listStart until it }
-    }
 
     displayMessage.indexOf(':')
         .takeIf {

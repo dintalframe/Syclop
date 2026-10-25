@@ -56,6 +56,7 @@ class DebridSettingsDataStore @Inject constructor(
     private val allDebridApiKeyKey = stringPreferencesKey("all_debrid_api_key")
     private val realDebridOAuthKey = stringPreferencesKey("real_debrid_oauth_state")
     private val preferredResolverProviderIdKey = stringPreferencesKey("preferred_resolver_provider_id")
+    private val connectedServiceFallbackEnabledKey = booleanPreferencesKey("connected_service_fallback_enabled")
     private val instantPlaybackPreparationLimitKey = intPreferencesKey("instant_playback_preparation_limit")
     private val streamMaxResultsKey = intPreferencesKey("stream_max_results")
     private val streamSortModeKey = stringPreferencesKey("stream_sort_mode")
@@ -64,6 +65,7 @@ class DebridSettingsDataStore @Inject constructor(
     private val streamHdrFilterKey = stringPreferencesKey("stream_hdr_filter")
     private val streamCodecFilterKey = stringPreferencesKey("stream_codec_filter")
     private val bitrateOrderMigrationKey = booleanPreferencesKey("stream_bitrate_order_v1")
+    private val selectedSizeOrderMigrationKey = booleanPreferencesKey("stream_size_order_v2")
     private val streamPreferencesKey = stringPreferencesKey("stream_preferences")
     private val streamNameTemplateKey = stringPreferencesKey("debrid_stream_name_template")
     private val streamDescriptionTemplateKey = stringPreferencesKey("debrid_stream_description_template")
@@ -103,6 +105,7 @@ class DebridSettingsDataStore @Inject constructor(
                     realDebridApiKey = keys[DebridProviders.REAL_DEBRID_ID].orEmpty(),
                     allDebridApiKey = keys[DebridProviders.ALL_DEBRID_ID].orEmpty()
                 ),
+                connectedServiceFallbackEnabled = prefs[connectedServiceFallbackEnabledKey] ?: true,
                 instantPlaybackPreparationLimit = normalizeDebridInstantPlaybackPreparationLimit(
                     prefs[instantPlaybackPreparationLimitKey] ?: 0
                 ),
@@ -144,6 +147,10 @@ class DebridSettingsDataStore @Inject constructor(
     suspend fun setPreferredResolverProviderId(providerId: String) {
         val normalized = DebridProviders.byId(providerId)?.id.orEmpty()
         store().edit { it[preferredResolverProviderIdKey] = normalized }
+    }
+
+    suspend fun setConnectedServiceFallbackEnabled(enabled: Boolean) {
+        store().edit { it[connectedServiceFallbackEnabledKey] = enabled }
     }
 
     suspend fun setProviderApiKey(providerId: String, apiKey: String) {
@@ -403,10 +410,10 @@ class DebridSettingsDataStore @Inject constructor(
 
     /** The approved default changes only sort order, once per viewer; later choices remain. */
     private suspend fun migrateBitrateOrder(profileId: Int, snapshot: Preferences): Preferences {
-        if (snapshot[bitrateOrderMigrationKey] == true) return snapshot
+        if (snapshot[bitrateOrderMigrationKey] == true && snapshot[selectedSizeOrderMigrationKey] == true) return snapshot
         var result = snapshot
         store(profileId).edit { current ->
-            if (current[bitrateOrderMigrationKey] != true) {
+            if (current[bitrateOrderMigrationKey] != true || current[selectedSizeOrderMigrationKey] != true) {
                 val existing = parseStreamPreferences(current[streamPreferencesKey]) ?: legacyStreamPreferences(
                     current[streamMaxResultsKey] ?: 0,
                     enumValueOrDefault(current[streamSortModeKey], DebridStreamSortMode.DEFAULT),
@@ -414,9 +421,12 @@ class DebridSettingsDataStore @Inject constructor(
                     enumValueOrDefault(current[streamDolbyVisionFilterKey], DebridStreamFeatureFilter.ANY),
                     enumValueOrDefault(current[streamHdrFilterKey], DebridStreamFeatureFilter.ANY),
                     enumValueOrDefault(current[streamCodecFilterKey], DebridStreamCodecFilter.ANY))
-                current[streamPreferencesKey] = gson.toJson(existing.copy(sortCriteria =
-                    DebridStreamSortCriterion.bitrateFirstOrder(existing.sortCriteria.ifEmpty { DebridStreamSortCriterion.defaultOrder })))
+                val criteria = if (current[bitrateOrderMigrationKey] != true) {
+                    DebridStreamSortCriterion.bitrateFirstOrder(existing.sortCriteria.ifEmpty { DebridStreamSortCriterion.defaultOrder })
+                } else DebridStreamSortCriterion.upgradeLegacySizeTie(existing.sortCriteria)
+                if (criteria != existing.sortCriteria) current[streamPreferencesKey] = gson.toJson(existing.copy(sortCriteria = criteria))
                 current[bitrateOrderMigrationKey] = true
+                current[selectedSizeOrderMigrationKey] = true
             }
             result = current.toPreferences()
         }

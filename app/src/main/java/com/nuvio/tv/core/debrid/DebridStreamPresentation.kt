@@ -17,11 +17,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class DebridStreamPresentation @Inject constructor(
+class DebridStreamPresentation internal constructor(
     private val dataStore: DebridSettingsDataStore,
     private val streamBadgeSettingsDataStore: StreamBadgeSettingsDataStore,
-    private val formatter: DebridStreamFormatter
+    private val formatter: DebridStreamFormatter,
+    private val nativeGrant: (String) -> Boolean
 ) {
+    @Inject constructor(dataStore: DebridSettingsDataStore, streamBadgeSettingsDataStore: StreamBadgeSettingsDataStore,
+        formatter: DebridStreamFormatter) : this(dataStore, streamBadgeSettingsDataStore, formatter,
+        { com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(it) })
     private val badgeFilterCache = AtomicReference<Pair<StreamBadgeRules, List<CompiledStreamBadgeFilter>>?>()
 
     suspend fun apply(
@@ -44,12 +48,13 @@ class DebridStreamPresentation @Inject constructor(
         streamBadgeRules: StreamBadgeRules = StreamBadgeRules(),
         includeBadgeMatches: Boolean = true
     ): List<AddonStreams> {
-        if (!settings.canResolvePlayableLinks) return groups
+        val eligibleGroups = groups.map { group -> group.copy(streams = group.streams.filter { NativeDebridSourceCards.eligible(it, settings, nativeGrant) }) }
+        if (!settings.canResolvePlayableLinks) return eligibleGroups
         val badgeFilters by lazy {
             if (includeBadgeMatches) getBadgeFilters(streamBadgeRules) else emptyList()
         }
-        val visibleGroups = groups.map { group -> group.copy(streams = group.streams
-            .filterNot { it.isInactiveResolverStream(settings) || it.isUncachedDebridStream() }) }
+        val visibleGroups = eligibleGroups.map { group -> group.copy(streams = group.streams
+            .filterNot { it.isUncachedDebridStream() }) }
         val managed = visibleGroups.flatMap { it.streams }.filter { it.isManagedDebridStream(settings) }
         val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits = false)
         val presented = ranked.associate { (stream, facts) -> stream to formatter.format(stream, settings, badgeFilters, facts) }
@@ -61,10 +66,11 @@ class DebridStreamPresentation @Inject constructor(
 
     /** Used for the flattened All list and autoplay, before pagination. */
     fun rankAll(streams: List<Stream>, settings: DebridSettings, enforceLimits: Boolean = true): List<Stream> {
-        if (!settings.canResolvePlayableLinks) return streams
-        val managed = streams.filter { it.isManagedDebridStream(settings) }
+        val eligible = streams.filter { NativeDebridSourceCards.eligible(it, settings, nativeGrant) }
+        if (!settings.canResolvePlayableLinks) return eligible
+        val managed = eligible.filter { it.isManagedDebridStream(settings) }
         val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits).map { it.first }
-        return ranked + streams.filterNot { it.isManagedDebridStream(settings) }
+        return ranked + eligible.filterNot { it.isManagedDebridStream(settings) }
     }
 
     private fun getBadgeFilters(rules: StreamBadgeRules): List<CompiledStreamBadgeFilter> {
@@ -89,9 +95,5 @@ class DebridStreamPresentation @Inject constructor(
             DebridProviders.byId(debridCacheStatus?.providerId)?.supports(DebridProviderCapability.LocalTorrentCacheCheck) == true &&
             debridCacheStatus?.state == StreamDebridCacheState.NOT_CACHED
 
-    private fun Stream.isInactiveResolverStream(settings: DebridSettings): Boolean {
-        val streamProviderId = DebridProviders.byId(clientResolve?.service)?.id ?: return false
-        val activeProviderId = settings.activeResolverProviderId ?: return false
-        return isDirectDebrid() && streamProviderId != activeProviderId
-    }
+
 }

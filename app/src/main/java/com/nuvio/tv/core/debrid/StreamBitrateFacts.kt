@@ -24,6 +24,13 @@ object StreamBitrateFacts {
         val text = listOfNotNull(stream.title, stream.description, stream.name).joinToString(" ").take(20_000)
         return claimPattern.find(text)?.groupValues?.get(1)?.toDoubleOrNull()?.takeIf { it > 0 && it.isFinite() }
     }
+    /** Native selected-file estimates precede reported claims in either direction; unknown stays last. */
+    fun compareConfidenceRanked(leftNative: Long?, leftReported: Long?, rightNative: Long?, rightReported: Long?, descending: Boolean): Int {
+        fun tier(native: Long?, reported: Long?) = if (native != null) 0 else if (reported != null) 1 else 2
+        val confidence = tier(leftNative, leftReported).compareTo(tier(rightNative, rightReported))
+        return if (confidence != 0) confidence else compareNullable(leftNative ?: leftReported, rightNative ?: rightReported, descending)
+    }
+
     /** Unknown stays last for both directions, including malformed or zero metadata. */
     fun compareNullable(left: Long?, right: Long?, descending: Boolean): Int = when {
         left == null && right == null -> 0

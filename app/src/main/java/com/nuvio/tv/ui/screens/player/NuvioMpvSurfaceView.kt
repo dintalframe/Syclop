@@ -219,6 +219,10 @@ class NuvioMpvSurfaceView @JvmOverloads constructor(
     val hasPendingInitialMedia: Boolean
         get() = pendingInitialMediaUrl != null || deferredLoadUntilSurface
 
+    /** Exact requested file guard for an event-driven native duration capture. */
+    fun isRequestedMediaActive(url: String): Boolean = requestedMediaUrl == url &&
+        !hasPendingInitialMedia && isPositionFromRequestedMedia()
+
     /** False while mpv still reports the path recorded at the last media request. */
     fun isPositionFromRequestedMedia(): Boolean {
         if (!initialized) return false
@@ -630,6 +634,14 @@ class NuvioMpvSurfaceView @JvmOverloads constructor(
         }.onFailure {
             Log.w(TAG, "Failed to set subtitle language preference: ${it.message}")
         }
+    }
+
+    /** Local INFO-only snapshot; no timer, network, logging or private path in the result. */
+    fun readInfoSnapshot(): com.nuvio.tv.core.player.MpvInfoSnapshot {
+        val request = requestedMediaUrl
+        return com.nuvio.tv.core.player.MpvInfoSnapshotReader.read(isCurrentMedia = {
+            initialized && request != null && request == requestedMediaUrl && !hasPendingInitialMedia && isPositionFromRequestedMedia()
+        }) { name -> mpv.getPropertyString(name) }
     }
 
     /**

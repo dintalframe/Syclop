@@ -1,6 +1,8 @@
 package com.nuvio.tv.core.express
 
 import com.nuvio.tv.core.tmdb.TmdbService
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
+import com.nuvio.tv.core.anime.NativeAnimeMappingCodec
 import com.nuvio.tv.data.mal.MalMetadataService
 import com.nuvio.tv.data.mal.MalSourceMetadata
 import io.mockk.coEvery
@@ -49,17 +51,20 @@ class ExpressMetadataResolverTest {
     }
 
     @Test
-    fun `MAL title and record episode remain explicit without guessed IMDb or franchise offset`() = runTest {
+    fun `MAL relative episode stays explicit while confirmed mapping supplies release absolute`() = runTest {
         val mal = mockk<MalMetadataService>()
         coEvery { mal.sourceMetadata(42) } returns MalSourceMetadata(42, "Example Second Season", 2026, "tv", 10)
-        val result = ExpressMetadataResolver(ExpressHttpClient(), mockk(), mal)
+        val mappings = mockk<NativeAnimeEpisodeMappings>()
+        val proof = NativeAnimeMappingCodec.parse("""{"titles":{"en":"Frieren"},"mappings":{"mal_id":42,"thetvdb_id":424536},"episodeCount":1,"episodes":{"1":{"tvdbShowId":424536,"tvdbId":10719109,"seasonNumber":2,"episodeNumber":1,"absoluteEpisodeNumber":29,"episode":"1"}}}""", 42)!!.episodes.getValue(1)
+        coEvery { mappings.proof("mal:42:1", any()) } returns proof
+        val result = ExpressMetadataResolver(ExpressHttpClient(), mockk(), mal, mappings)
             .resolve(ExpressMediaRequest("series", "mal:42:1", 1, 1))
         assertEquals("Example Second Season", result.title)
         assertEquals(2026, result.year)
         assertNull(result.imdbId)
         assertNull(result.season)
         assertEquals(1, result.episode)
-        assertEquals(1, result.absoluteNumber)
+        assertEquals(29, result.absoluteNumber)
         assertTrue(result.anime)
         assertFalse(result.variables().containsKey("showImdbId"))
     }

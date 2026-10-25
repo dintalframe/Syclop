@@ -246,6 +246,16 @@ fun DebridSettingsContent(
                             SettingsSectionLabel(text = stringResource(R.string.debrid_section_instant_playback))
                         }
 
+                        item(key = "syclop_debrid_fallback") {
+                            SettingsToggleRow(
+                                title = stringResource(R.string.syclop_debrid_fallback_title),
+                                subtitle = stringResource(R.string.syclop_debrid_fallback_description),
+                                checked = uiState.connectedServiceFallbackEnabled,
+                                onToggle = { viewModel.setConnectedServiceFallbackEnabled(!uiState.connectedServiceFallbackEnabled) },
+                                enabled = true
+                            )
+                        }
+
                         item(key = "debrid_prepare_links") {
                             val prepareEnabled = uiState.instantPlaybackPreparationLimit > 0
                             SettingsToggleRow(

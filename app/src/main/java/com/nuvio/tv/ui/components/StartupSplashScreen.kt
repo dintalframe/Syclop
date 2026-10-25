@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.tv.material3.Text
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -59,13 +61,9 @@ fun StartupSplashScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            BrandWordmark(
-                modifier = Modifier.height(48.dp),
-                contentDescription = stringResource(R.string.cd_nuvio_logo),
-                drawableOverride = brandWordmarkRes
-            )
+            Text("Syclop", style = MaterialTheme.typography.displaySmall, color = Color.White)
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.xxl))
-            LoadingIndicator(modifier = Modifier.size(NuvioTheme.spacing.xxxl))
+            SyclopBrandAnimation(SyclopBrandState.Loading, size = 96.dp)
         }
     }
 }

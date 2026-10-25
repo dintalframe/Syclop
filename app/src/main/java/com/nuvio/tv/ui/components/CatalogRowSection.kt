@@ -117,7 +117,9 @@ fun CatalogRowSection(
      *  Wide elements above (CW, collections) can point their D-pad down here. */
     entryFocusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
-    listState: LazyListState = rememberLazyListState(initialFirstVisibleItemIndex = initialScrollIndex)
+    listState: LazyListState = rememberLazyListState(initialFirstVisibleItemIndex = initialScrollIndex),
+    /** Optional exact card entry for parents that scroll both lazy axes before requesting focus. */
+    entryFocusItemIndex: Int = -1
 ) {
     val catalogRowKey = remember(catalogRow) { catalogRow.stableKey() }
     val rowItemIdentities = remember(catalogRow.items) { catalogRow.stableItemKeys() }
@@ -393,9 +395,11 @@ fun CatalogRowSection(
                 },
                 contentType = { _, item -> item.apiType } // Group items by apiType for better recycling
             ) { index, item ->
-                val isEntryTarget by remember(entryFocusRequester, index) {
+                val isEntryTarget by remember(entryFocusRequester, entryFocusItemIndex, index) {
                     derivedStateOf {
-                        val targetIndex = if (lastFocusedItemIndex.intValue >= 0) {
+                        val targetIndex = if (entryFocusItemIndex >= 0) {
+                            entryFocusItemIndex
+                        } else if (lastFocusedItemIndex.intValue >= 0) {
                             lastFocusedItemIndex.intValue
                         } else {
                             0
@@ -448,9 +452,9 @@ fun CatalogRowSection(
                             else Modifier
                         )
                         .then(
-                            if (isEntryTarget) Modifier.focusRequester(entryFocusRequester!!) else Modifier
+                            if (isEntryTarget && entryFocusItemIndex < 0) Modifier.focusRequester(entryFocusRequester!!) else Modifier
                         ),
-                    focusRequester = cardFocusRequester
+                    focusRequester = if (isEntryTarget && entryFocusItemIndex >= 0) entryFocusRequester else cardFocusRequester
                 )
             }
 

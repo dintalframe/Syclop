@@ -10,7 +10,9 @@ internal fun <T> selectDebridFile(
     path: (T) -> String,
     isPlayable: (T) -> Boolean,
     size: (T) -> Long,
+    animeProof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof? = null,
 ): T? {
+    if (animeProof != null) return selectNativeAnimeFile(files, resolve, path, isPlayable, animeProof)
     val playable = files.filter(isPlayable)
     if (playable.isEmpty()) return null
 
@@ -38,6 +40,28 @@ internal fun <T> selectDebridFile(
     }
 
     return playable.maxByOrNull(size)
+}
+
+/** Every explicit hint must identify the same actual proof-matching playable file. */
+private fun <T> selectNativeAnimeFile(files: List<T>, resolve: StreamClientResolve, path: (T) -> String,
+    isPlayable: (T) -> Boolean, proof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof): T? {
+    val playable = files.withIndex().filter { isPlayable(it.value) }
+    if (playable.isEmpty()) return null
+    val names = listOfNotNull(resolve.filename, resolve.stream?.raw?.filename).map { it.normalizedPath() }
+    if (names.any { it.isBlank() || it.length > 4_096 }) return null
+    var selected: IndexedValue<T>? = null
+    for (name in names.distinct()) {
+        val target = playable.matchingFiles(name) { path(it.value) }.singleOrNull() ?: return null
+        if (selected != null && selected.index != target.index) return null
+        selected = target
+    }
+    resolve.fileIdx?.let { index ->
+        val target = playable.singleOrNull { it.index == index } ?: return null
+        if (selected != null && selected.index != target.index) return null
+        selected = target
+    }
+    val target = selected ?: playable.filter { proof.matchesFile(path(it.value)) }.singleOrNull() ?: return null
+    return target.value.takeIf { proof.matchesFile(path(it)) }
 }
 
 private fun String.normalizedPath(): String = trim().replace('\\', '/').removePrefix("/")

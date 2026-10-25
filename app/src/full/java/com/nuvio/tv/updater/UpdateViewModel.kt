@@ -57,7 +57,9 @@ class UpdateViewModel @Inject constructor(
     private var updateCheckJob: Job? = null
 
     init {
-        viewModelScope.launch {
+        if (SelfUpdatePolicy.cancelIfDisabled(context)) {
+            _uiState.update { it.copy(updateBannerEnabled = false, autoInstallSupported = false) }
+        } else viewModelScope.launch {
             val enabled = updatePreferences.updateBannerEnabled.first()
             val channel = updatePreferences.getOrInitializeUpdateChannel()
             val autoInstallEnabled = updatePreferences.autoInstallEnabled.first()
@@ -80,6 +82,7 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun checkForUpdates(force: Boolean, showNoUpdateFeedback: Boolean) {
+        if (!SelfUpdatePolicy.enabled) return
         if (!force && !_uiState.value.updateBannerEnabled) return
 
         updateCheckJob?.cancel()
@@ -200,6 +203,7 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun setUpdateBannerEnabled(enabled: Boolean) {
+        if (!SelfUpdatePolicy.enabled) return
         val changed = _uiState.value.updateBannerEnabled != enabled
         _uiState.update {
             it.copy(
@@ -218,6 +222,7 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun setUpdateChannel(channel: UpdateChannel) {
+        if (!SelfUpdatePolicy.enabled) return
         val state = _uiState.value
         if (state.updateChannel == channel) return
 
@@ -248,6 +253,7 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun downloadUpdate() {
+        if (!SelfUpdatePolicy.enabled) return
         val update = _uiState.value.update ?: return
 
         viewModelScope.launch {
@@ -297,6 +303,7 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun installUpdateOrRequestPermission() {
+        if (!SelfUpdatePolicy.enabled) return
         val apkPath = _uiState.value.downloadedApkPath ?: return
         val apkFile = File(apkPath)
         if (!apkFile.exists()) {
@@ -345,11 +352,13 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun setAutoInstallNoticeEnabled(enabled: Boolean) {
+        if (!SelfUpdatePolicy.enabled) return
         _uiState.update { it.copy(autoInstallNoticeEnabled = enabled) }
         viewModelScope.launch { updatePreferences.setAutoInstallNoticeEnabled(enabled) }
     }
 
     fun setAutoInstallEnabled(enabled: Boolean) {
+        if (!SelfUpdatePolicy.enabled) return
         _uiState.update { it.copy(autoInstallEnabled = enabled) }
         viewModelScope.launch {
             updatePreferences.setAutoInstallEnabled(enabled)
@@ -362,6 +371,7 @@ class UpdateViewModel @Inject constructor(
 
     // Background checks run while the banner or automatic installs are on; the idle install job only with the latter.
     private fun syncBackgroundJobs() {
+        if (SelfUpdatePolicy.cancelIfDisabled(context)) return
         if (BuildConfig.IS_DEBUG_BUILD) return
         val state = _uiState.value
         if (state.updateBannerEnabled || state.autoInstallEnabled) {
@@ -373,6 +383,7 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun openUnknownSourcesSettings() {
+        if (!SelfUpdatePolicy.enabled) return
         ApkInstaller.buildUnknownSourcesSettingsIntent(context)?.let(context::startActivity)
     }
 }

@@ -15,6 +15,7 @@ class UpdateRepository @Inject constructor(
 ) {
 
     suspend fun getLatestUpdate(channel: UpdateChannel): Result<AppUpdate> {
+        if (!SelfUpdatePolicy.enabled) return Result.failure(IllegalStateException("Self-updates are disabled in Syclop."))
         return runCatching {
             val owner = BuildConfig.GITHUB_OWNER
             val repo = BuildConfig.GITHUB_REPO

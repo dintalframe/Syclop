@@ -12,9 +12,11 @@ class RealDebridFileSelector @Inject constructor() {
         resolve: StreamClientResolve,
         season: Int?,
         episode: Int?,
+        animeProof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof? = null,
     ): RealDebridTorrentFileDto? = selectDebridFile(
         files = files,
         resolve = resolve,
+        animeProof = animeProof,
         season = season,
         episode = episode,
         path = { it.path.orEmpty() },

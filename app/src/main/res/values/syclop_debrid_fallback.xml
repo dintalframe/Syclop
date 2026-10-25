@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="syclop_debrid_fallback_title">Try other connected services</string>
+    <string name="syclop_debrid_fallback_description">For a selected hash source, try the preferred service first, then Real-Debrid and other connected services when it is not ready or the service fails. Never changes your preferred service. No local P2P.</string>
+    <string name="syclop_debrid_trying_service">Resolving with %1$s…</string>
+    <string name="syclop_debrid_not_ready">This source is not ready for Debrid playback yet.</string>
+</resources>

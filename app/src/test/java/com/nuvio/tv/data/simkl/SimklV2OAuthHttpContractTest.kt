@@ -6,10 +6,15 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.Call
+import okhttp3.Authenticator
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
 import okhttp3.EventListener
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -27,8 +32,13 @@ class SimklV2OAuthHttpContractTest {
             val oauth = SimklV2OAuthClient(OkHttpSimklV2OAuthTransport(configuration), configuration)
             oauth.start(); oauth.poll("private-code+&=")
             val start = server.takeRequest(); val poll = server.takeRequest()
-            assertEquals("/oauth2/device", start.path)
-            assertEquals("/oauth2/token", poll.path)
+            assertEquals("/oauth2/device", start.requestUrl!!.encodedPath)
+            assertEquals("/oauth2/token", poll.requestUrl!!.encodedPath)
+            for (request in listOf(start, poll)) {
+                assertEquals("test-public-client", request.requestUrl!!.queryParameter("client_id"))
+                assertEquals("syclop", request.requestUrl!!.queryParameter("app-name"))
+                assertEquals("test", request.requestUrl!!.queryParameter("app-version"))
+            }
             assertEquals("Syclop/test", start.getHeader("User-Agent"))
             assertTrue(start.getHeader("Content-Type").orEmpty().startsWith("application/x-www-form-urlencoded"))
             fun fields(body: String) = body.split('&').associate {
@@ -39,6 +49,39 @@ class SimklV2OAuthHttpContractTest {
             assertEquals("private-code+&=", fields(poll.body.readUtf8())["device_code"])
             assertNull(poll.getHeader("Authorization"))
             assertFalse(poll.requestUrl.toString().contains("private-code"))
+        }
+    }
+
+    @Test fun `all OAuth POST URLs include only public app metadata with cookies and authenticators disabled`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(401).setHeader("WWW-Authenticate", "Bearer").setBody("{}"))
+            repeat(3) { server.enqueue(MockResponse().setBody("{}")) }
+            val authenticationCalls = AtomicInteger()
+            val seeded = OkHttpClient.Builder().cookieJar(object : CookieJar {
+                override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) = Unit
+                override fun loadForRequest(url: HttpUrl) = listOf(Cookie.Builder()
+                    .name("synthetic-account-cookie").value("must-not-leave-client").hostOnlyDomain(url.host).build())
+            }).authenticator(Authenticator { _, response ->
+                authenticationCalls.incrementAndGet()
+                response.request.newBuilder().header("Authorization", "must-not-leave-client").build()
+            }).build()
+            val configuration = SimklApiConfiguration("test-public-client", "syclop", "test", server.url("/").toString())
+            val oauth = SimklV2OAuthClient(OkHttpSimklV2OAuthTransport(configuration, seeded), configuration)
+            oauth.start(); oauth.poll("private-code+&="); oauth.refresh("private-refresh+&="); oauth.revoke("private-revoke+&=")
+            val expectedPaths = listOf("/oauth2/device", "/oauth2/token", "/oauth2/token", "/oauth2/revoke")
+            for (path in expectedPaths) {
+                val request = server.takeRequest(3, TimeUnit.SECONDS)!!
+                assertEquals(path, request.requestUrl!!.encodedPath)
+                assertEquals(setOf("client_id", "app-name", "app-version"), request.requestUrl!!.queryParameterNames)
+                assertEquals("test-public-client", request.requestUrl!!.queryParameter("client_id"))
+                assertEquals("syclop", request.requestUrl!!.queryParameter("app-name"))
+                assertEquals("test", request.requestUrl!!.queryParameter("app-version"))
+                assertEquals("Syclop/test", request.getHeader("User-Agent"))
+                assertNull(request.getHeader("Authorization")); assertNull(request.getHeader("Cookie"))
+                assertFalse(request.requestUrl.toString().contains("private-"))
+            }
+            assertEquals(0, authenticationCalls.get())
+            assertEquals(4, server.requestCount)
         }
     }
 

@@ -47,7 +47,7 @@ class StreamBitrateRankingTest {
     }
     @Test fun `adding bitrate retains existing secondary criteria without duplicate resolution`() {
         val previous=listOf(DebridStreamSortCriterion(DebridStreamSortKey.LANGUAGE),DebridStreamSortCriterion(DebridStreamSortKey.RESOLUTION))
-        assertEquals(listOf(DebridStreamSortKey.BITRATE,DebridStreamSortKey.RESOLUTION,DebridStreamSortKey.LANGUAGE),
+        assertEquals(listOf(DebridStreamSortKey.BITRATE,DebridStreamSortKey.RESOLUTION,DebridStreamSortKey.SIZE,DebridStreamSortKey.LANGUAGE),
             DebridStreamSortCriterion.bitrateFirstOrder(previous).map { it.key })
     }
     @Test fun `metadata enrichment preserves source identity through native URL and text changes`() {

@@ -1,6 +1,13 @@
 package com.nuvio.tv.data.mal
 
+import com.nuvio.tv.core.initialization.InitializationFailure
+import com.nuvio.tv.core.initialization.InitializationProvider
+import com.nuvio.tv.core.initialization.InitializationReadException
+import com.nuvio.tv.core.initialization.InitializationReadGate
+import com.nuvio.tv.core.initialization.InitializationReadResult
+import com.nuvio.tv.core.initialization.InitializationReadScope
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -9,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -21,6 +29,7 @@ class MalRepository @Inject constructor(
 ) {
     private val worker = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutations = Mutex()
+    private val reads = InitializationReadGate()
     private val mutableState = MutableStateFlow(MalLibraryState(scope = auth.state.value.scope))
     val state = mutableState.asStateFlow()
     private val mutableCatalogRevision = MutableStateFlow(0L)
@@ -29,25 +38,85 @@ class MalRepository @Inject constructor(
     init {
         worker.launch {
             auth.state.map { it.scope }.distinctUntilChanged().collect { current ->
-                mutableState.value = MalLibraryState(scope = current)
+                mutableState.update { previous ->
+                    // A delayed initial emission must not erase a completed read for this same grant.
+                    if (!auth.store.isCurrent(current) || previous.scope == current) previous
+                    else MalLibraryState(scope = current)
+                }
+            }
+        }
+    }
+
+    suspend fun captureInitializationReadScope(): InitializationReadScope {
+        val captured = auth.state.value.scope
+        if (!auth.state.value.connected) throw InitializationReadException(InitializationFailure.UNAVAILABLE)
+        return InitializationReadScope(InitializationProvider.MAL, readKey(captured)) {
+            auth.store.isCurrent(captured) && auth.state.value.connected
+        }.also { it.checkpoint() }
+    }
+
+    /** The same full list read serves settings refresh and first-use initialization. */
+    suspend fun awaitInitializationImport(expected: InitializationReadScope): InitializationReadResult {
+        require(expected.provider == InitializationProvider.MAL)
+        reads.recentComplete(expected)?.let { return it }
+        return readLibrary(expected)
+    }
+
+    private suspend fun readLibrary(expected: InitializationReadScope): InitializationReadResult {
+        require(expected.provider == InitializationProvider.MAL)
+        val captured = auth.state.value.scope
+        if (expected.operationKey != readKey(captured)) {
+            throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
+        }
+        return reads.run(expected) {
+            mutations.withLock {
+                expected.checkpoint()
+                checkReadOwner(captured)
+                val previous = state.value.takeIf { it.scope == captured } ?: MalLibraryState(scope = captured)
+                mutableState.value = previous.copy(loading = true, message = null)
+                try {
+                    val library = auth.authorized(captured) { api.library(it) }
+                    expected.checkpoint()
+                    checkReadOwner(captured)
+                    mutableState.value = MalLibraryState(scope = captured, items = library.items,
+                        truncated = library.truncated,
+                        message = if (library.truncated) "Showing the first 2,000 MyAnimeList entries."
+                            else "MyAnimeList list updated.")
+                    mutableCatalogRevision.value += 1
+                    InitializationReadResult(count = library.items.size, truncated = library.truncated)
+                } catch (cancelled: CancellationException) {
+                    if (expected.isCurrent() && auth.store.isCurrent(captured)) {
+                        mutableState.value = state.value.copy(loading = false)
+                    }
+                    throw cancelled
+                } catch (failure: Exception) {
+                    expected.checkpoint()
+                    checkReadOwner(captured)
+                    mutableState.value = state.value.copy(loading = false,
+                        message = "Could not load MyAnimeList. Your local playback history is unchanged.")
+                    if (failure is InitializationReadException) throw failure
+                    throw InitializationReadException(InitializationFailure.NETWORK)
+                }
             }
         }
     }
 
     suspend fun refresh() {
-        val expected = auth.state.value.scope
         if (!auth.state.value.connected) return
-        mutableState.value = state.value.copy(scope = expected, loading = true, message = null)
         try {
-            val library = auth.authorized(expected) { api.library(it) }
-            if (auth.store.isCurrent(expected)) {
-                mutableState.value = MalLibraryState(scope = expected, items = library.items, truncated = library.truncated,
-                    message = if (library.truncated) "Showing the first 2,000 MyAnimeList entries." else "MyAnimeList list updated.")
-                mutableCatalogRevision.value += 1
-            }
+            readLibrary(captureInitializationReadScope())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
-            if (auth.store.isCurrent(expected)) mutableState.value = state.value.copy(loading = false,
-                message = "Could not load MyAnimeList. Your local playback history is unchanged.")
+            // The awaited read publishes a fixed, account-scoped failure message; existing callers keep Unit.
+        }
+    }
+
+    private fun readKey(scope: MalScope): String = "mal:${scope.profileId}:${scope.generation}"
+
+    private fun checkReadOwner(expected: MalScope) {
+        if (!auth.store.isCurrent(expected) || !auth.state.value.connected) {
+            throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
         }
     }
 

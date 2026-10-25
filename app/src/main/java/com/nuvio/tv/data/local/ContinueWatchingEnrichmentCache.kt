@@ -2,8 +2,8 @@ package com.nuvio.tv.data.local
 
 import android.content.Context
 import android.util.Log
+import androidx.annotation.Keep
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import com.nuvio.tv.core.profile.ProfileManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +14,7 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+@Keep
 data class CachedNextUpItem(
     val contentId: String,
     val contentType: String,
@@ -44,6 +45,7 @@ data class CachedNextUpItem(
     val ratingVisible: Boolean = true
 )
 
+@Keep
 data class CachedInProgressItem(
     val contentId: String,
     val contentType: String,
@@ -95,23 +97,29 @@ class ContinueWatchingEnrichmentCache @Inject constructor(
 
     // --- Next Up snapshot cache ---
 
-    private fun nextUpFile(): File {
-        val profileId = profileManager.activeProfileId.value
+    private fun nextUpFile(profileId: Int): File {
         val dir = File(context.filesDir, "cw_enrichment")
         dir.mkdirs()
         return File(dir, "nextup_${profileId}.json")
     }
 
-    suspend fun getNextUpSnapshot(): List<CachedNextUpItem> = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            try {
-                val file = nextUpFile()
-                if (!file.exists()) return@withContext emptyList()
-                gson.fromJson(file.readText(), object : TypeToken<List<CachedNextUpItem>>() {}.type)
-                    ?: emptyList()
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to read next-up cache: ${e.message}")
-                emptyList()
+    suspend fun getNextUpSnapshot(): List<CachedNextUpItem> {
+        val profileId = profileManager.activeProfileId.value
+        val selection = profileManager.activeProfileSelectionRevision
+        return withContext(Dispatchers.IO) {
+            mutex.withLock {
+                if (!currentProfile(profileId, selection)) return@withContext emptyList()
+                val items = try {
+                    val file = nextUpFile(profileId)
+                    if (!file.exists() || file.length() > ContinueWatchingCacheCodec.MAX_BYTES) return@withContext emptyList()
+                    ContinueWatchingCacheCodec.nextUp(file.readText())
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    Log.w(TAG, "Failed to read next-up cache")
+                    emptyList()
+                }
+                if (currentProfile(profileId, selection)) items else emptyList()
             }
         }
     }
@@ -119,45 +127,58 @@ class ContinueWatchingEnrichmentCache @Inject constructor(
     /**
      * @param force bypass throttle and content-change check (use at end of pipeline or for clears)
      */
-    suspend fun saveNextUpSnapshot(items: List<CachedNextUpItem>, force: Boolean = false) = withContext(Dispatchers.IO) {
-        val contentHash = items.hashCode()
-        if (!force) {
-            if (contentHash == lastNextUpHash) return@withContext
-            val now = System.currentTimeMillis()
-            if (now - lastNextUpWriteMs < THROTTLE_MS) return@withContext
-        }
-        mutex.withLock {
-            try {
-                val file = nextUpFile()
-                atomicWrite(file, gson.toJson(items))
-                lastNextUpWriteMs = System.currentTimeMillis()
-                lastNextUpHash = contentHash
-                _snapshotVersion.value++
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to write next-up cache: ${e.message}")
+    suspend fun saveNextUpSnapshot(items: List<CachedNextUpItem>, force: Boolean = false) {
+        val profileId = profileManager.activeProfileId.value
+        val selection = profileManager.activeProfileSelectionRevision
+        withContext(Dispatchers.IO) {
+            val contentHash = items.hashCode()
+            if (!force) {
+                if (contentHash == lastNextUpHash) return@withContext
+                val now = System.currentTimeMillis()
+                if (now - lastNextUpWriteMs < THROTTLE_MS) return@withContext
+            }
+            mutex.withLock {
+                if (!currentProfile(profileId, selection)) return@withContext
+                try {
+                    val file = nextUpFile(profileId)
+                    atomicWrite(file, gson.toJson(items))
+                    lastNextUpWriteMs = System.currentTimeMillis()
+                    lastNextUpHash = contentHash
+                    _snapshotVersion.value++
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    Log.w(TAG, "Failed to write next-up cache")
+                }
             }
         }
     }
 
     // --- In-progress snapshot cache ---
 
-    private fun inProgressFile(): File {
-        val profileId = profileManager.activeProfileId.value
+    private fun inProgressFile(profileId: Int): File {
         val dir = File(context.filesDir, "cw_enrichment")
         dir.mkdirs()
         return File(dir, "inprogress_${profileId}.json")
     }
 
-    suspend fun getInProgressSnapshot(): List<CachedInProgressItem> = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            try {
-                val file = inProgressFile()
-                if (!file.exists()) return@withContext emptyList()
-                gson.fromJson(file.readText(), object : TypeToken<List<CachedInProgressItem>>() {}.type)
-                    ?: emptyList()
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to read in-progress cache: ${e.message}")
-                emptyList()
+    suspend fun getInProgressSnapshot(): List<CachedInProgressItem> {
+        val profileId = profileManager.activeProfileId.value
+        val selection = profileManager.activeProfileSelectionRevision
+        return withContext(Dispatchers.IO) {
+            mutex.withLock {
+                if (!currentProfile(profileId, selection)) return@withContext emptyList()
+                val items = try {
+                    val file = inProgressFile(profileId)
+                    if (!file.exists() || file.length() > ContinueWatchingCacheCodec.MAX_BYTES) return@withContext emptyList()
+                    ContinueWatchingCacheCodec.inProgress(file.readText())
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    Log.w(TAG, "Failed to read in-progress cache")
+                    emptyList()
+                }
+                if (currentProfile(profileId, selection)) items else emptyList()
             }
         }
     }
@@ -165,22 +186,29 @@ class ContinueWatchingEnrichmentCache @Inject constructor(
     /**
      * @param force bypass throttle and content-change check (use at end of pipeline or for clears)
      */
-    suspend fun saveInProgressSnapshot(items: List<CachedInProgressItem>, force: Boolean = false) = withContext(Dispatchers.IO) {
-        val contentHash = items.hashCode()
-        if (!force) {
-            if (contentHash == lastInProgressHash) return@withContext
-            val now = System.currentTimeMillis()
-            if (now - lastInProgressWriteMs < THROTTLE_MS) return@withContext
-        }
-        mutex.withLock {
-            try {
-                val file = inProgressFile()
-                atomicWrite(file, gson.toJson(items))
-                lastInProgressWriteMs = System.currentTimeMillis()
-                lastInProgressHash = contentHash
-                _snapshotVersion.value++
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to write in-progress cache: ${e.message}")
+    suspend fun saveInProgressSnapshot(items: List<CachedInProgressItem>, force: Boolean = false) {
+        val profileId = profileManager.activeProfileId.value
+        val selection = profileManager.activeProfileSelectionRevision
+        withContext(Dispatchers.IO) {
+            val contentHash = items.hashCode()
+            if (!force) {
+                if (contentHash == lastInProgressHash) return@withContext
+                val now = System.currentTimeMillis()
+                if (now - lastInProgressWriteMs < THROTTLE_MS) return@withContext
+            }
+            mutex.withLock {
+                if (!currentProfile(profileId, selection)) return@withContext
+                try {
+                    val file = inProgressFile(profileId)
+                    atomicWrite(file, gson.toJson(items))
+                    lastInProgressWriteMs = System.currentTimeMillis()
+                    lastInProgressHash = contentHash
+                    _snapshotVersion.value++
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    Log.w(TAG, "Failed to write in-progress cache")
+                }
             }
         }
     }
@@ -188,20 +216,28 @@ class ContinueWatchingEnrichmentCache @Inject constructor(
     /**
      * Deletes all CW enrichment cache files for the active profile.
      */
-    suspend fun clearAll() = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            try {
-                nextUpFile().delete()
-                inProgressFile().delete()
-                lastNextUpHash = 0
-                lastInProgressHash = 0
-                Log.d(TAG, "Cleared CW enrichment cache for profile ${profileManager.activeProfileId.value}")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to clear CW enrichment cache: ${e.message}")
+    suspend fun clearAll() {
+        val profileId = profileManager.activeProfileId.value
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                try {
+                    nextUpFile(profileId).delete()
+                    inProgressFile(profileId).delete()
+                    lastNextUpHash = 0
+                    lastInProgressHash = 0
+                    Log.d(TAG, "Cleared CW enrichment cache")
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    Log.w(TAG, "Failed to clear CW enrichment cache")
+                }
             }
+            _cacheCleared.value++
         }
-        _cacheCleared.value++
     }
+
+    private fun currentProfile(profileId: Int, selection: Long): Boolean =
+        profileManager.activeProfileId.value == profileId && profileManager.activeProfileSelectionRevision == selection
 
     private fun atomicWrite(target: File, content: String) {
         val tmp = File(target.parentFile, "${target.name}.tmp")

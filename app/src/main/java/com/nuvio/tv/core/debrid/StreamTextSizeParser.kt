@@ -24,7 +24,8 @@ object StreamTextSizeParser {
      * the fallback chain cannot drift between call sites.
      */
     fun effectiveSizeBytes(stream: Stream): Long? =
-        stream.clientResolve?.stream?.raw?.size
+        stream.nativeFileMetadata?.selectedFileBytes?.takeIf { it > 0L }
+            ?: stream.clientResolve?.stream?.raw?.size
             ?: stream.behaviorHints?.videoSize
             ?: stream.debridCacheStatus?.cachedSize
             ?: sizeBytesFromStreamText(stream)
