@@ -52,6 +52,7 @@ Syclop has no central cloud account or cross-device settings sync. Tracker servi
 ## Documentation
 
 - [Builds, signing, compatibility and release status](SYCLOP_BUILD.md)
+- [Local Android TV emulator bench](tools/ANDROID_BENCH.md)
 - [Feature coverage, device evidence and known limitations](SYCLOP_FEATURE_AUDIT.md)
 - [Application registration for connected services](SYCLOP_APP_REGISTRATION.md)
 - [Trakt setup](TRAKT_APP_SETUP.md) and [MyAnimeList return page](docs/mal/README.md)
