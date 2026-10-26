@@ -1,4 +1,4 @@
-"""Fixed, account-free playback-control fixtures for the local Android TV bench."""
+"""Fixed, account-free UI fixtures for the local Android TV bench."""
 import json
 import re
 import struct
@@ -28,6 +28,20 @@ SCREENSHOTS = (
     "playback-movie-resume-and-start.png", "playback-episode-resume-and-start.png",
     "playback-labelled-start-and-next.png", "playback-final-episode-actions.png",
     "restart-confirmation-cancel-focused.png", "restart-confirmation-restart-focused.png")
+CATEGORY_TESTS = {
+    "com.nuvio.tv.ui.screens.home.HomeCategoryNavigationTvTest": (
+        "lateAnimeCatalogKeepsFocusedCardAndOneUpReturnsToHeader",
+        "lateKidsGroupKeepsSafeEntryAndOneUpReturnsToHeader",
+        "changingCategoriesKeepsHeaderFocusAndUsesNewCategoryRows",
+        "newRequestRevisionRestoresConfiguredOrderWithoutOldFocus")
+}
+CATEGORY_SCREENSHOTS = (
+    "category-anime-late-arrival.png", "category-kids-late-group.png",
+    "category-change-anime-header.png", "category-request-order-reset.png")
+SUITES = {
+    "playback-controls": (TESTS, SCREENSHOTS),
+    "category-navigation": (CATEGORY_TESTS, CATEGORY_SCREENSHOTS),
+}
 
 
 class ControlsError(ValueError):
@@ -96,7 +110,7 @@ def manifest_facts(tree):
 def validate_manifest(tree, package):
     facts = manifest_facts(tree)
     if facts["package"] != package or not facts["debuggable"]:
-        raise ControlsError("Playback controls require the exact debuggable app and test packages.")
+        raise ControlsError("Fixed fixtures require the exact debuggable app and test packages.")
     declarations = facts["instrumentation"]
     if package == TEST_PACKAGE:
         if len(declarations) != 1 or declarations[0].get("android:name") != RUNNER or declarations[0].get("android:targetPackage") != PACKAGE:
@@ -106,8 +120,11 @@ def validate_manifest(tree, package):
     return facts
 
 
-def instrumentation_result(output, returncode):
-    """An exit code or a summary string alone cannot prove the eleven fixtures passed."""
+def instrumentation_result(output, returncode, suite="playback-controls"):
+    """Require the exact event protocol for one of the two fixed fixture suites."""
+    if suite not in SUITES:
+        raise ControlsError("Unknown fixed fixture suite.")
+    expected = frozenset((group, method) for group, methods in SUITES[suite][0].items() for method in methods)
     completed, started, pending = set(), set(), {}
     active, final_codes, valid = None, [], returncode == 0
     in_summary, summaries, summary_streams = False, 0, 0
@@ -121,7 +138,7 @@ def instrumentation_result(output, returncode):
         elif line.startswith("INSTRUMENTATION_STATUS_CODE: "):
             code = line.partition(": ")[2]
             pair = pending.get("class"), pending.get("test")
-            good = (pair in EXPECTED_TESTS and pending.get("numtests") == str(len(EXPECTED_TESTS))
+            good = (pair in expected and pending.get("numtests") == str(len(expected))
                     and pending.get("current") == str(len(completed)+1)
                     and pending.get("id") == "AndroidJUnitRunner" and not final_codes)
             if code == "1" and good and active is None and pair not in started:
@@ -135,10 +152,10 @@ def instrumentation_result(output, returncode):
             pending = {}
         elif line == "INSTRUMENTATION_RESULT: stream=":
             summary_streams += 1
-            in_summary = completed == EXPECTED_TESTS and active is None and not pending and not final_codes
+            in_summary = completed == expected and active is None and not pending and not final_codes
             if not in_summary:
                 valid = False
-        elif re.fullmatch(r"OK \(11 tests\)\s*", line):
+        elif re.fullmatch(r"OK \(" + str(len(expected)) + r" tests\)\s*", line):
             if in_summary and not final_codes:
                 summaries += 1
             else:
@@ -148,10 +165,10 @@ def instrumentation_result(output, returncode):
             in_summary = False
     if re.search(r"INSTRUMENTATION_FAILED|FAILURES!!!|shortMsg=|Process crashed|INSTRUMENTATION_RESULT: (?:Error|error)=", output):
         valid = False
-    valid = (valid and not pending and active is None and completed == EXPECTED_TESTS
-             and started == EXPECTED_TESTS and final_codes == ["-1"]
+    valid = (valid and not pending and active is None and completed == expected
+             and started == expected and final_codes == ["-1"]
              and summaries == 1 and summary_streams == 1)
-    return {"expected": len(EXPECTED_TESTS), "completed": len(completed), "passed": bool(valid)}
+    return {"expected": len(expected), "completed": len(completed), "passed": bool(valid)}
 
 
 def png_dimensions(data):

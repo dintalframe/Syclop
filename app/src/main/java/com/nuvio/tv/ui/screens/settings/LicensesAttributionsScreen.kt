@@ -6,11 +6,14 @@ import com.nuvio.tv.ui.theme.NuvioTheme
 
 import android.content.Intent
 import android.net.Uri
+import android.view.KeyEvent
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.annotation.RawRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -34,14 +37,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -51,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
+import androidx.tv.material3.Button
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -65,8 +76,11 @@ import com.nuvio.tv.core.cloud.PremiumizeCloudLibraryPosterUrl
 import com.nuvio.tv.core.cloud.TorboxCloudLibraryPosterUrl
 import com.nuvio.tv.core.cloud.cloudLibraryDisplayArtworkUrl
 import com.nuvio.tv.ui.util.rememberRawSvgPainter
+import com.nuvio.tv.ui.components.NuvioDialog
+import kotlinx.coroutines.launch
 
 private const val NuvioRepositoryUrl = "https://github.com/NuvioMedia/NuvioTV"
+private const val SyclopRepositoryUrl = "https://github.com/dintalframe/Syclop"
 private const val TmdbUrl = "https://www.themoviedb.org"
 private const val TraktUrl = "https://trakt.tv"
 private const val SimklUrl = "https://simkl.com"
@@ -78,6 +92,7 @@ private const val ImdbDatasetsUrl = "https://developer.imdb.com/non-commercial-d
 private const val ApacheLicenseUrl = "https://www.apache.org/licenses/LICENSE-2.0"
 private const val HazeLicenseUrl = "https://github.com/chrisbanes/haze/blob/1.7.2/LICENSE"
 private const val LibMpvAndroidUrl = "https://github.com/jarnedemeulemeester/libmpv-android"
+private const val ConscryptSourceUrl = "https://github.com/google/conscrypt/tree/2.8.0"
 
 private sealed interface LicenseLogo {
     data class Drawable(@param:DrawableRes val resId: Int) : LicenseLogo
@@ -89,7 +104,8 @@ private data class LicenseAttributionItem(
     val title: String,
     val body: String,
     val url: String,
-    val logo: LicenseLogo? = null
+    val logo: LicenseLogo? = null,
+    val noticeAssetPaths: List<String> = emptyList()
 )
 
 @Composable
@@ -141,7 +157,7 @@ private fun LicensesAttributionsBrandPanel(
         )
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
         Text(
-            text = stringResource(R.string.licenses_attributions_subtitle),
+            text = stringResource(R.string.syclop_licenses_subtitle),
             style = MaterialTheme.typography.bodyLarge,
             color = NuvioTheme.colors.TextSecondary
         )
@@ -179,6 +195,7 @@ private fun LicensesAttributionsDetailsPanel(
                         item = appLicenseItem(),
                         modifier = Modifier.focusRequester(firstFocusRequester)
                     )
+                    AttributionDetailRow(item = upstreamLicenseItem())
                 }
 
                 AttributionSection(
@@ -239,10 +256,29 @@ private fun AttributionDetailRow(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val readFailure = stringResource(R.string.conscrypt_notices_unavailable)
+    var bundledNotices by remember(item.noticeAssetPaths) { mutableStateOf<String?>(null) }
+
+    if (bundledNotices != null) {
+        BundledLicenseDialog(
+            title = item.title,
+            notices = bundledNotices!!,
+            onDismiss = { bundledNotices = null }
+        )
+    }
 
     Card(
         onClick = {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
+            if (item.noticeAssetPaths.isEmpty()) {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
+            } else {
+                runCatching {
+                    item.noticeAssetPaths.joinToString("\n\n") { path ->
+                        context.assets.open(path).bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    }
+                }.onSuccess { bundledNotices = it }
+                    .onFailure { Toast.makeText(context, readFailure, Toast.LENGTH_LONG).show() }
+            }
         },
         modifier = modifier
             .fillMaxWidth()
@@ -351,6 +387,13 @@ private fun rememberUrlSvgPainter(url: String): Painter {
 
 @Composable
 private fun appLicenseItem() = LicenseAttributionItem(
+    title = stringResource(R.string.syclop_licenses_app_title),
+    body = stringResource(R.string.syclop_licenses_app_body),
+    url = SyclopRepositoryUrl
+)
+
+@Composable
+private fun upstreamLicenseItem() = LicenseAttributionItem(
     title = stringResource(R.string.licenses_attributions_nuvio_title),
     body = stringResource(R.string.licenses_attributions_nuvio_body),
     url = NuvioRepositoryUrl
@@ -418,5 +461,68 @@ private fun playbackLicenseItems() = listOf(
         title = stringResource(R.string.licenses_attributions_libmpv_title),
         body = stringResource(R.string.licenses_attributions_libmpv_body),
         url = LibMpvAndroidUrl
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.conscrypt_notices_title),
+        body = stringResource(R.string.conscrypt_notices_description),
+        url = ConscryptSourceUrl,
+        noticeAssetPaths = listOf(
+            "licenses/conscrypt-2.8.0/LICENSE",
+            "licenses/conscrypt-2.8.0/NOTICE",
+            "licenses/conscrypt-2.8.0/licenses/LICENSE.netty.txt",
+            "licenses/conscrypt-2.8.0/licenses/LICENSE.harmony.txt",
+            "licenses/conscrypt-2.8.0/boringssl/LICENSE"
+        )
     )
 )
+
+
+/** Bundled notice text remains readable without sending the viewer to a browser. */
+@Composable
+private fun BundledLicenseDialog(title: String, notices: String, onDismiss: () -> Unit) {
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    val textFocus = remember { FocusRequester() }
+    val closeFocus = remember { FocusRequester() }
+    val scrollStep = with(LocalDensity.current) { 100.dp.toPx() }
+    LaunchedEffect(Unit) {
+        repeat(2) { withFrameNanos { } }
+        textFocus.requestFocus()
+    }
+    NuvioDialog(
+        title = title,
+        subtitle = stringResource(R.string.conscrypt_notices_navigation),
+        onDismiss = onDismiss
+    ) {
+        Box(
+            Modifier.fillMaxWidth().height(220.dp)
+                .focusRequester(textFocus)
+                .onPreviewKeyEvent { event ->
+                    val key = event.nativeKeyEvent
+                    if (key.action != KeyEvent.ACTION_DOWN) false else when (key.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            if (scroll.value < scroll.maxValue) {
+                                scope.launch { scroll.scrollTo((scroll.value + scrollStep.toInt()).coerceAtMost(scroll.maxValue)) }
+                            } else closeFocus.requestFocus()
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_UP -> {
+                            scope.launch { scroll.scrollTo((scroll.value - scrollStep.toInt()).coerceAtLeast(0)) }
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                .focusable()
+                .verticalScroll(scroll)
+        ) {
+            Text(notices, style = MaterialTheme.typography.bodySmall,
+                color = NuvioTheme.colors.TextPrimary)
+        }
+        Button(
+            onClick = onDismiss,
+            modifier = Modifier.fillMaxWidth().focusRequester(closeFocus)
+                .focusProperties { up = textFocus }
+        ) { Text(stringResource(R.string.action_close)) }
+    }
+}

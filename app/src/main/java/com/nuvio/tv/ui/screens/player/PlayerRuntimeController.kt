@@ -71,6 +71,7 @@ import java.util.concurrent.atomic.AtomicLong
 class PlayerRuntimeController(
     context: Context,
     internal val watchProgressRepository: WatchProgressRepository,
+    progressWriteAuthority: PlayerProgressWriteAuthority,
     internal val metaRepository: MetaRepository,
     internal val streamRepository: StreamRepository,
     internal val addonRepository: AddonRepository,
@@ -488,6 +489,7 @@ class PlayerRuntimeController(
     internal var lastSavedPosition: Long = 0L
     internal val saveThresholdMs = 5000L
     internal var hasMarkedCurrentEpisodeCompleted: Boolean = false
+    internal val progressWriteCoordinator = PlayerProgressWriteCoordinator(progressWriteAuthority)
     internal var lastKnownDuration: Long = 0L
 
     internal var playbackStartedForParentalGuide = false

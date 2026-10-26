@@ -124,6 +124,17 @@ Only the three fixed playback-controls test classes run: eleven synthetic, accou
 
 Reports and screenshots remain private in the bench cache. An automated pass records that **visual inspection is still required**; inspect all six images before accepting appearance or focus. These component tests exercise real controls with synthetic state. They do not authorize an account, search providers, establish live Debrid playback or verify an external player's behavior. The source and fixture build must correspond; this command does not export artifacts or promote stable builds.
 
+## Category-navigation fixtures
+
+```sh
+./tools/conda-bench.sh build --test --ui-tests
+./tools/conda-bench.sh --serial emulator-5580 category-navigation
+```
+
+This separate fixed suite uses the same signed development app/test APK preflight, emulator-only routing and strict instrumentation protocol as `playback-controls`. It accepts the same artifact overrides and bounded `--test-timeout`, with no arbitrary class, runner or argument options. Four synthetic cases exercise the production category presentation, content entry, Home scaffold and Modern rows: delayed Anime catalogs, delayed Kids groups, category changes and intentional catalog-order resets. D-pad input and assertions verify the focused card and one-Up return to the correct header.
+
+The fixture supplies in-memory metadata with no artwork URLs, provider search, account setup or playback. It removes only its four fixed earlier images before running, requires all four test events and fresh valid PNGs, and leaves app data intact. Inspect all four images after a pass; visual acceptance is recorded separately. These deterministic cases complement the live-data Home smoke. They cannot establish network timing, catalog accuracy or freedom from the intermittent Android 14 accessibility crash.
+
 ## Capture and smoke
 
 ```sh
@@ -175,7 +186,7 @@ This account-free API 34 bench is a repeatable UI fixture. Before stable promoti
 
 The Apple Silicon bench booted API 34 Android TV ARM64 with hardware CPU virtualization, software guest graphics, 1280×720 output and a verified 4096-byte page size. The signed development APK installed fresh, Advanced/Modern setup completed, and account-free catalogs loaded. A navigation run captured all six categories and verified their Down/Up entry checks. The 32 pure bench-tool tests pass.
 
-**The full UI smoke suite has not passed.** Preserve the failed reports: a late anime catalog prepended above the focused row interrupted the one-Up return, and another cold-launch inspection encountered a `NullPointerException` in Android `ViewRootImpl.getAccessibilityFocusedRect`. These need investigation before treating API 34 UI automation as a release gate. Home restoring its saved tile focus is expected behavior and is handled separately by the harness. No account data was imported into the bench.
+**The full UI smoke suite had not passed at this initial stage.** Preserve the failed reports: a late anime catalog prepended above the focused row interrupted the one-Up return, and another cold-launch inspection encountered a `NullPointerException` in Android `ViewRootImpl.getAccessibilityFocusedRect`. These need investigation before treating API 34 UI automation as a release gate. Home restoring its saved tile focus is expected behavior and is handled separately by the harness. No account data was imported into the bench.
 
 ## Stability follow-up — 25 October 2026
 
@@ -184,3 +195,13 @@ The public `build --test --ui-tests` path completed: 1,386 selected JVM tests in
 The new category presentation preserves already displayed rows as other responses arrive, including grouped Kids rows. Five regressions cover late arrivals, removals, duplicate keys and configuration resets. Separate ADB-only manual samples reached Anime and Kids, kept first-card focus while loading settled and returned to the correct tab with one Up press. Those samples do not simulate every response order or replace the failed automated smoke.
 
 The full Home smoke still failed before its category checks. A matching local crash record showed a null `View.mContext` access inside `ViewRootImpl.getAccessibilityFocusedRect`, and the failure screenshot showed the Android TV launcher. The process could survive or restart in the background, so process presence alone did not prove healthy startup. Foreground loss now receives a specific failure instead of being misclassified as incomplete setup. No retry was relabelled as a passing smoke run. Live Debrid/external-player playback, wider device coverage and the Android 14 accessibility failure remain open.
+
+## Shared-session and category follow-up — 25 October 2026
+
+The final development app/test APKs built through `build --test --ui-tests`. All 1,398 selected JVM checks in 194 suites and all 87 pure bench-tool tests passed without failures/errors/skips. Fifteen production-controller tests cover replay saves within and across controllers, failed episode visits, foreground re-entry, ordinary pause/resume and unrelated episode/profile finals. Repository/engine boundaries remain mocked; no live account or playback grant is used.
+
+On the final API 34 APK, all eleven `playback-controls` fixtures and all four `category-navigation` fixtures passed. All ten fresh screenshots were inspected. The fixtures verify grouping of synthetic TV-Y/TV-G Kids cards and use the same presentation/entry helpers as production. Diagnostic logs and earlier failed runs remain local.
+
+A full Home smoke passed on the preceding `37953ca` APK, with six Down/Up entries, both boundary directions and fourteen inspected captures. A separate run on the final shared-session APK failed before Home: Android 14 again threw inside `ViewRootImpl.getAccessibilityFocusedRect`, and foreground loss correctly failed the report. This intermittent framework-stack accessibility issue remains open; the successful sample does not erase it, and no crash suppression or automatic relaunch was added.
+
+Static inspection of both rebuilt app APKs confirmed the local P2P engine is absent, official Conscrypt 2.8.0 JNI bytes are packaged with 16 KiB alignment in all four universal ABIs, and all five exact Conscrypt/BoringSSL notice assets are included. IAMF's 64-bit core remains at 4 KiB alignment. Dedicated TLS/16 KiB runtime checks, corresponding native sources/notices, external-player result ordering and representative hardware acceptance remain separate gates. The frozen physical Shield APK, release/stable artifacts, owner accounts and Shield debugging state were not changed.

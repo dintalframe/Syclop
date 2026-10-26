@@ -328,18 +328,28 @@ class Bench:
         print("Development universal APK ready:", expected)
 
     def playback_controls(self):
+        self.fixed_fixtures("playback-controls")
+
+    def category_navigation(self):
+        self.fixed_fixtures("category-navigation")
+
+    def fixed_fixtures(self, suite):
         """Run only the fixed synthetic fixtures, preserving the emulator's app data."""
+        if suite not in controls.SUITES:
+            raise BenchError("Unknown fixed fixture suite.")
+        tests, screenshots = controls.SUITES[suite]
+        count = sum(map(len, tests.values()))
         serial_port(self.serial)
         declared_development = self.project.parent / "dist/development"
         development = declared_development.resolve()
         if development != declared_development:
-            raise BenchError("Playback-control development directory must not escape through a symlink.")
+            raise BenchError("Fixture development directory must not escape through a symlink.")
         paths = [(Path(value).expanduser() if value else development / default).resolve()
                  for value, default in ((self.options.apk, "syclop-debug.apk"),
                                         (self.options.test_apk, "syclop-ui-tests.apk"))]
         for apk in paths:
             if development not in apk.parents or apk.suffix != ".apk" or not apk.is_file():
-                raise BenchError("Playback controls require both APKs under dist/development.")
+                raise BenchError("Fixed fixtures require both APKs under dist/development.")
         tool = self.sdk / "build-tools/36.0.0"
         host_env = self.env.copy()
         if os.environ.get("JAVA_HOME"):
@@ -365,25 +375,25 @@ class Bench:
         api = self.device("shell", "getprop", "ro.build.version.sdk").stdout.strip()
         abi = self.device("shell", "getprop", "ro.product.cpu.abi").stdout.strip()
         if not api.isdigit() or any(fact["min_sdk"] > int(api) for fact in facts) or abi not in abis:
-            raise BenchError("Playback-control APKs are incompatible with the selected emulator.")
+            raise BenchError("Fixture APKs are incompatible with the selected emulator.")
         self.report["device"] = {"api": int(api), "abi": abi}
-        self.report["fixture"] = "account-free-playback-controls"
+        self.report["fixture"] = "account-free-" + suite
         self.report["apks"] = {role: {"sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "signers": signers}
                                for role, apk, signers in zip(("app", "tests"), paths, signatures)}
         for apk in paths:
             result = self.device("install", "-r", "-t", str(apk), timeout=180)
             if not result.stdout.splitlines() or result.stdout.splitlines()[-1].strip() != "Success":
-                raise BenchError("Emulator did not confirm the playback-control APK installation.")
+                raise BenchError("Emulator did not confirm the fixture APK installation.")
         remote = "/sdcard/Android/data/" + PACKAGE + "/files/"
-        self.device("shell", "rm", "-f", *[remote + name for name in controls.SCREENSHOTS])
-        print("Running the 11 fixed playback-control fixtures on", self.serial, flush=True)
-        result = self.device("shell", "am", "instrument", "-w", "-r", "-e", "class", ",".join(controls.TESTS),
+        self.device("shell", "rm", "-f", *[remote + name for name in screenshots])
+        print("Running the %d fixed %s fixtures on" % (count, suite), self.serial, flush=True)
+        result = self.device("shell", "am", "instrument", "-w", "-r", "-e", "class", ",".join(tests),
                              controls.TEST_PACKAGE + "/" + controls.RUNNER,
                              timeout=self.options.test_timeout, check=False)
         # Raw instrumentation can contain logs or exception values. Retain only protocol facts.
-        self.report["instrumentation"] = controls.instrumentation_result(result.stdout + "\n" + result.stderr, result.returncode)
+        self.report["instrumentation"] = controls.instrumentation_result(result.stdout + "\n" + result.stderr, result.returncode, suite)
         self.report["screenshots"] = []
-        for name in controls.SCREENSHOTS:
+        for name in screenshots:
             capture = self.device("exec-out", "cat", remote + name, binary=True, check=False)
             if capture.returncode:
                 continue
@@ -395,10 +405,10 @@ class Bench:
             self.report["screenshots"].append(name)
         self.report["visual_inspection"] = "required"
         if not self.report["instrumentation"]["passed"]:
-            raise BenchError("The required playback-control tests did not all pass.")
-        if len(self.report["screenshots"]) != len(controls.SCREENSHOTS):
-            raise BenchError("The playback-control run did not produce six fresh valid screenshots.")
-        print("All 11 fixtures passed; inspect the six screenshots before accepting the visuals.")
+            raise BenchError("The required fixed fixture tests did not all pass.")
+        if len(self.report["screenshots"]) != len(screenshots):
+            raise BenchError("The fixed fixture run did not produce all fresh valid screenshots.")
+        print("All %d fixtures passed; inspect the %d screenshots before accepting the visuals." % (count, len(screenshots)))
 
     def apk(self):
         return Path(self.options.apk).expanduser().resolve() if self.options.apk else self.project.parent / "dist/development/syclop-release.apk"
@@ -615,6 +625,11 @@ def parser():
     playback.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     playback.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
     playback.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
+    category = commands.add_parser("category-navigation", help="Run the four fixed account-free category navigation fixtures")
+    category.set_defaults(command="category_navigation")
+    category.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
+    category.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
+    category.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
     commands.add_parser("stop")
     reset = commands.add_parser("reset", help="Explicit deletion, ownership marker required")
     reset.add_argument("--confirm-reset", action="store_true")
@@ -630,7 +645,7 @@ def main(argv=None):
     bench = None
     try:
         bench = Bench(options)
-        if options.command in ("status", "install", "smoke", "playback_controls"):
+        if options.command in ("status", "install", "smoke", "playback_controls", "category_navigation"):
             bench.begin_report()
         getattr(bench, options.command)()
         bench.save_report(True)

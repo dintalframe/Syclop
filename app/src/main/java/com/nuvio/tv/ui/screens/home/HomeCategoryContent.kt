@@ -73,42 +73,10 @@ private fun HomeCategoryModernContent(
 ) {
     val revision = state.originRevision
     val focusState = remember(section, revision) { viewModel.focusState(section, revision) }
-    var entryRequest by remember(section, revision) { mutableIntStateOf(0) }
     var contentHasFocus by remember { mutableStateOf(false) }
     var lastFocusedRow by remember(section, revision) { mutableStateOf<String?>(null) }
-    val cache = remember(section, revision) { ModernCarouselRowBuildCache() }
-    val displayedRowKeys = remember(section, revision, state.requestRevision) { mutableStateOf(emptyList<String>()) }
-    val buildLock = remember { Mutex() }
-    val context = LocalContext.current
-    val input = remember(rows, homeUiState.modernLandscapePostersEnabled,
-        homeUiState.showFullReleaseDate, homeUiState.homeImdbRatingsVisibility,
-        homeUiState.detailImdbRatingsVisibility, LocaleCache.localeTag) {
-        ModernHomePresentationInput(
-            homeRows = rows.map(HomeRow::Catalog), catalogRows = rows,
-            continueWatchingItems = emptyList(), upcomingItems = emptyList(),
-            useLandscapePosters = homeUiState.modernLandscapePostersEnabled,
-            showCatalogTypeSuffix = false,
-            showFullReleaseDate = homeUiState.showFullReleaseDate,
-            showImdbRatings = homeUiState.homeImdbRatingsVisibility.showRatings,
-            detailImdbRatingsVisibility = homeUiState.detailImdbRatingsVisibility,
-            localeTag = LocaleCache.localeTag
-        )
-    }
-    val produced by produceState<CategoryPresentationResult?>(null, input, context) {
-        val previousRowKeys = displayedRowKeys.value
-        val built = buildLock.withLock {
-            withContext(Dispatchers.Default) {
-                val base = buildModernHomePresentation(input, cache, context)
-                val grouped = if (section == HomeBrowseSection.KIDS) HomeCategoryPresentation.kidsRows(base, rows) else base
-                HomeCategoryPresentation.preserveRowOrder(grouped, previousRowKeys)
-            }
-        }
-        displayedRowKeys.value = built.rows.list.map { it.key }
-        value = CategoryPresentationResult(input, built)
-    }
-    // Keep current-profile cards composed during page append. The enclosing revision key
-    // recreates this state on a profile change, so another profile's artwork cannot persist.
-    val presentation = produced?.presentation ?: ModernHomePresentationState()
+    val prepared = rememberHomeCategoryPresentation(section, revision, state.requestRevision, rows, homeUiState)
+    val presentation = prepared.presentation
 
     val uiState = remember(homeUiState, rows, contentHasFocus) {
         homeUiState.copy(
@@ -127,26 +95,15 @@ private fun HomeCategoryModernContent(
     val enrichedPreviews by homeViewModel.enrichedPreviews.collectAsStateWithLifecycle()
     val failedEnrichmentIds by homeViewModel.failedEnrichmentIds.collectAsStateWithLifecycle()
 
-    val enterLatest by rememberUpdatedState<() -> Unit> {
-        if (presentation.rows.list.isNotEmpty() && viewModel.isCurrent()) {
-            entry.pending = false
-            entryRequest++
-        } else entry.pending = true
-    }
-    DisposableEffect(entry) {
-        entry.enter = { enterLatest() }
-        onDispose { entry.enter = {} }
-    }
-    LaunchedEffect(section, revision) {
-        if (viewModel.consumeCategoryReturn(section, revision)) entry.pending = true
-    }
-    LaunchedEffect(presentation.rows.list.isNotEmpty()) {
-        if (entry.pending) enterLatest()
-    }
+    val entryRequest = rememberHomeCategoryEntryRequest(
+        entry = entry, ready = presentation.rows.list.isNotEmpty(),
+        isCurrent = viewModel::isCurrent,
+        consumeReturn = { viewModel.consumeCategoryReturn(section, revision) }
+    )
     // A last-row focus opts into the next small batch. Empty later batches do not strand the
     // user, and all existing ViewModel concurrency, catalog and card limits still apply.
     LaunchedEffect(lastFocusedRow, state.rows, state.moreCatalogs, presentation) {
-        if (produced?.input === input && lastFocusedRow != null && lastFocusedRow == presentation.rows.list.lastOrNull()?.key &&
+        if (prepared.current && lastFocusedRow != null && lastFocusedRow == presentation.rows.list.lastOrNull()?.key &&
             state.moreCatalogs && state.rows.none { it.loading } && viewModel.isCurrent()) {
             viewModel.loadMoreCatalogs()
         }
@@ -205,4 +162,81 @@ private fun HomeCategoryModernContent(
                 modifier = Modifier.align(Alignment.BottomEnd).background(Color.Black.copy(alpha = 0.8f)).padding(8.dp))
         }
     }
+}
+
+internal data class HomeCategoryPreparedPresentation(
+    val presentation: ModernHomePresentationState,
+    val current: Boolean
+)
+
+/** The category renderer and deterministic TV fixtures share the same asynchronous preparation. */
+@Composable
+internal fun rememberHomeCategoryPresentation(
+    section: HomeBrowseSection,
+    originRevision: Long,
+    requestRevision: Long,
+    rows: List<CatalogRow>,
+    homeUiState: HomeUiState
+): HomeCategoryPreparedPresentation = key(section, originRevision, requestRevision) {
+    val cache = remember { ModernCarouselRowBuildCache() }
+    val displayedRowKeys = remember { mutableStateOf(emptyList<String>()) }
+    val buildLock = remember { Mutex() }
+    val context = LocalContext.current
+    val input = remember(rows, homeUiState.modernLandscapePostersEnabled,
+        homeUiState.showFullReleaseDate, homeUiState.homeImdbRatingsVisibility,
+        homeUiState.detailImdbRatingsVisibility, LocaleCache.localeTag) {
+        ModernHomePresentationInput(
+            homeRows = rows.map(HomeRow::Catalog), catalogRows = rows,
+            continueWatchingItems = emptyList(), upcomingItems = emptyList(),
+            useLandscapePosters = homeUiState.modernLandscapePostersEnabled,
+            showCatalogTypeSuffix = false,
+            showFullReleaseDate = homeUiState.showFullReleaseDate,
+            showImdbRatings = homeUiState.homeImdbRatingsVisibility.showRatings,
+            detailImdbRatingsVisibility = homeUiState.detailImdbRatingsVisibility,
+            localeTag = LocaleCache.localeTag
+        )
+    }
+    val produced by produceState<CategoryPresentationResult?>(null, input, context) {
+        val previousRowKeys = displayedRowKeys.value
+        val built = buildLock.withLock {
+            withContext(Dispatchers.Default) {
+                val base = buildModernHomePresentation(input, cache, context)
+                val grouped = if (section == HomeBrowseSection.KIDS) HomeCategoryPresentation.kidsRows(base, rows) else base
+                HomeCategoryPresentation.preserveRowOrder(grouped, previousRowKeys)
+            }
+        }
+        displayedRowKeys.value = built.rows.list.map { it.key }
+        value = CategoryPresentationResult(input, built)
+    }
+    // Keep current-profile cards composed during page append. The enclosing revision key
+    // recreates this state on a profile or request change, so prior artwork cannot persist.
+    HomeCategoryPreparedPresentation(produced?.presentation ?: ModernHomePresentationState(), produced?.input === input)
+}
+
+/** Down and a guarded detail return use one entry path; a catalog update alone never enters it. */
+@Composable
+internal fun rememberHomeCategoryEntryRequest(
+    entry: HomeBrowseEntry,
+    ready: Boolean,
+    isCurrent: () -> Boolean,
+    consumeReturn: () -> Boolean
+): Int {
+    var request by remember(entry) { mutableIntStateOf(0) }
+    val enterLatest by rememberUpdatedState<() -> Unit> {
+        if (ready && isCurrent()) {
+            entry.pending = false
+            request++
+        } else entry.pending = true
+    }
+    DisposableEffect(entry) {
+        entry.enter = { enterLatest() }
+        onDispose { entry.enter = {} }
+    }
+    LaunchedEffect(entry) {
+        if (consumeReturn()) entry.pending = true
+    }
+    LaunchedEffect(ready) {
+        if (entry.pending) enterLatest()
+    }
+    return request
 }

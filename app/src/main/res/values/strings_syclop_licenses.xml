@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="syclop_licenses_subtitle">Data providers, service credits, and Android playback licenses used by Syclop.</string>
+    <string name="syclop_licenses_app_title">Syclop</string>
+    <string name="syclop_licenses_app_body">Syclop is derived from NuvioTV and licensed under the GNU General Public License v3.0. Its corresponding source code and license are available in the Syclop repository. Upstream credits are retained below.</string>
+</resources>

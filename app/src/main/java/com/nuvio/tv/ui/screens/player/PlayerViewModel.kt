@@ -65,6 +65,7 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val watchProgressRepository: WatchProgressRepository,
+    private val progressWriteAuthority: PlayerProgressWriteAuthority,
     private val metaRepository: MetaRepository,
     private val streamRepository: StreamRepository,
     private val addonRepository: AddonRepository,
@@ -130,6 +131,7 @@ class PlayerViewModel @Inject constructor(
     internal val controller = PlayerRuntimeController(
         context = context,
         watchProgressRepository = watchProgressRepository,
+        progressWriteAuthority = progressWriteAuthority,
         metaRepository = metaRepository,
         streamRepository = streamRepository,
         addonRepository = addonRepository,
@@ -367,6 +369,15 @@ class PlayerViewModel @Inject constructor(
 
     fun attachMpvView(view: NuvioMpvSurfaceView?) {
         controller.attachMpvView(view)
+    }
+
+    // These ownership signals come only from PlayerScreen's navigation-entry lifecycle.
+    fun activateProgressForForeground() {
+        controller.progressWriteCoordinator.activateForeground(controller.currentProgressWriteOwner())
+    }
+
+    fun deactivateProgressForForeground() {
+        controller.progressWriteCoordinator.deactivateForeground()
     }
 
     fun pauseForLifecycle() {

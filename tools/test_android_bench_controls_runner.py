@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from test_android_bench_controls import APP_TREE, TEST_TREE, SUCCESS, ONE_PIXEL_PNG
+from test_android_bench_controls import APP_TREE, TEST_TREE, SUCCESS, ONE_PIXEL_PNG, event
 
 SCRIPT = Path(__file__).with_name("android-bench.py")
 spec = importlib.util.spec_from_file_location("controls_runner_bench", SCRIPT)
@@ -29,6 +29,19 @@ FIXED_CLASSES = ",".join((
 ))
 FIXED_RUNNER = "com.dintal.syclop.test/androidx.test.runner.AndroidJUnitRunner"
 REMOTE = "/sdcard/Android/data/com.dintal.syclop/files/"
+CATEGORY_CLASS = "com.nuvio.tv.ui.screens.home.HomeCategoryNavigationTvTest"
+CATEGORY_CASES = (
+    (CATEGORY_CLASS, "lateAnimeCatalogKeepsFocusedCardAndOneUpReturnsToHeader"),
+    (CATEGORY_CLASS, "lateKidsGroupKeepsSafeEntryAndOneUpReturnsToHeader"),
+    (CATEGORY_CLASS, "changingCategoriesKeepsHeaderFocusAndUsesNewCategoryRows"),
+    (CATEGORY_CLASS, "newRequestRevisionRestoresConfiguredOrderWithoutOldFocus"),
+)
+CATEGORY_IMAGES = (
+    "category-anime-late-arrival.png", "category-kids-late-group.png",
+    "category-change-anime-header.png", "category-request-order-reset.png")
+CATEGORY_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
+                           for i, case in enumerate(CATEGORY_CASES, 1)).replace("numtests=11", "numtests=4") + (
+    "INSTRUMENTATION_RESULT: stream=\n\nTime: 43.2\n\nOK (4 tests)\n\nINSTRUMENTATION_CODE: -1\n")
 
 
 def answer(output="", code=0, binary=False):
@@ -108,6 +121,55 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
 
     def assert_no_installs(self, device):
         self.assertFalse(any(call.args and call.args[0] == "install" for call in device.call_args_list))
+
+    def test_category_navigation_runs_only_its_fixed_class_and_four_fresh_images(self):
+        self.protocol = CATEGORY_SUCCESS
+        instance = self.instance(command="category-navigation")
+        with self.mocks(instance) as (_, device):
+            instance.category_navigation()
+        invocation = next(call for call in device.call_args_list if call.args[:3] == ("shell", "am", "instrument"))
+        self.assertEqual(("shell", "am", "instrument", "-w", "-r", "-e", "class", CATEGORY_CLASS, FIXED_RUNNER), invocation.args)
+        removal = next(call for call in device.call_args_list if call.args[:3] == ("shell", "rm", "-f"))
+        self.assertEqual(("shell", "rm", "-f", *[REMOTE + name for name in CATEGORY_IMAGES]), removal.args)
+        self.assertEqual("account-free-category-navigation", instance.report["fixture"])
+        self.assertEqual({"expected": 4, "completed": 4, "passed": True}, instance.report["instrumentation"])
+        self.assertEqual(list(CATEGORY_IMAGES), instance.report["screenshots"])
+        self.assertEqual("required", instance.report["visual_inspection"])
+
+    def test_category_protocol_rejects_playback_or_incomplete_or_failed_suite(self):
+        for index, output in enumerate((SUCCESS, CATEGORY_SUCCESS.replace("OK (4 tests)", "OK (3 tests)"),
+                       CATEGORY_SUCCESS.replace("INSTRUMENTATION_STATUS_CODE: 0", "INSTRUMENTATION_STATUS_CODE: -2", 1),
+                       CATEGORY_SUCCESS.replace("INSTRUMENTATION_CODE: -1", ""),
+                       CATEGORY_SUCCESS + "INSTRUMENTATION_CODE: -1\n")):
+            with self.subTest(case=index):
+                self.assertFalse(bench.controls.instrumentation_result(output, 0, "category-navigation")["passed"])
+        self.assertFalse(bench.controls.instrumentation_result(CATEGORY_SUCCESS, 0)["passed"])
+        self.assertFalse(bench.controls.instrumentation_result(CATEGORY_SUCCESS, 1, "category-navigation")["passed"])
+
+    def test_category_capture_failure_cannot_reuse_a_playback_screenshot(self):
+        self.protocol = CATEGORY_SUCCESS
+        self.capture_override[CATEGORY_IMAGES[0]] = answer(b"", 1, binary=True)
+        instance = self.instance(command="category-navigation")
+        with self.mocks(instance), self.assertRaises(bench.BenchError):
+            instance.category_navigation()
+        self.assertNotIn(CATEGORY_IMAGES[0], instance.report["screenshots"])
+
+    def test_unknown_suite_fails_before_any_host_or_device_command(self):
+        instance = self.instance()
+        with self.mocks(instance) as (host, device), self.assertRaises(bench.BenchError):
+            instance.fixed_fixtures("external-fixture")
+        host.assert_not_called()
+        device.assert_not_called()
+        with self.assertRaises(bench.controls.ControlsError):
+            bench.controls.instrumentation_result(CATEGORY_SUCCESS, 0, "external-fixture")
+
+    def test_category_command_rejects_arbitrary_instrumentation_arguments(self):
+        options = bench.parser().parse_args(["category-navigation", "--test-timeout", "600"])
+        self.assertEqual("category_navigation", options.command)
+        self.assertEqual(600, options.test_timeout)
+        for flag in ("--class", "--runner", "--arguments"):
+            with self.subTest(flag=flag), patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
+                bench.parser().parse_args(["category-navigation", flag, "untrusted"])
 
     def test_missing_or_nonemulator_serial_fails_before_tools_or_server(self):
         for serial in [None, "192.0.2.1:5555", "SHIELD123", "emulator-5581"]:

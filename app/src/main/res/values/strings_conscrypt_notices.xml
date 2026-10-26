@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conscrypt_notices_title">Conscrypt 2.8.0</string>
+    <string name="conscrypt_notices_description">Native TLS support. Read the bundled license and third-party notices.</string>
+    <string name="conscrypt_notices_navigation">Use Up and Down to read. Press Back or Close to return.</string>
+    <string name="conscrypt_notices_unavailable">The bundled notices could not be opened.</string>
+</resources>

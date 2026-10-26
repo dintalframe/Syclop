@@ -12,6 +12,9 @@ internal fun PlayerRuntimeController.preparePlaybackBeforeStart(
     headers: Map<String, String>,
     loadSavedProgress: Boolean
 ) {
+    // Source selection commits the episode identity before preparation. Record that visit even
+    // when authorization fails or playback ends before the first frame/progress save.
+    currentProgressWriteOwner()?.let(progressWriteCoordinator::onPlaybackOwnerChanged)
     val playbackRequest = PlayerMediaSourceFactory.normalizePlaybackRequest(url, headers)
     val playbackUrl = playbackRequest.url
     val playbackHeaders = playbackRequest.headers

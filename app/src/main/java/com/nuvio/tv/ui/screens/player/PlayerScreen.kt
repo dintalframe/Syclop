@@ -463,13 +463,15 @@ fun PlayerScreen(
     }
 
     // Handle lifecycle events
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
                     viewModel.pauseForLifecycle()
+                    viewModel.deactivateProgressForForeground()
                 }
                 Lifecycle.Event.ON_RESUME -> {
+                    viewModel.activateProgressForForeground()
                     // Re-create the MediaSession so media controls work in foreground.
                     // Don't auto-resume playback — let the user press play.
                     viewModel.resumeForLifecycle()
@@ -479,6 +481,7 @@ fun PlayerScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            viewModel.deactivateProgressForForeground()
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }

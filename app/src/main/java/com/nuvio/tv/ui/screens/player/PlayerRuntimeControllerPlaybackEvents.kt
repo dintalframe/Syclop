@@ -865,6 +865,12 @@ internal fun PlayerRuntimeController.currentWatchProgress(
     lastWatched = lastWatched
 )
 
+internal fun PlayerRuntimeController.currentProgressWriteOwner(): PlayerProgressWriteOwner? {
+    val parentId = contentId?.takeIf { it.isNotEmpty() } ?: return null
+    val type = contentType?.takeIf { it.isNotEmpty() } ?: return null
+    return PlayerProgressWriteOwner(profileId, parentId, type, currentVideoId ?: parentId, currentSeason, currentEpisode)
+}
+
 internal fun PlayerRuntimeController.saveWatchProgressInternal(position: Long, duration: Long, syncRemote: Boolean = true) {
     if (contentType.equals("cloud", ignoreCase = true)) {
         saveCloudLibraryProgress(position, duration, completed = false)
@@ -879,38 +885,49 @@ internal fun PlayerRuntimeController.saveWatchProgressInternal(position: Long, d
 
     val progress = currentWatchProgress(parentContentId, parentContentType, position, duration, System.currentTimeMillis())
         .copy(progressPercent = fallbackPercent)
+    val owner = PlayerProgressWriteOwner(profileId, progress.contentId, progress.contentType,
+        progress.videoId, progress.season, progress.episode)
+    val completedWhenCaptured = hasMarkedCurrentEpisodeCompleted
+    val request = progressWriteCoordinator.capture(owner, completedWhenCaptured) ?: return
 
     scope.launch(kotlinx.coroutines.NonCancellable) {
         try {
             val effectiveContentId = watchProgressRepository.normalizeParentContentId(
                 parentContentId = progress.contentId,
                 videoId = progress.videoId,
-                profileId = profileId
+                profileId = owner.profileId
             )
             val normalizedProgress = progress.copy(contentId = effectiveContentId)
-            if (normalizedProgress.isCompleted()) {
-                if (!hasMarkedCurrentEpisodeCompleted) {
-                    hasMarkedCurrentEpisodeCompleted = true
-                    watchProgressRepository.markAsCompleted(
+            progressWriteCoordinator.writeIfCurrent(request, normalizedProgress.isCompleted()) {
+                // An outgoing episode can still finish saving, but its completion latch belongs
+                // to that episode, not whichever video is now playing in this controller.
+                val writesCurrentVideo = owner == currentProgressWriteOwner()
+                val alreadyCompleted = completedWhenCaptured ||
+                    (writesCurrentVideo && hasMarkedCurrentEpisodeCompleted)
+                if (normalizedProgress.isCompleted()) {
+                    if (!alreadyCompleted) {
+                        if (writesCurrentVideo) hasMarkedCurrentEpisodeCompleted = true
+                        watchProgressRepository.markAsCompleted(
+                            normalizedProgress,
+                            profileId = owner.profileId,
+                            broadcastTrackingHistory = false
+                        )
+                    }
+                    if (owner == currentProgressWriteOwner() && progressWriteCoordinator.mayPublish(request)) {
+                        runCatching { tvRecommendationManager.onProgressRemoved(normalizedProgress.contentId) }
+                    }
+                } else if (!alreadyCompleted) {
+                    // Never replace completion with a stale final low-progress reading. Explicit
+                    // Start from beginning invalidates that pass and opens a new progress session.
+                    watchProgressRepository.saveProgress(
                         normalizedProgress,
-                        profileId = profileId,
-                        broadcastTrackingHistory = false
+                        profileId = owner.profileId,
+                        syncRemote = syncRemote
                     )
+                    if (owner == currentProgressWriteOwner() && progressWriteCoordinator.mayPublish(request)) {
+                        runCatching { tvRecommendationManager.updateSingleWatchNextProgram(normalizedProgress) }
+                    }
                 }
-                runCatching { tvRecommendationManager.onProgressRemoved(normalizedProgress.contentId) }
-            } else if (!hasMarkedCurrentEpisodeCompleted) {
-                // Only save in-progress when the episode has not already been
-                // marked as completed during this playback session.  After
-                // natural playback completion the player can report stale
-                // position/duration values (e.g. duration=0 → fallbackPercent=5)
-                // which would overwrite the completed entry in the mutation
-                // store and push an incorrect low-progress value to remote.
-                watchProgressRepository.saveProgress(
-                    normalizedProgress,
-                    profileId = profileId,
-                    syncRemote = syncRemote
-                )
-                runCatching { tvRecommendationManager.updateSingleWatchNextProgram(normalizedProgress) }
             }
         } catch (error: IOException) {
             Log.w(PlayerRuntimeController.TAG, "Watch progress could not be saved", error)
@@ -1438,6 +1455,11 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             if (isPartyControlLocked) {
                 partyBlocksControl()
                 return
+            }
+            // Only the foreground screen may start a new viewing session. A late event from
+            // a covered player must not seek or supersede the foreground player's progress.
+            currentProgressWriteOwner()?.let { owner ->
+                if (!progressWriteCoordinator.invalidate(owner)) return
             }
             // A delayed resume lookup must never undo an explicit restart.
             resumeRequestGate.invalidate()
