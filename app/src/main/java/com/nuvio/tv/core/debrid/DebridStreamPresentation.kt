@@ -30,14 +30,16 @@ class DebridStreamPresentation internal constructor(
 
     suspend fun apply(
         groups: List<AddonStreams>,
-        includeBadgeMatches: Boolean = true
+        includeBadgeMatches: Boolean = true,
+        episodeRequest: Boolean = false
     ): List<AddonStreams> {
         return withContext(Dispatchers.Default) {
             apply(
                 groups = groups,
                 settings = dataStore.settings.first(),
                 streamBadgeRules = streamBadgeSettingsDataStore.settings.first().rules,
-                includeBadgeMatches = includeBadgeMatches
+                includeBadgeMatches = includeBadgeMatches,
+                episodeRequest = episodeRequest
             )
         }
     }
@@ -46,9 +48,11 @@ class DebridStreamPresentation internal constructor(
         groups: List<AddonStreams>,
         settings: DebridSettings,
         streamBadgeRules: StreamBadgeRules = StreamBadgeRules(),
-        includeBadgeMatches: Boolean = true
+        includeBadgeMatches: Boolean = true,
+        episodeRequest: Boolean = false
     ): List<AddonStreams> {
-        val eligibleGroups = groups.map { group -> group.copy(streams = group.streams.filter { NativeDebridSourceCards.eligible(it, settings, nativeGrant) }) }
+        val eligibleGroups = groups.map { group -> group.copy(streams = EpisodeSourcePolicy.filter(group.streams, episodeRequest)
+            .filter { NativeDebridSourceCards.eligible(it, settings, nativeGrant) }) }
         if (!settings.canResolvePlayableLinks) return eligibleGroups
         val badgeFilters by lazy {
             if (includeBadgeMatches) getBadgeFilters(streamBadgeRules) else emptyList()
@@ -61,12 +65,14 @@ class DebridStreamPresentation internal constructor(
         // Keep complete candidates for flattened All ranking/enrichment; final limits belong there.
         return visibleGroups.map { group -> group.copy(streams = group.streams.mapNotNull { stream ->
             if(stream.isManagedDebridStream(settings)) presented[stream] else stream
-        }.let { rankAll(it, settings, enforceLimits = false) }) }
+        }.let { rankAll(it, settings, enforceLimits = false, episodeRequest = episodeRequest) }) }
     }
 
     /** Used for the flattened All list and autoplay, before pagination. */
-    fun rankAll(streams: List<Stream>, settings: DebridSettings, enforceLimits: Boolean = true): List<Stream> {
-        val eligible = streams.filter { NativeDebridSourceCards.eligible(it, settings, nativeGrant) }
+    fun rankAll(streams: List<Stream>, settings: DebridSettings, enforceLimits: Boolean = true,
+        episodeRequest: Boolean = false): List<Stream> {
+        val eligible = EpisodeSourcePolicy.filter(streams, episodeRequest)
+            .filter { NativeDebridSourceCards.eligible(it, settings, nativeGrant) }
         if (!settings.canResolvePlayableLinks) return eligible
         val managed = eligible.filter { it.isManagedDebridStream(settings) }
         val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits).map { it.first }

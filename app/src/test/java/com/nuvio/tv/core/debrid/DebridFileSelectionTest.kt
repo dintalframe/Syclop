@@ -15,15 +15,97 @@ import org.junit.runners.Parameterized
 @RunWith(Parameterized::class)
 class DebridFileSelectionTest(private val provider: String) {
     @Test
-    fun `filename takes priority over raw filename and episode`() {
+    fun `without episode coordinates filename keeps priority over raw filename`() {
         val files = listOf(file(4, "Show.S01E01.mkv"), file(8, "Show.S01E02.mkv"))
         val metadata = resolve(filename = "Show.S01E02.mkv").copy(
             stream = StreamClientResolveStream(raw = rawFilename("Show.S01E01.mkv")),
         )
 
-        assertSelected(8, files, metadata, season = 1, episode = 1)
+        assertSelected(8, files, metadata)
         assertSelected(4, files, metadata.copy(filename = null))
         assertSelected(4, files, metadata.copy(filename = "missing.mkv"))
+    }
+
+    @Test
+    fun `matching filename cannot override requested episode or a conflicting actual raw filename`() {
+        val files = listOf(file(4, "Show.S01E01.mkv"), file(8, "Show.S01E02.mkv"))
+        val conflicting = resolve(filename = "Show.S01E02.mkv").copy(
+            stream = StreamClientResolveStream(raw = rawFilename("Show.S01E01.mkv")),
+        )
+
+        assertSelected(null, files, conflicting, season = 1, episode = 1)
+        assertSelected(null, files, conflicting, season = 1, episode = 2)
+        assertSelected(4, files, conflicting.copy(filename = null), season = 1, episode = 1)
+        assertSelected(4, files, conflicting.copy(filename = "missing.mkv"), season = 1, episode = 1)
+    }
+
+    @Test
+    fun `matching episode filename disambiguates encodes but conflicting encodes are rejected`() {
+        val first = file(4, "Show.S01E04.720p.mkv")
+        val second = file(8, "Show.S01E04.1080p.mkv")
+        val files = listOf(first, second)
+        val metadata = resolve(filename = second.name, fileIdx = 999)
+
+        assertSelected(8, files, metadata, season = 1, episode = 4)
+        assertSelected(null, files, metadata.copy(
+            stream = StreamClientResolveStream(raw = rawFilename(first.name!!)),
+        ), season = 1, episode = 4)
+        assertSelected(null, files, resolve(fileIdx = 1), season = 1, episode = 4)
+    }
+
+    @Test
+    fun `episode request rejects season compilation compound range fractional and conflicting labels`() {
+        val rejected = listOf(
+            "Show.S01.Complete.mkv", "Show.Season.1.Complete.mkv",
+            "Show.S01E04E05.mkv", "Show.S01E04-E10.mkv", "Show.S01E04_05.mkv",
+            "Show.S01E04+05.mkv", "Show.S01E04~05.mkv", "Show.S01E04to05.mkv",
+            "Show.S01E04.5.mkv", "Show.1x04.5v2.mkv", "Show.1x04x05.mkv",
+            "Show.S01E04.S02E04.mkv", "Show.S01E04.E05.mkv", "Show.S01E04.Season.2.mkv",
+            "Show.S01E04.1080p.E05E06.mkv", "Show.S01E04.1080p.S02E05E06.mkv",
+        )
+        for (name in rejected) {
+            val files = listOf(file(4, name))
+            assertSelected(null, files, resolve(), season = 1, episode = 4)
+            assertSelected(null, files, resolve(filename = name, fileIdx = 0), season = 1, episode = 4)
+        }
+    }
+
+    @Test
+    fun `season pack selects one requested actual leaf and never an archive or larger adjacent episode`() {
+        val files = listOf(
+            file(1, "Show.S01-S12.Complete/Show.S01E02.mkv"),
+            file(2, "Show.S01-S12.Complete/Show.S01E04.1080p.BluRay.5.1.x265.mkv"),
+            file(3, "Show.S01-S12.Complete.zip"),
+        )
+        assertSelected(2, files, resolve(filename = "Show.S01-S12.Complete", fileIdx = 0), season = 1, episode = 4)
+        assertSelected(null, files.take(1), resolve(fileIdx = 0), season = 1, episode = 4)
+    }
+
+    @Test
+    fun `parent folder coordinates cannot make an unknown or different actual leaf an episode`() {
+        val files = listOf(file(1, "Show.S01E04/Episode.mkv"), file(2, "Show.S01E04/Show.S01E02.mkv"))
+        assertSelected(null, files, resolve(), season = 1, episode = 4)
+        assertSelected(null, files, resolve(filename = "Show.S01E04/Episode.mkv"), season = 1, episode = 4)
+        assertSelected(null, files, resolve(filename = "Show.S01E04/Show.S01E02.mkv"), season = 1, episode = 4)
+    }
+
+    @Test
+    fun `partial or invalid episode coordinates never fall back to filename index or largest file`() {
+        val files = listOf(file(4, "Show.S01E04.mkv"))
+        val coordinates: List<Pair<Int?, Int?>> = listOf(1 to null, null to 4, -1 to 4, 1 to 0, 1 to -4)
+        for ((season, episode) in coordinates) {
+            assertSelected(null, files, resolve(filename = "Show.S01E04.mkv", fileIdx = 0), season, episode)
+            assertSelected(null, files, resolve(filename = "Show.S01E04.mkv", fileIdx = 0, season = season, episode = episode))
+        }
+    }
+
+    @Test
+    fun `singular episode encodes preserve quality tags revisions and season zero specials`() {
+        for (name in listOf("Show.S01E04.1080p.x265.5.1.mkv", "Show.S01E04-720p.mkv",
+            "Show.S01E04.10bit.mkv", "Show.S01E04.24fps.mkv", "Show.S01E04.v2.mkv")) {
+            assertSelected(4, listOf(file(4, name)), resolve(filename = name), season = 1, episode = 4)
+        }
+        assertSelected(4, listOf(file(4, "Show.S00E04.mkv")), resolve(), season = 0, episode = 4)
     }
 
     @Test

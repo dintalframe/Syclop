@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.core.debrid.EpisodeSourcePolicy
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.AddonResource
 import com.nuvio.tv.domain.model.ContentType
@@ -67,6 +68,7 @@ class ExpressAddonAdapter internal constructor(
             val config = configuration(addon.baseUrl)
             stage = "metadata"
             val media = metadata.resolve(request)
+            val episodeRequest = EpisodeSourcePolicy.isEpisodeRequest(media.type, media.episode)
             if (request.videoId.startsWith("mal:") && media.nativeAnimeIdentity == null)
                 throw ExpressException("A confirmed anime title identity is unavailable.")
             stage = "provider search"
@@ -93,7 +95,9 @@ class ExpressAddonAdapter internal constructor(
                                     // Broad search engines can return unrelated rows for one term or a
                                     // numeric episode. Reject them before subpage fetches or any result
                                     // budget so unrelated matches cannot crowd out native MAL sources.
-                                    for (row in rows.asSequence().filter { media.acceptsNativeAnimeRow(it) }.take(MAX_ROWS)) {
+                                    for (row in rows.asSequence().filter { media.acceptsNativeAnimeRow(it) }
+                                        .filterNot { episodeRequest && EpisodeSourcePolicy.hasReportedPackText(it.title, it.filename) }
+                                        .take(MAX_ROWS)) {
                                         var resolved = row
                                         if (row.hash == null && row.url?.startsWith("magnet:", true) != true &&
                                             provider.get("source_is_in_sub_page")?.asBoolean == true) {
@@ -281,7 +285,7 @@ class ExpressAddonAdapter internal constructor(
         val scopes = when {
             media.type == "movie" -> listOf("movie")
             media.anime -> listOf("anime")
-            else -> listOf("episode", "season")
+            else -> listOf("episode")
         }
         return scopes.flatMap { scope ->
             val config = provider.get(scope)?.takeIf { it.isJsonObject }?.asJsonObject ?: return@flatMap emptyList()

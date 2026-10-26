@@ -347,9 +347,11 @@ class StreamRepositoryImpl @Inject constructor(
 
                 // Emit results as they arrive
                 for (result in resultChannel) {
-                    val checkingResult = localDebridAvailabilityService.markChecking(listOf(result)).firstOrNull() ?: result
+                    val episodeRequest = com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(type, episode)
+                    val admitted = result.copy(streams = com.nuvio.tv.core.debrid.EpisodeSourcePolicy.filter(result.streams, episodeRequest))
+                    val checkingResult = localDebridAvailabilityService.markChecking(listOf(admitted)).firstOrNull() ?: admitted
                     val checkedResult = localDebridAvailabilityService.annotateCachedAvailability(listOf(checkingResult)).firstOrNull() ?: checkingResult
-                    mergePresentedResult(accumulatedResults, checkedResult, debridSettings)
+                    mergePresentedResult(accumulatedResults, checkedResult, debridSettings, episodeRequest)
                     emit(NetworkResult.Success(accumulatedResults.toList()))
                     Log.d(TAG, "Emitted ${accumulatedResults.size} addon(s), latest: ${checkedResult.addonName} with ${checkedResult.streams.size} streams")
                 }
@@ -462,7 +464,8 @@ class StreamRepositoryImpl @Inject constructor(
     private suspend fun mergePresentedResult(
         accumulatedResults: MutableList<AddonStreams>,
         result: AddonStreams,
-        debridSettings: DebridSettings
+        debridSettings: DebridSettings,
+        episodeRequest: Boolean
     ) {
         val existingIndex = accumulatedResults.indexOfFirst { it.addonName == result.addonName }
         if (existingIndex >= 0) {
@@ -470,17 +473,18 @@ class StreamRepositoryImpl @Inject constructor(
             val merged = existing.copy(
                 streams = mergeStreams(existing.streams, result.streams)
             )
-            accumulatedResults[existingIndex] = presentStreams(merged, debridSettings)
+            accumulatedResults[existingIndex] = presentStreams(merged, debridSettings, episodeRequest)
         } else {
-            accumulatedResults.add(presentStreams(result, debridSettings))
+            accumulatedResults.add(presentStreams(result, debridSettings, episodeRequest))
         }
     }
 
-    private fun presentStreams(result: AddonStreams, debridSettings: DebridSettings): AddonStreams {
+    private fun presentStreams(result: AddonStreams, debridSettings: DebridSettings, episodeRequest: Boolean): AddonStreams {
         return debridStreamPresentation.apply(
             groups = listOf(result),
             settings = debridSettings,
-            includeBadgeMatches = false
+            includeBadgeMatches = false,
+            episodeRequest = episodeRequest
         ).firstOrNull() ?: result
     }
 

@@ -361,7 +361,11 @@ class StreamScreenViewModel @Inject constructor(
     }
 
     fun isNativeSourceDisplayEligible(stream: Stream): Boolean =
-        bitrateSettings?.let { com.nuvio.tv.core.debrid.NativeDebridSourceCards.eligible(stream, it) } == true
+        bitrateSettings?.let { com.nuvio.tv.core.debrid.NativeDebridSourceCards.eligible(stream, it) &&
+            (!episodeSourceRequest || !com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isReportedPack(stream)) } == true
+
+    private val episodeSourceRequest: Boolean
+        get() = com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(contentType, episode)
 
     private fun rankBitrateStreams(streams: List<Stream>): List<Stream> {
         syncBitrateMetadataScope()
@@ -373,7 +377,7 @@ class StreamScreenViewModel @Inject constructor(
         val merged = streams.map {
             (nativeMetadataStreams[it.stableKey(0)] ?: it).copy(reportedMovieRuntimeMillis = movieRuntime)
         }
-        return bitrateSettings?.let { debridStreamPresentation.rankAll(merged, it) } ?: emptyList()
+        return bitrateSettings?.let { debridStreamPresentation.rankAll(merged, it, episodeRequest = episodeSourceRequest) } ?: emptyList()
     }
 
     private fun refreshBitrateRanking() {
@@ -394,8 +398,10 @@ class StreamScreenViewModel @Inject constructor(
         val state = _uiState.value
         if (state.addonStreams.isEmpty()) return
         val settings = bitrateSettings ?: return
-        val ordered = debridStreamPresentation.rankAll(state.addonStreams.flatMap { it.streams }, settings, enforceLimits = false)
+        val ordered = debridStreamPresentation.rankAll(state.addonStreams.flatMap { it.streams }, settings,
+            enforceLimits = false, episodeRequest = episodeSourceRequest)
         val visible = (listOfNotNull(lastSelectedBitrateStream) + ordered).distinctBy { it.stableKey(0) }
+            .let { com.nuvio.tv.core.debrid.EpisodeSourcePolicy.filter(it, episodeSourceRequest) }
             .map { nativeMetadataStreams[it.stableKey(0)] ?: it }
         val requestKey = visible.take(12).joinToString { it.stableKey(0) } + "|${state.bitrateDurationMillis}"
         if(!force && requestKey == bitrateRequestKey) return

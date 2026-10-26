@@ -333,6 +333,9 @@ class Bench:
     def category_navigation(self):
         self.fixed_fixtures("category-navigation")
 
+    def episode_sources(self):
+        self.fixed_fixtures("episode-sources")
+
     def fixed_fixtures(self, suite):
         """Run only the fixed synthetic fixtures, preserving the emulator's app data."""
         if suite not in controls.SUITES:
@@ -630,6 +633,11 @@ def parser():
     category.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     category.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
     category.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
+    episode = commands.add_parser("episode-sources", help="Run the two fixed account-free episode source-card fixtures")
+    episode.set_defaults(command="episode_sources")
+    episode.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
+    episode.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
+    episode.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
     commands.add_parser("stop")
     reset = commands.add_parser("reset", help="Explicit deletion, ownership marker required")
     reset.add_argument("--confirm-reset", action="store_true")
@@ -645,7 +653,7 @@ def main(argv=None):
     bench = None
     try:
         bench = Bench(options)
-        if options.command in ("status", "install", "smoke", "playback_controls", "category_navigation"):
+        if options.command in ("status", "install", "smoke", "playback_controls", "category_navigation", "episode_sources"):
             bench.begin_report()
         getattr(bench, options.command)()
         bench.save_report(True)

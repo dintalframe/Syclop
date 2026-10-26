@@ -10,7 +10,7 @@
 
 Syclop is in **development / private beta**. There is no approved stable release or public APK download yet. The source and setup documentation are available here; stable promotion is pending broader device testing, native 16 KB compatibility and the bundled-native source/notice audit.
 
-The app targets **Android 7.0/API24 and newer**. Universal builds include arm64-v8a, armeabi-v7a, x86 and x86_64. That covers processor architectures, not every TV firmware or media format. Current real-device acceptance is on NVIDIA Shield Pro. The latest selected host test run passed **1,386 tests in 194 suites**; device checks cover startup, navigation, connected-account retention, restart/reboot and selected playback samples. See the [verification boundaries and known issues](SYCLOP_FEATURE_AUDIT.md).
+The app targets **Android 7.0/API24 and newer**. Universal builds include arm64-v8a, armeabi-v7a, x86 and x86_64. That covers processor architectures, not every TV firmware or media format. Current real-device acceptance is on NVIDIA Shield Pro. The latest selected host test run passed **1,441 tests in 197 suites**; device checks cover startup, navigation, connected-account retention, restart/reboot and selected playback samples. See the [verification boundaries and known issues](SYCLOP_FEATURE_AUDIT.md).
 
 ## Features
 
@@ -18,6 +18,7 @@ The app targets **Android 7.0/API24 and newer**. Universal builds include arm64-
 - **Native accounts:** connect Real-Debrid, AllDebrid, Trakt, MyAnimeList and Simkl from the app. Each profile uses its own accounts. Additional integration coverage is recorded in the feature audit.
 - **Connected-service playback:** local P2P is disabled; playback requires an authorized native connected-service link. Provider discovery alone does not authorize a media URL.
 - **Source information:** confidence-labelled bitrate estimates, quality and file size; bounded inspection of the selected media file, with unknown values kept explicit.
+- **Episode sources:** reported season packs and multi-episode batches are hidden from episode searches before ranking and pagination; selected-file checks reject conflicting episode hints.
 - **Player choices:** ExoPlayer is the recommended internal player. Optional MPV and compatible installed external players are available, including Just Player and VLC selection.
 - **Playback controls:** visible Start from beginning and Next Episode actions, plus a confirmed Restart Syclop action in Settings → About. See [usage and verification](SYCLOP_PLAYBACK_CONTROLS.md).
 - **Account initialization:** first use imports bounded connected history/lists with visible progress, Retry and Continue with saved data.
@@ -55,6 +56,7 @@ Syclop has no central cloud account or cross-device settings sync. Tracker servi
 - [Builds, signing, compatibility and release status](SYCLOP_BUILD.md)
 - [Local Android TV emulator bench](tools/ANDROID_BENCH.md)
 - [Experimental anime title-alias lookup (JavaScript prototype)](tools/anime-title-aliases/README.md)
+- [Episode source filtering and selected-file checks](SYCLOP_EPISODE_SOURCES.md)
 - [Feature coverage, device evidence and known limitations](SYCLOP_FEATURE_AUDIT.md)
 - [Restart, start from beginning and next-episode controls](SYCLOP_PLAYBACK_CONTROLS.md)
 - [Application registration for connected services](SYCLOP_APP_REGISTRATION.md)

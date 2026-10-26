@@ -94,11 +94,12 @@ class NativeAnimeDebridFileSelectionTest {
         }
     }
 
-    @Test fun `non MAL behavior keeps its existing filename priority episode and largest rules`() {
+    @Test fun `non MAL keeps legacy no episode selection while explicit episode rejects conflicting names`() {
         val first = File("Frieren.S01E01.mkv", 100)
         val second = File("Frieren.S01E02.mkv", 9000)
         val hints = resolve(filename = second.path).copy(stream = StreamClientResolveStream(raw(first.path)))
         assertEquals(second, select(listOf(first, second), hints, nativeProof = null))
+        assertNull(select(listOf(first, second), hints.copy(season = 1, episode = 1), nativeProof = null))
         assertEquals(first, select(listOf(first, second), resolve(season = 1, episode = 1), nativeProof = null))
         assertEquals(second, select(listOf(first, second), resolve(), nativeProof = null))
     }

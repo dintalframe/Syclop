@@ -133,6 +133,17 @@ Reports and screenshots remain private in the bench cache. An automated pass rec
 
 This separate fixed suite uses the same signed development app/test APK preflight, emulator-only routing and strict instrumentation protocol as `playback-controls`. It accepts the same artifact overrides and bounded `--test-timeout`, with no arbitrary class, runner or argument options. Four synthetic cases exercise the production category presentation, content entry, Home scaffold and Modern rows: delayed Anime catalogs, delayed Kids groups, category changes and intentional catalog-order resets. D-pad input and assertions verify the focused card and one-Up return to the correct header.
 
+### Episode source cards
+
+```sh
+./tools/conda-bench.sh --serial emulator-5580 episode-sources \
+  --apk ../dist/development/syclop-arm64-debug.apk
+```
+
+This fixed suite uses the same APK/signing/ABI preflight and emulator-only routing. Two synthetic cases exercise production episode-source filtering and source cards: The Big Bang Theory S01E04 remains when a seasons 1–12 pack is omitted, and pack-only results remain empty. A D-pad press selects the focused single-episode card. Two fresh screenshots are required; no account, indexer, media URL or playback is created. These component fixtures do not establish live provider correctness. See [episode source behavior](../SYCLOP_EPISODE_SOURCES.md).
+
+On the episode-source development APK, both API 34 fixtures passed and both fresh screenshots were inspected. The selected JVM suite passed 1,441 tests in 197 suites; the bench tooling passed 91 pure tests. An earlier fixture preflight was stopped by a host tool's SIGKILL before installation; manifest/signature/badging checks then succeeded and the unchanged strict suite passed. The older Home smoke accessibility failure described below remains an open stability gate.
+
 The fixture supplies in-memory metadata with no artwork URLs, provider search, account setup or playback. It removes only its four fixed earlier images before running, requires all four test events and fresh valid PNGs, and leaves app data intact. Inspect all four images after a pass; visual acceptance is recorded separately. These deterministic cases complement the live-data Home smoke. They cannot establish network timing, catalog accuracy or freedom from the intermittent Android 14 accessibility crash.
 
 ## Capture and smoke

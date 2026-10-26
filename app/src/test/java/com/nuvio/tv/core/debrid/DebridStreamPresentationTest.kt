@@ -10,6 +10,7 @@ import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.model.StreamClientResolve
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DebridStreamPresentationTest {
@@ -62,6 +63,31 @@ class DebridStreamPresentationTest {
             setOf("1080p WEB-DL HEVC", "2160p BluRay REMUX HEVC", "1440p HDTV AV1"),
             result.map { it.name }.toSet()
         )
+    }
+
+    @Test fun `episode packs are removed before global limit and preserve eligible source order`() {
+        val pack = debridStream("The.Big.Bang.Theory.S01-S12.2160p.mkv")
+        val episode = debridStream("The.Big.Bang.Theory.S01E04.1080p.mkv")
+        val unknown = debridStream("Unknown.release.mkv")
+        val configured = settings.copy(streamPreferences = DebridStreamPreferences(maxResults = 1))
+        assertEquals(listOf(episode), presentation.rankAll(listOf(pack, episode, unknown), configured,
+            episodeRequest = true))
+        assertEquals(listOf(episode, unknown), presentation.rankAll(listOf(pack, episode, unknown), configured,
+            enforceLimits = false, episodeRequest = true))
+        assertEquals(listOf(pack), presentation.rankAll(listOf(pack, episode), configured))
+    }
+
+    @Test fun `per provider episode groups contain no pack even with selected leaf`() {
+        val pack = debridStream("Show.Season1Complete.1080p.mkv").let {
+            it.copy(clientResolve = it.clientResolve!!.copy(filename = "Show.S01E04.mkv"))
+        }
+        val episode = debridStream("Show.S01E04.1080p.mkv")
+        val groups = listOf(AddonStreams("Packs", null, listOf(pack)), AddonStreams("Episodes", null, listOf(episode)))
+        val output = presentation.apply(groups, settings, includeBadgeMatches = false, episodeRequest = true)
+        assertEquals(listOf("Packs", "Episodes"), output.map { it.addonName })
+        assertTrue(output.first().streams.isEmpty())
+        assertEquals(1, output.last().streams.size)
+        assertEquals(episode.title, output.last().streams.single().title)
     }
 
     private fun debridStream(filename: String): Stream = Stream(

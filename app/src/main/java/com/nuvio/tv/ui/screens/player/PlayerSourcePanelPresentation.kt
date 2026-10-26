@@ -1,5 +1,6 @@
 package com.nuvio.tv.ui.screens.player
 
+import com.nuvio.tv.core.debrid.EpisodeSourcePolicy
 import com.nuvio.tv.domain.model.DebridSettings
 import com.nuvio.tv.domain.model.Stream
 
@@ -9,8 +10,10 @@ internal class PlayerSourcePanelPresentation(
 ) {
     fun apply(state: PlayerUiState, settings: DebridSettings, isCurrent: () -> Boolean): PlayerUiState {
         if (!isCurrent()) return withoutSources(state)
-        val sources = rankAll(state.sourceAllStreams, settings)
-        val episodes = rankAll(state.episodeAllStreams, settings)
+        val sources = rankAll(EpisodeSourcePolicy.filter(state.sourceAllStreams,
+            EpisodeSourcePolicy.isEpisodeRequest(state.contentType, state.currentEpisode)), settings)
+        val episodes = rankAll(EpisodeSourcePolicy.filter(state.episodeAllStreams,
+            EpisodeSourcePolicy.isEpisodeRequest(state.contentType, state.episodeStreamsEpisode)), settings)
         if (!isCurrent()) return withoutSources(state)
         val filteredSources = sources.filterForAddon(state.sourceSelectedAddonFilter)
         // The controller owns page expansion. Rank the complete list first, then preserve its

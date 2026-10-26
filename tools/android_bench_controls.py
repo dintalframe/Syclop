@@ -38,9 +38,17 @@ CATEGORY_TESTS = {
 CATEGORY_SCREENSHOTS = (
     "category-anime-late-arrival.png", "category-kids-late-group.png",
     "category-change-anime-header.png", "category-request-order-reset.png")
+EPISODE_TESTS = {
+    "com.nuvio.tv.ui.screens.stream.EpisodeSourceCardsTvTest": (
+        "completeSeasonPackIsHiddenAndExactEpisodeCardKeepsRemoteFocus",
+        "seasonPackOnlyResultsStayEmptyWithoutSubstitutingAnotherEpisode")
+}
+EPISODE_SCREENSHOTS = (
+    "episode-source-only-single-episode.png", "episode-source-packs-only-empty.png")
 SUITES = {
     "playback-controls": (TESTS, SCREENSHOTS),
     "category-navigation": (CATEGORY_TESTS, CATEGORY_SCREENSHOTS),
+    "episode-sources": (EPISODE_TESTS, EPISODE_SCREENSHOTS),
 }
 
 
@@ -121,7 +129,7 @@ def validate_manifest(tree, package):
 
 
 def instrumentation_result(output, returncode, suite="playback-controls"):
-    """Require the exact event protocol for one of the two fixed fixture suites."""
+    """Require the exact event protocol for the selected fixed fixture suite."""
     if suite not in SUITES:
         raise ControlsError("Unknown fixed fixture suite.")
     expected = frozenset((group, method) for group, methods in SUITES[suite][0].items() for method in methods)

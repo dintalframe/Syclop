@@ -83,6 +83,37 @@ class PlayerSourcePanelPresentationTest {
         assertEquals("Still playing", during.title)
     }
 
+    @Test fun `episode packs cannot occupy All provider page or pending episode picker`() {
+        val pack = source("Pack provider", "a").copy(title = "Show.S01-S12.2160p",
+            fileIdx = 4, nativeFileMetadata = StreamFileMetadata(selectedFileBytes = 123L))
+        val episode = source("Episode provider", "b").copy(title = "Show.S01E04.1080p")
+        val unknown = source("Episode provider", "c").copy(title = "Unknown release")
+        val input = state(listOf(pack, episode, unknown), pageSize = 1).copy(contentType = "series",
+            currentSeason = 1, currentEpisode = 4, episodeStreamsEpisode = 5,
+            episodeAllStreams = listOf(pack, episode), episodeFilteredStreams = listOf(pack),
+            episodeAvailableAddons = listOf("Pack provider", "Episode provider"))
+        val output = subject.apply(input, settings) { true }
+        assertEquals(listOf(episode), output.sourceFilteredStreams)
+        assertEquals(listOf(episode, unknown), output.sourceAllStreams)
+        assertEquals(listOf("Episode provider"), output.sourceAvailableAddons)
+        assertEquals(listOf(episode), output.episodeFilteredStreams)
+        assertTrue(subject.apply(input.copy(sourceSelectedAddonFilter = "Pack provider"), settings) { true }
+            .sourceFilteredStreams.isEmpty())
+        // This is a display projection; the controller's playing source remains untouched.
+        assertSame(pack, input.sourceAllStreams.first())
+        assertEquals(123L, pack.nativeFileMetadata?.selectedFileBytes)
+    }
+
+    @Test fun `movie panel keeps collection results while pack only episode panel is empty`() {
+        val pack = source("Provider", "a").copy(title = "Show.Complete.Series")
+        val input = state(listOf(pack), 1)
+        val movie = subject.apply(input.copy(contentType = "movie", currentEpisode = 4), settings) { true }
+        assertEquals(listOf(pack), movie.sourceFilteredStreams)
+        val episode = subject.apply(input.copy(contentType = "series", currentEpisode = 4), settings) { true }
+        assertTrue(episode.sourceAllStreams.isEmpty())
+        assertTrue(episode.sourceFilteredStreams.isEmpty())
+    }
+
     private fun source(addon: String, hash: String) = Stream(null, "Movie", null, null, null,
         hash.repeat(40), 0, null, null, addon, null)
     private fun state(streams: List<Stream>, pageSize: Int) = PlayerUiState(

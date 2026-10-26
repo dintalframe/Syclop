@@ -42,6 +42,15 @@ CATEGORY_IMAGES = (
 CATEGORY_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
                            for i, case in enumerate(CATEGORY_CASES, 1)).replace("numtests=11", "numtests=4") + (
     "INSTRUMENTATION_RESULT: stream=\n\nTime: 43.2\n\nOK (4 tests)\n\nINSTRUMENTATION_CODE: -1\n")
+EPISODE_CLASS = "com.nuvio.tv.ui.screens.stream.EpisodeSourceCardsTvTest"
+EPISODE_CASES = (
+    (EPISODE_CLASS, "completeSeasonPackIsHiddenAndExactEpisodeCardKeepsRemoteFocus"),
+    (EPISODE_CLASS, "seasonPackOnlyResultsStayEmptyWithoutSubstitutingAnotherEpisode"),
+)
+EPISODE_IMAGES = ("episode-source-only-single-episode.png", "episode-source-packs-only-empty.png")
+EPISODE_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
+                          for i, case in enumerate(EPISODE_CASES, 1)).replace("numtests=11", "numtests=2") + (
+    "INSTRUMENTATION_RESULT: stream=\n\nTime: 12.3\n\nOK (2 tests)\n\nINSTRUMENTATION_CODE: -1\n")
 
 
 def answer(output="", code=0, binary=False):
@@ -135,6 +144,44 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
         self.assertEqual({"expected": 4, "completed": 4, "passed": True}, instance.report["instrumentation"])
         self.assertEqual(list(CATEGORY_IMAGES), instance.report["screenshots"])
         self.assertEqual("required", instance.report["visual_inspection"])
+
+    def test_episode_sources_runs_only_two_fixed_cases_and_fresh_source_images(self):
+        self.protocol = EPISODE_SUCCESS
+        instance = self.instance(command="episode-sources")
+        with self.mocks(instance) as (_, device):
+            instance.episode_sources()
+        invocation = next(call for call in device.call_args_list if call.args[:3] == ("shell", "am", "instrument"))
+        self.assertEqual(("shell", "am", "instrument", "-w", "-r", "-e", "class", EPISODE_CLASS, FIXED_RUNNER), invocation.args)
+        removal = next(call for call in device.call_args_list if call.args[:3] == ("shell", "rm", "-f"))
+        self.assertEqual(("shell", "rm", "-f", *[REMOTE + name for name in EPISODE_IMAGES]), removal.args)
+        self.assertEqual("account-free-episode-sources", instance.report["fixture"])
+        self.assertEqual({"expected": 2, "completed": 2, "passed": True}, instance.report["instrumentation"])
+        self.assertEqual(list(EPISODE_IMAGES), instance.report["screenshots"])
+
+    def test_episode_protocol_rejects_other_suite_failure_or_incomplete_protocol(self):
+        for output in (SUCCESS, CATEGORY_SUCCESS, EPISODE_SUCCESS.replace("OK (2 tests)", "OK (1 test)"),
+                       EPISODE_SUCCESS.replace("INSTRUMENTATION_STATUS_CODE: 0", "INSTRUMENTATION_STATUS_CODE: -2", 1),
+                       EPISODE_SUCCESS.replace("INSTRUMENTATION_CODE: -1", "")):
+            with self.subTest(output=output[-45:]):
+                self.assertFalse(bench.controls.instrumentation_result(output, 0, "episode-sources")["passed"])
+        self.assertFalse(bench.controls.instrumentation_result(EPISODE_SUCCESS, 1, "episode-sources")["passed"])
+        self.assertFalse(bench.controls.instrumentation_result(EPISODE_SUCCESS, 0, "category-navigation")["passed"])
+
+    def test_episode_capture_failure_cannot_reuse_an_earlier_screenshot(self):
+        self.protocol = EPISODE_SUCCESS
+        self.capture_override[EPISODE_IMAGES[0]] = answer(b"", 1, binary=True)
+        instance = self.instance(command="episode-sources")
+        with self.mocks(instance), self.assertRaises(bench.BenchError):
+            instance.episode_sources()
+        self.assertNotIn(EPISODE_IMAGES[0], instance.report["screenshots"])
+
+    def test_episode_command_rejects_arbitrary_instrumentation_arguments(self):
+        options = bench.parser().parse_args(["episode-sources", "--test-timeout", "600"])
+        self.assertEqual("episode_sources", options.command)
+        self.assertEqual(600, options.test_timeout)
+        for flag in ("--class", "--runner", "--arguments"):
+            with self.subTest(flag=flag), patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
+                bench.parser().parse_args(["episode-sources", flag, "untrusted"])
 
     def test_category_protocol_rejects_playback_or_incomplete_or_failed_suite(self):
         for index, output in enumerate((SUCCESS, CATEGORY_SUCCESS.replace("OK (4 tests)", "OK (3 tests)"),

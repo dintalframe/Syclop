@@ -8,6 +8,7 @@ Syclop includes a bounded Express adapter, native RD/AD device login, MAL catalo
 
 ## Evidence and status
 
+- **Episode-source development:** [Episode searches](SYCLOP_EPISODE_SOURCES.md) now hide reported season/series packs and multi-episode batches before ranking, source limits and pagination. Ordinary Express searches no longer request season scope alongside episodes. The shared Debrid selector rejects conflicting actual filename coordinates and compound/range/fractional episode leaves; native MAL proof coordinates are preserved. All 1,441 selected JVM tests in 197 suites and 91 pure bench-tool tests passed. Two account-free API 34 source-card fixtures passed, with both fresh screenshots inspected: The Big Bang Theory S01E04 remains when seasons 1–12 packs are omitted, and pack-only results stay empty. These are synthetic source/filter/service-boundary checks, not a live provider or physical Shield update. One earlier host preflight tool exited with SIGKILL before installation; separate manifest/signature/badging checks succeeded and the unchanged strict fixture run then passed. The physical accepted artifact and stable-release gates remain unchanged.
 - **Implemented—unverified:** an actual code path exists; this audit did not complete its real account/playback/device acceptance test.
 - **Partial:** a useful subset exists, with the material difference stated.
 - **Missing:** no implementation was found in the examined Syclop source.

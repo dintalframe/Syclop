@@ -276,7 +276,8 @@ class PlayerViewModel @Inject constructor(
         emit(PlayerSourceMetadataSnapshot())
         val request = work.request ?: return@transformLatest
         emit(sourcePanelMetadata.enrich(request, { streams ->
-            debridStreamPresentation.rankAll(streams, work.settings, enforceLimits = false)
+            debridStreamPresentation.rankAll(streams, work.settings, enforceLimits = false, episodeRequest =
+                com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(request.context.mediaType, request.context.episode))
         }) { sourceMetadataCurrent(request) })
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, PlayerSourceMetadataSnapshot())
 
