@@ -35,13 +35,15 @@ CATEGORY_CASES = (
     (CATEGORY_CLASS, "lateKidsGroupKeepsSafeEntryAndOneUpReturnsToHeader"),
     (CATEGORY_CLASS, "changingCategoriesKeepsHeaderFocusAndUsesNewCategoryRows"),
     (CATEGORY_CLASS, "newRequestRevisionRestoresConfiguredOrderWithoutOldFocus"),
+    (CATEGORY_CLASS, "lateHomeBodyCannotStealHeaderAndDownRestoresRememberedCard"),
 )
 CATEGORY_IMAGES = (
     "category-anime-late-arrival.png", "category-kids-late-group.png",
-    "category-change-anime-header.png", "category-request-order-reset.png")
+    "category-change-anime-header.png", "category-request-order-reset.png",
+    "category-home-late-header.png", "category-home-remembered-entry.png")
 CATEGORY_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
-                           for i, case in enumerate(CATEGORY_CASES, 1)).replace("numtests=11", "numtests=4") + (
-    "INSTRUMENTATION_RESULT: stream=\n\nTime: 43.2\n\nOK (4 tests)\n\nINSTRUMENTATION_CODE: -1\n")
+                           for i, case in enumerate(CATEGORY_CASES, 1)).replace("numtests=11", "numtests=5") + (
+    "INSTRUMENTATION_RESULT: stream=\n\nTime: 43.2\n\nOK (5 tests)\n\nINSTRUMENTATION_CODE: -1\n")
 EPISODE_CLASS = "com.nuvio.tv.ui.screens.stream.EpisodeSourceCardsTvTest"
 EPISODE_CASES = (
     (EPISODE_CLASS, "completeSeasonPackIsHiddenAndExactEpisodeCardKeepsRemoteFocus"),
@@ -51,6 +53,17 @@ EPISODE_IMAGES = ("episode-source-only-single-episode.png", "episode-source-pack
 EPISODE_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
                           for i, case in enumerate(EPISODE_CASES, 1)).replace("numtests=11", "numtests=2") + (
     "INSTRUMENTATION_RESULT: stream=\n\nTime: 12.3\n\nOK (2 tests)\n\nINSTRUMENTATION_CODE: -1\n")
+STARTUP_CLASS = "com.nuvio.tv.ui.components.StartupInitializationScreenTvTest"
+STARTUP_CASES = (
+    (STARTUP_CLASS, "lateBackgroundFocusCannotEscapeInitializationGate"),
+    (STARTUP_CLASS, "retryContinueAndBackKeepTheirActionsAndRestoreHomeFocus"),
+    (STARTUP_CLASS, "repeatedGateTransitionsKeepTheSameNativeWindowRoots"),
+)
+STARTUP_IMAGES = ("startup-gate-background-blocked.png", "startup-gate-actions.png",
+                  "startup-gate-resumed-home.png", "startup-gate-same-window.png")
+STARTUP_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
+                          for i, case in enumerate(STARTUP_CASES, 1)).replace("numtests=11", "numtests=3") + (
+    "INSTRUMENTATION_RESULT: stream=\n\nTime: 16.2\n\nOK (3 tests)\n\nINSTRUMENTATION_CODE: -1\n")
 
 
 def answer(output="", code=0, binary=False):
@@ -131,7 +144,7 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
     def assert_no_installs(self, device):
         self.assertFalse(any(call.args and call.args[0] == "install" for call in device.call_args_list))
 
-    def test_category_navigation_runs_only_its_fixed_class_and_four_fresh_images(self):
+    def test_category_navigation_runs_only_its_fixed_class_and_six_fresh_images(self):
         self.protocol = CATEGORY_SUCCESS
         instance = self.instance(command="category-navigation")
         with self.mocks(instance) as (_, device):
@@ -141,7 +154,7 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
         removal = next(call for call in device.call_args_list if call.args[:3] == ("shell", "rm", "-f"))
         self.assertEqual(("shell", "rm", "-f", *[REMOTE + name for name in CATEGORY_IMAGES]), removal.args)
         self.assertEqual("account-free-category-navigation", instance.report["fixture"])
-        self.assertEqual({"expected": 4, "completed": 4, "passed": True}, instance.report["instrumentation"])
+        self.assertEqual({"expected": 5, "completed": 5, "passed": True}, instance.report["instrumentation"])
         self.assertEqual(list(CATEGORY_IMAGES), instance.report["screenshots"])
         self.assertEqual("required", instance.report["visual_inspection"])
 
@@ -183,8 +196,52 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
             with self.subTest(flag=flag), patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
                 bench.parser().parse_args(["episode-sources", flag, "untrusted"])
 
+    def test_startup_runs_only_fixed_cases_and_four_fresh_window_images(self):
+        self.protocol = STARTUP_SUCCESS
+        instance = self.instance(command="startup-initialization")
+        with self.mocks(instance) as (_, device):
+            instance.startup_initialization()
+        invocation = next(call for call in device.call_args_list if call.args[:3] == ("shell", "am", "instrument"))
+        self.assertEqual(("shell", "am", "instrument", "-w", "-r", "-e", "class", STARTUP_CLASS, FIXED_RUNNER), invocation.args)
+        removal = next(call for call in device.call_args_list if call.args[:3] == ("shell", "rm", "-f"))
+        self.assertEqual(("shell", "rm", "-f", *[REMOTE + name for name in STARTUP_IMAGES]), removal.args)
+        self.assertEqual("account-free-startup-initialization", instance.report["fixture"])
+        self.assertEqual({"expected": 3, "completed": 3, "passed": True}, instance.report["instrumentation"])
+        self.assertEqual(list(STARTUP_IMAGES), instance.report["screenshots"])
+
+    def test_startup_native_window_fixture_requires_api29_before_install(self):
+        self.protocol, self.api = STARTUP_SUCCESS, "28"
+        instance = self.instance(command="startup-initialization")
+        with self.mocks(instance) as (_, device), self.assertRaises(bench.BenchError):
+            instance.startup_initialization()
+        self.assert_no_installs(device)
+
+    def test_startup_protocol_rejects_other_suite_incomplete_or_failed_cases(self):
+        for output in (SUCCESS, CATEGORY_SUCCESS, EPISODE_SUCCESS,
+                       STARTUP_SUCCESS.replace("OK (3 tests)", "OK (2 tests)"),
+                       STARTUP_SUCCESS.replace("INSTRUMENTATION_STATUS_CODE: 0", "INSTRUMENTATION_STATUS_CODE: -2", 1),
+                       STARTUP_SUCCESS.replace("INSTRUMENTATION_CODE: -1", "")):
+            with self.subTest(output=output[-45:]):
+                self.assertFalse(bench.controls.instrumentation_result(output, 0, "startup-initialization")["passed"])
+        self.assertFalse(bench.controls.instrumentation_result(STARTUP_SUCCESS, 1, "startup-initialization")["passed"])
+
+    def test_startup_capture_failure_cannot_reuse_an_earlier_image(self):
+        self.protocol = STARTUP_SUCCESS
+        self.capture_override[STARTUP_IMAGES[0]] = answer(b"", 1, binary=True)
+        instance = self.instance(command="startup-initialization")
+        with self.mocks(instance), self.assertRaises(bench.BenchError):
+            instance.startup_initialization()
+        self.assertNotIn(STARTUP_IMAGES[0], instance.report["screenshots"])
+
+    def test_startup_command_rejects_arbitrary_instrumentation_arguments(self):
+        options = bench.parser().parse_args(["startup-initialization", "--test-timeout", "600"])
+        self.assertEqual("startup_initialization", options.command)
+        for flag in ("--class", "--runner", "--arguments"):
+            with self.subTest(flag=flag), patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
+                bench.parser().parse_args(["startup-initialization", flag, "untrusted"])
+
     def test_category_protocol_rejects_playback_or_incomplete_or_failed_suite(self):
-        for index, output in enumerate((SUCCESS, CATEGORY_SUCCESS.replace("OK (4 tests)", "OK (3 tests)"),
+        for index, output in enumerate((SUCCESS, CATEGORY_SUCCESS.replace("OK (5 tests)", "OK (4 tests)"),
                        CATEGORY_SUCCESS.replace("INSTRUMENTATION_STATUS_CODE: 0", "INSTRUMENTATION_STATUS_CODE: -2", 1),
                        CATEGORY_SUCCESS.replace("INSTRUMENTATION_CODE: -1", ""),
                        CATEGORY_SUCCESS + "INSTRUMENTATION_CODE: -1\n")):
@@ -192,6 +249,12 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
                 self.assertFalse(bench.controls.instrumentation_result(output, 0, "category-navigation")["passed"])
         self.assertFalse(bench.controls.instrumentation_result(CATEGORY_SUCCESS, 0)["passed"])
         self.assertFalse(bench.controls.instrumentation_result(CATEGORY_SUCCESS, 1, "category-navigation")["passed"])
+
+    def test_category_requires_late_home_focus_case_despite_a_success_summary(self):
+        incomplete = "".join(event(i, case, 1) + event(i, case, 0)
+                             for i, case in enumerate(CATEGORY_CASES[:-1], 1)).replace("numtests=11", "numtests=5") + (
+            "INSTRUMENTATION_RESULT: stream=\n\nOK (5 tests)\n\nINSTRUMENTATION_CODE: -1\n")
+        self.assertFalse(bench.controls.instrumentation_result(incomplete, 0, "category-navigation")["passed"])
 
     def test_category_capture_failure_cannot_reuse_a_playback_screenshot(self):
         self.protocol = CATEGORY_SUCCESS

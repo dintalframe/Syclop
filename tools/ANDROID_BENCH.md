@@ -131,9 +131,11 @@ Reports and screenshots remain private in the bench cache. An automated pass rec
 ./tools/conda-bench.sh --serial emulator-5580 category-navigation
 ```
 
-This separate fixed suite uses the same signed development app/test APK preflight, emulator-only routing and strict instrumentation protocol as `playback-controls`. It accepts the same artifact overrides and bounded `--test-timeout`, with no arbitrary class, runner or argument options. Four synthetic cases exercise the production category presentation, content entry, Home scaffold and Modern rows: delayed Anime catalogs, delayed Kids groups, category changes and intentional catalog-order resets. D-pad input and assertions verify the focused card and one-Up return to the correct header.
+This separate fixed suite uses the same signed development app/test APK preflight, emulator-only routing and strict instrumentation protocol as `playback-controls`. It accepts the same artifact overrides and bounded `--test-timeout`, with no arbitrary class, runner or argument options. Five synthetic cases exercise the production category presentation, content entry, Home scaffold and Modern rows: delayed Anime catalogs, delayed Kids groups, category changes, intentional catalog-order resets, and late Home body mounting after the header has focus. The Home case keeps default automatic content restoration enabled, then verifies that header ownership prevents a late focus steal and Down enters the remembered card. D-pad input and assertions verify the focused card and one-Up return to the correct header.
 
-### Episode source cards
+The fixture supplies in-memory metadata with no artwork URLs, provider search, account setup or playback. It removes only its six fixed earlier images before running, requires all five test events and six fresh valid PNGs, and leaves app data intact. Inspect all six images after a pass; visual acceptance is recorded separately. These deterministic cases complement the live-data Home smoke. They cannot establish network timing, catalog accuracy or freedom from the intermittent Android 14 accessibility crash.
+
+## Episode source cards
 
 ```sh
 ./tools/conda-bench.sh --serial emulator-5580 episode-sources \
@@ -144,7 +146,17 @@ This fixed suite uses the same APK/signing/ABI preflight and emulator-only routi
 
 On the episode-source development APK, both API 34 fixtures passed and both fresh screenshots were inspected. The selected JVM suite passed 1,441 tests in 197 suites; the bench tooling passed 91 pure tests. An earlier fixture preflight was stopped by a host tool's SIGKILL before installation; manifest/signature/badging checks then succeeded and the unchanged strict suite passed. The older Home smoke accessibility failure described below remains an open stability gate.
 
-The fixture supplies in-memory metadata with no artwork URLs, provider search, account setup or playback. It removes only its four fixed earlier images before running, requires all four test events and fresh valid PNGs, and leaves app data intact. Inspect all four images after a pass; visual acceptance is recorded separately. These deterministic cases complement the live-data Home smoke. They cannot establish network timing, catalog accuracy or freedom from the intermittent Android 14 accessibility crash.
+## Startup initialization fixtures
+
+```sh
+./tools/conda-bench.sh build --test --ui-tests
+./tools/conda-bench.sh --serial emulator-5580 startup-initialization \
+  --apk ../dist/development/syclop-arm64-debug.apk
+```
+
+This fixed suite uses the same signed development APK preflight, isolated emulator connection and strict test-event validation as the other fixtures. It requires API 29 or newer before installing, because its native-window check uses `WindowInspector`. The three account-free cases mount the production initialization gate and its background input boundary with synthetic state: late Home focus requests remain blocked, Retry/Continue/Back preserve their actions and restore Home focus, and four gate transitions retain the same native window roots. Four fresh PNGs are required; inspect each after a pass. Artifact overrides and a 60–600 second `--test-timeout` are supported; arbitrary instrumentation arguments are rejected.
+
+The loading gate shares the activity window instead of briefly creating a separate dialog window. These component checks do not run `MainActivity`, import account data or establish the cause of the Android 14 framework crash. Run the unchanged full Home smoke separately and preserve any failure; a component pass alone does not close the startup stability gate.
 
 ## Capture and smoke
 
@@ -159,7 +171,7 @@ python3 tools/android-bench.py --serial emulator-5580 stop
 1. Verifies the geometric Home/Movies/TV/Anime/Documentary/Kids header and acquires its actual keyboard focus.
 2. Normalizes to Home and moves right exactly one tab at a time.
 3. Captures each tab preview, verifies Down leaves that header, captures the entry and verifies Up returns to the same tab. While content loads, Down is retried only while the original header remains focused, for at most 20 seconds per category.
-4. Checks the right boundary at Kids and verifies each Left transition back to Home. Home intentionally restores its saved tile focus, so one Up normalizes that state back to its header before the final screenshot.
+4. Checks the right boundary at Kids and verifies each Left transition back to Home. If Home restores saved tile focus during remount, one Up normalizes that state back to its header before the final screenshot. A header that already owns focus stays in control until Down explicitly enters its body.
 
 Expected header focus is polled for up to ten seconds after a transition; waiting never sends extra keys. This avoids treating an in-flight accessibility update as a lost key. Only directional D-pad keys are injected. There is no Center/Enter, title selection, playback start, login approval, keyboard text, account/history write or settings mutation. A foreground-app check prevents navigation after Syclop loses focus. During startup, losing focus after Syclop was already observed also fails explicitly, even if a background process survives. Missing labels, ambiguous focus, failed Down/Up entry or unexpected focus order fail the report. Localized labels and unavailable accessibility semantics require a human check; the script does not report them as passed. `smoke --ui-timeout 90` accepts 15–180 seconds for initial UI readiness.
 
@@ -216,3 +228,13 @@ On the final API 34 APK, all eleven `playback-controls` fixtures and all four `c
 A full Home smoke passed on the preceding `37953ca` APK, with six Down/Up entries, both boundary directions and fourteen inspected captures. A separate run on the final shared-session APK failed before Home: Android 14 again threw inside `ViewRootImpl.getAccessibilityFocusedRect`, and foreground loss correctly failed the report. This intermittent framework-stack accessibility issue remains open; the successful sample does not erase it, and no crash suppression or automatic relaunch was added.
 
 Static inspection of both rebuilt app APKs confirmed the local P2P engine is absent, official Conscrypt 2.8.0 JNI bytes are packaged with 16 KiB alignment in all four universal ABIs, and all five exact Conscrypt/BoringSSL notice assets are included. IAMF's 64-bit core remains at 4 KiB alignment. Dedicated TLS/16 KiB runtime checks, corresponding native sources/notices, external-player result ordering and representative hardware acceptance remain separate gates. The frozen physical Shield APK, release/stable artifacts, owner accounts and Shield debugging state were not changed.
+
+## Startup and external-continuation follow-up — 25 October 2026
+
+The development app/test APKs built successfully with **1,456 selected JVM tests in 199 suites**, without failures/errors/skips. All **97 pure bench-tool tests** passed. On the same final API 34 APK, all three `startup-initialization` and five `category-navigation` fixtures passed; their ten fresh screenshots were inspected. The startup fixtures retain one native window root set across repeated gate transitions and verify input blocking, Retry/Continue/real Back delivery and restored Home focus. The new Home fixture mounts actual Modern content with automatic restoration enabled after the header has focus, then verifies explicit Down entry, remembered-card re-entry and one-Up return.
+
+The unchanged full Home smoke passed all six category Down/Up entries and both boundary directions; all thirteen fresh screenshots were inspected. The final arm64 development APK is SHA-256 `673d6fa36eb8344129ec75f4366ec0f6da6e1d25117ea0ee2f17702e113b5f7e`. App/test signing identities were verified, and both exported app APKs exclude the local P2P engine. Earlier failures remain private evidence: the old `84b2e52` APK reproduced the framework accessibility crash, an initial component run exposed incorrect focus-modifier ordering, and the first new-build Home smoke exposed deferred content taking focus after a header observation. Corrections were rebuilt and verified; those runs were not relabelled as passing.
+
+The emulator crash buffer was byte-identical before the first new-build smoke and after the final pass. Keeping the initialization gate in the activity window avoids its earlier dialog creation/removal, but neither the root cause of the intermittent Android 14 crash nor freedom from recurrence is established by this sample. Repeated startup, broader hardware/API/native compatibility and live playback/account checks remain release work.
+
+Twelve production-tracker tests cover stale asynchronous external-player continuations using mocked Android/persistence boundaries. Tracking generations fence pending backfill, monitor/auto-next callbacks and not-yet-entered saves; normal current results and disk recovery still work. They do not provide a durable accepted-intent lease, shared internal/external write authority, physical result correlation, already-entered operation ordering or profile/account-origin acceptance. See [external player boundaries](../SYCLOP_PLAYBACK_CONTROLS.md#external-players). The physical Shield, its debugging state and stable artifacts were unchanged.

@@ -10,7 +10,7 @@
 
 Syclop is in **development / private beta**. There is no approved stable release or public APK download yet. The source and setup documentation are available here; stable promotion is pending broader device testing, native 16 KB compatibility and the bundled-native source/notice audit.
 
-The app targets **Android 7.0/API24 and newer**. Universal builds include arm64-v8a, armeabi-v7a, x86 and x86_64. That covers processor architectures, not every TV firmware or media format. Current real-device acceptance is on NVIDIA Shield Pro. The latest selected host test run passed **1,441 tests in 197 suites**; device checks cover startup, navigation, connected-account retention, restart/reboot and selected playback samples. See the [verification boundaries and known issues](SYCLOP_FEATURE_AUDIT.md).
+The app targets **Android 7.0/API24 and newer**. Universal builds include arm64-v8a, armeabi-v7a, x86 and x86_64. That covers processor architectures, not every TV firmware or media format. Current real-device acceptance is on NVIDIA Shield Pro. The latest selected host test run passed **1,456 tests in 199 suites**; device checks cover startup, navigation, connected-account retention, restart/reboot and selected playback samples. See the [verification boundaries and known issues](SYCLOP_FEATURE_AUDIT.md).
 
 ## Features
 

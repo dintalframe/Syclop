@@ -32,7 +32,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -256,6 +258,34 @@ class ExternalPlaybackTracker @Inject constructor(
     private var nextEpisodeSnapshot: ExternalNextEpisodeSnapshot = ExternalNextEpisodeSnapshot.Unknown
     private var autoNextEnabledForPendingLaunch: Boolean? = null
     private var pendingCloudSessionToken: String? = null
+    // Local continuation ownership only; this is not a durable/internal-player progress lease.
+    private var trackingGeneration = 0L
+    private data class TrackingSession(
+        val metadata: ExternalPlaybackMetadata,
+        val generation: Long,
+        val cloudSessionToken: String?
+    )
+
+    private fun currentTrackingSession(): TrackingSession? = pendingMetadata?.let {
+        TrackingSession(it, trackingGeneration, pendingCloudSessionToken)
+    }
+
+    private fun generationIsCurrent(session: TrackingSession): Boolean =
+        session.generation == trackingGeneration
+
+    private fun trackingSessionIsCurrent(session: TrackingSession): Boolean =
+        generationIsCurrent(session) && pendingMetadata === session.metadata
+
+    private fun trackingSessionOrRecover(): TrackingSession? {
+        currentTrackingSession()?.let { return it }
+        val metadata = loadPersistedMetadata() ?: return null
+        trackingGeneration++
+        pendingMetadata = metadata
+        nextEpisodeSnapshot = loadPersistedNextEpisodeSnapshot()
+        autoNextEnabledForPendingLaunch = loadPersistedAutoNextEnabled()
+        pendingCloudSessionToken = loadPersistedCloudSessionToken()
+        return currentTrackingSession()
+    }
 
     private val autoPlayNextNavigationEvents = ExternalAutoNextNavigationEvents(
         maxAgeMs = AUTO_NEXT_OVERLAY_TIMEOUT_MS
@@ -304,6 +334,7 @@ class ExternalPlaybackTracker @Inject constructor(
         autoNextEnabled: Boolean? = null,
         cloudSessionToken: String? = null
     ) {
+        trackingGeneration++
         // A manual stream choice supersedes any completion handoff still resolving for the
         // previous player session. Auto-launched continuations keep their handoff alive.
         if (!autoLaunch) {
@@ -338,7 +369,8 @@ class ExternalPlaybackTracker @Inject constructor(
         // Persist so progress-save + auto-next survive the player killing our process.
         persistMetadata(metadata, cloudSessionToken)
         persistAutoNextState(this.nextEpisodeSnapshot, autoNextEnabled)
-        startNextEpisodePrefetch(metadata)
+        val session = checkNotNull(currentTrackingSession())
+        startNextEpisodePrefetch(session)
 
         // Keep the process alive while the external player is foregrounded. Some boxes
         // (e.g. NVIDIA Shield) otherwise kill it, dropping tracking state. Started while
@@ -350,7 +382,7 @@ class ExternalPlaybackTracker @Inject constructor(
         // Zidoo's built-in player does not return ActivityResult data, so keep its REST monitor
         // running as a fallback. Third-party players on the same device still use ActivityResult.
         if (ZidooPlayerMonitor.isZidooDevice()) {
-            startZidooMonitor(metadata, startFromBeginning)
+            startZidooMonitor(session, startFromBeginning)
         }
     }
 
@@ -408,6 +440,7 @@ class ExternalPlaybackTracker @Inject constructor(
             autoNextEnabled = autoNextEnabled,
             cloudSessionToken = cloudSessionToken
         )
+        val session = checkNotNull(currentTrackingSession())
 
         // Resolve resume position (if not given) and intro/outro skip segments off the main
         // thread, then launch. Skip resolution is bounded so it never stalls the launch for long
@@ -426,12 +459,12 @@ class ExternalPlaybackTracker @Inject constructor(
                 }
                 val position = positionDeferred.await()
                 val skipSegmentsJson = skipSegmentsDeferred.await()
-                if (!launchStillCurrent() || shouldCancelPendingAutoLaunch(autoLaunch)) {
+                if (!trackingSessionIsCurrent(session) || !launchStillCurrent() || shouldCancelPendingAutoLaunch(autoLaunch)) {
                     Log.d(AUTO_NEXT_TAG, "auto launch cancelled during player preparation")
                     false
                 } else {
                     withContext(Dispatchers.Main.immediate) {
-                        if (!launchStillCurrent()) false else doLaunch(
+                        if (!trackingSessionIsCurrent(session) || !launchStillCurrent()) false else doLaunch(
                             url = url,
                             title = title,
                             headers = headers,
@@ -447,10 +480,10 @@ class ExternalPlaybackTracker @Inject constructor(
             }
         } catch (cancelled: CancellationException) {
             // A cancelled old request must not clear a newer session's tracking state.
-            clearFailedLaunch(metadata)
+            clearFailedLaunch(session)
             throw cancelled
         } catch (failure: Exception) {
-            clearFailedLaunch(metadata)
+            clearFailedLaunch(session)
             throw failure
         }
         if (!launched) {
@@ -459,13 +492,13 @@ class ExternalPlaybackTracker @Inject constructor(
             } else {
                 Log.w(TAG, "External player launch failed")
             }
-            clearFailedLaunch(metadata)
+            clearFailedLaunch(session)
         }
         return launched
     }
 
-    private fun clearFailedLaunch(metadata: ExternalPlaybackMetadata) {
-        if (pendingMetadata !== metadata) return
+    private fun clearFailedLaunch(session: TrackingSession) {
+        if (!trackingSessionIsCurrent(session)) return
         releaseAutoNextOverlay(forceRelease = true)
         clearPersistedMetadata()
         stopTracking()
@@ -604,18 +637,17 @@ class ExternalPlaybackTracker @Inject constructor(
         staleReturnWatchdogJob = null
         // If the player killed our process, pendingMetadata is null after recreation —
         // fall back to the persisted copy so we still save progress and auto-advance.
-        val metadata = pendingMetadata ?: loadPersistedMetadata()
-        if (metadata == null) {
+        val recoveredFromDisk = pendingMetadata == null
+        val session = trackingSessionOrRecover()
+        if (session == null) {
             Log.d(TAG, "onActivityResult but no pending metadata (in-memory or persisted)")
             clearPersistedMetadata()
             stopTracking()
             return
         }
-        if (pendingMetadata == null) {
+        val metadata = session.metadata
+        if (recoveredFromDisk) {
             Log.d(TAG, "onActivityResult recovered metadata from disk (process was recreated)")
-            nextEpisodeSnapshot = loadPersistedNextEpisodeSnapshot()
-            autoNextEnabledForPendingLaunch = loadPersistedAutoNextEnabled()
-            pendingCloudSessionToken = loadPersistedCloudSessionToken()
         }
 
         if (result == null) {
@@ -650,22 +682,25 @@ class ExternalPlaybackTracker @Inject constructor(
         if ((result.durationMs == null || result.durationMs <= 0L) && result.positionMs > 0L) {
             scope.launch {
                 val fallback = resolveFallbackDurationMs(metadata)
+                if (!trackingSessionIsCurrent(session)) return@launch
                 val enriched = if (fallback > 0L) {
                     Log.d(TAG, "Backfilled missing duration: ${fallback}ms")
                     result.copy(durationMs = fallback)
                 } else {
                     result
                 }
-                processResult(metadata, enriched)
+                processResult(session, enriched)
             }
             return
         }
 
-        processResult(metadata, result)
+        processResult(session, result)
     }
 
     /** Completion check + save + auto-next + cleanup for a result with a resolved duration. */
-    private fun processResult(metadata: ExternalPlaybackMetadata, result: ExternalPlayerResult) {
+    private fun processResult(session: TrackingSession, result: ExternalPlayerResult) {
+        if (!trackingSessionIsCurrent(session)) return
+        val metadata = session.metadata
         // Debrid cache-sync placeholders (e.g. Comet) play a few-second clip to its end and report
         // a normal completion. Ignore an implausibly short playback so it isn't marked watched and
         // doesn't chain auto-next through the season. A missing/zero duration is left to the normal
@@ -680,7 +715,7 @@ class ExternalPlaybackTracker @Inject constructor(
         }
 
         val completed = isPlaybackCompleted(result)
-        val cloudSessionToken = pendingCloudSessionToken ?: loadPersistedCloudSessionToken()
+        val cloudSessionToken = session.cloudSessionToken
         if (metadata.contentType.equals("cloud", ignoreCase = true) && cloudSessionToken != null) {
             saveCloudProgress(
                 metadata = metadata,
@@ -692,7 +727,7 @@ class ExternalPlaybackTracker @Inject constructor(
             clearPersistedMetadata()
             stopTracking()
             if (completed) {
-                maybeTriggerCloudAutoNext(metadata, cloudSessionToken)
+                maybeTriggerCloudAutoNext(session, cloudSessionToken)
             } else {
                 _autoNextOverlay.value = null
             }
@@ -704,11 +739,11 @@ class ExternalPlaybackTracker @Inject constructor(
             // Player sends only end_by=playback_completion). An explicit 100% forces
             // WatchProgress.isCompleted(), which makes the repository flag the item watched
             // (and sync it) regardless of the reported position/duration.
-            saveProgress(metadata, result.positionMs, result.durationMs, explicitPercent = 100f)
+            saveProgress(session, result.positionMs, result.durationMs, explicitPercent = 100f)
             // Try to auto-advance to the next episode.
-            maybeTriggerAutoNextEpisode(metadata)
+            maybeTriggerAutoNextEpisode(session)
         } else {
-            saveProgress(metadata, result.positionMs, result.durationMs)
+            saveProgress(session, result.positionMs, result.durationMs)
             // Not a completion — drop the optimistic auto-next loader so we fall back to the
             // stream screen instead of leaving the loader stuck.
             _autoNextOverlay.value = null
@@ -857,7 +892,8 @@ class ExternalPlaybackTracker @Inject constructor(
 
     // ===================== Completion + auto-next =====================
 
-    private fun startNextEpisodePrefetch(metadata: ExternalPlaybackMetadata) {
+    private fun startNextEpisodePrefetch(session: TrackingSession) {
+        val metadata = session.metadata
         if (!ExternalAutoNextPolicy.shouldAttemptAdvance(
                 episode = metadata.episode,
                 contentType = metadata.contentType,
@@ -871,12 +907,14 @@ class ExternalPlaybackTracker @Inject constructor(
             val enabled = autoNextEnabledForPendingLaunch
                 ?: playerSettingsDataStore.playerSettings.first()
                     .streamAutoPlayNextEpisodeEnabled
+            if (!trackingSessionIsCurrent(session)) return@launch
             autoNextEnabledForPendingLaunch = enabled
             persistAutoNextState(nextEpisodeSnapshot, enabled)
             if (!enabled) return@launch
 
             repeat(NEXT_EPISODE_PREFETCH_ATTEMPTS) { attempt ->
-                val refreshedSnapshot = resolveNextEpisodeSnapshot(metadata)
+                val refreshedSnapshot = resolveNextEpisodeSnapshot(metadata, session = session)
+                if (!trackingSessionIsCurrent(session)) return@launch
                 if (refreshedSnapshot.metadataResolved) {
                     // Keep a playable successor captured from the screen's complete episode list
                     // if a background addon refresh returns a thinner list with no successor.
@@ -931,10 +969,14 @@ class ExternalPlaybackTracker @Inject constructor(
 
     private suspend fun resolveNextEpisodeSnapshot(
         metadata: ExternalPlaybackMetadata,
-        preferredVideoId: String? = null
+        preferredVideoId: String? = null,
+        session: TrackingSession? = null
     ): ExternalNextEpisodeSnapshot {
+        fun current() = session == null || generationIsCurrent(session)
+        if (!current()) return ExternalNextEpisodeSnapshot.Unknown
         val loaded = loadedNextEpisodeMeta?.takeIf { it.first == metadata }?.second
         if (loaded != null && episodeShufflePlayback.isEnabled(metadata)) {
+            if (!current()) return ExternalNextEpisodeSnapshot.Unknown
             return resolveNextEpisodeSnapshot(metadata, loaded, preferredVideoId)
         }
         val result = withTimeoutOrNull(META_FETCH_TIMEOUT_MS) {
@@ -944,6 +986,7 @@ class ExternalPlaybackTracker @Inject constructor(
         }
         val meta = (result as? NetworkResult.Success)?.data
             ?: return ExternalNextEpisodeSnapshot.Unknown
+        if (!current()) return ExternalNextEpisodeSnapshot.Unknown
         return resolveNextEpisodeSnapshot(metadata, meta.videos, preferredVideoId)
     }
 
@@ -960,9 +1003,12 @@ class ExternalPlaybackTracker @Inject constructor(
      * Resolves the next episode via the same rules the internal player uses
      * ([PlayerNextEpisodeRules.resolveNextEpisode]), gated by the "Auto-play next
      * episode" setting, then emits an event for MainActivity to navigate.
-     * [metadata] is captured by value so it survives stopTracking() clearing it.
+     * [session] retains its metadata after normal stopTracking(), but a newer tracking
+     * generation rejects its asynchronous publication and cleanup.
      */
-    private fun maybeTriggerAutoNextEpisode(metadata: ExternalPlaybackMetadata) {
+    private fun maybeTriggerAutoNextEpisode(session: TrackingSession) {
+        if (!generationIsCurrent(session)) return
+        val metadata = session.metadata
         if (profileManager.activeProfileId.value != metadata.profileId) {
             _autoNextOverlay.value = null
             return
@@ -991,7 +1037,7 @@ class ExternalPlaybackTracker @Inject constructor(
             title = metadata.contentName
         )
         fun dismissOverlayIfCurrent() {
-            if (_autoNextOverlay.value === overlay) _autoNextOverlay.value = null
+            if (generationIsCurrent(session) && _autoNextOverlay.value === overlay) _autoNextOverlay.value = null
         }
 
         autoNextJob?.cancel()
@@ -1000,6 +1046,7 @@ class ExternalPlaybackTracker @Inject constructor(
             val autoPlayNextEnabled = autoNextEnabledForPendingLaunch
                 ?: playerSettingsDataStore.playerSettings.first()
                     .streamAutoPlayNextEpisodeEnabled
+            if (!generationIsCurrent(session)) return@launch
             if (!autoPlayNextEnabled) {
                 Log.d(AUTO_NEXT_TAG, "Auto-play next episode is OFF; skipping auto-advance")
                 dismissOverlayIfCurrent()
@@ -1018,22 +1065,29 @@ class ExternalPlaybackTracker @Inject constructor(
                     if (prefetchJob.isActive) prefetchJob.cancel()
                 }
             }
-            if (nextEpisodeSnapshot.shufflePlayback || episodeShufflePlayback.isEnabled(metadata)) {
+            if (!generationIsCurrent(session)) return@launch
+            val shuffleEnabled = nextEpisodeSnapshot.shufflePlayback || episodeShufflePlayback.isEnabled(metadata)
+            if (!generationIsCurrent(session)) return@launch
+            if (shuffleEnabled) {
                 val loaded = loadedNextEpisodeMeta?.takeIf { it.first == metadata }?.second
-                nextEpisodeSnapshot = if (loaded != null) {
+                val shuffled = if (loaded != null) {
                     resolveNextEpisodeSnapshot(metadata, loaded, nextEpisodeSnapshot.nextVideoId)
                 } else {
-                    resolveNextEpisodeSnapshot(metadata, preferredVideoId = nextEpisodeSnapshot.nextVideoId)
+                    resolveNextEpisodeSnapshot(metadata, preferredVideoId = nextEpisodeSnapshot.nextVideoId, session = session)
                 }
+                if (!generationIsCurrent(session)) return@launch
+                nextEpisodeSnapshot = shuffled
                 persistAutoNextState(nextEpisodeSnapshot, autoPlayNextEnabled)
             }
             val resolvedSnapshot = nextEpisodeSnapshot.takeIf { it.metadataResolved }
-                ?: resolveNextEpisodeSnapshot(metadata).also { refreshed ->
+                ?: resolveNextEpisodeSnapshot(metadata, session = session).also { refreshed ->
+                    if (!generationIsCurrent(session)) return@launch
                     if (refreshed.metadataResolved) {
                         nextEpisodeSnapshot = refreshed
                         persistAutoNextState(refreshed, autoPlayNextEnabled)
                     }
                 }
+            if (!generationIsCurrent(session)) return@launch
             if (!resolvedSnapshot.metadataResolved) {
                 Log.d(AUTO_NEXT_TAG, "Could not load series meta for ${metadata.contentId} (timeout or error); skipping")
                 dismissOverlayIfCurrent()
@@ -1094,6 +1148,7 @@ class ExternalPlaybackTracker @Inject constructor(
             // StreamScreen explicitly releases on manual fallback. This is only a final guard
             // beyond its 60 second source-resolution timeout.
             delay(AUTO_NEXT_OVERLAY_TIMEOUT_MS)
+            if (!generationIsCurrent(session)) return@launch
             Log.d(AUTO_NEXT_TAG, "safety-net timeout -> clearing loader")
             autoNextNavigationPending = false
             // Clear unconditionally: the identity-guarded variant left a stale overlay stuck when a
@@ -1103,9 +1158,11 @@ class ExternalPlaybackTracker @Inject constructor(
     }
 
     private fun maybeTriggerCloudAutoNext(
-        metadata: ExternalPlaybackMetadata,
+        session: TrackingSession,
         sessionToken: String
     ) {
+        if (!generationIsCurrent(session)) return
+        val metadata = session.metadata
         val playbackContext = cloudPlaybackSessionStore.load(sessionToken)
         val nextFile = playbackContext?.nextFile
         if (playbackContext == null || nextFile == null || autoNextCancelled || autoNextChainAborted) {
@@ -1122,6 +1179,7 @@ class ExternalPlaybackTracker @Inject constructor(
             val enabled = autoNextEnabledForPendingLaunch
                 ?: playerSettingsDataStore.playerSettings.first()
                     .streamAutoPlayNextEpisodeEnabled
+            if (!generationIsCurrent(session)) return@launch
             if (!enabled) {
                 _autoNextOverlay.value = null
                 return@launch
@@ -1130,6 +1188,7 @@ class ExternalPlaybackTracker @Inject constructor(
             val result = withTimeoutOrNull(AUTO_NEXT_OVERLAY_TIMEOUT_MS) {
                 cloudLibraryRepository.resolvePlayback(playbackContext.item, nextFile)
             }
+            if (!generationIsCurrent(session)) return@launch
             if (result !is CloudLibraryPlaybackResult.Success) {
                 Log.d(AUTO_NEXT_TAG, "Cloud auto-next could not resolve ${nextFile.stableKey}")
                 _autoNextOverlay.value = null
@@ -1149,6 +1208,9 @@ class ExternalPlaybackTracker @Inject constructor(
                 episode = nextEpisode,
                 episodeTitle = filename
             )
+            val continuationGeneration = session.generation + 1L
+            fun continuationIsCurrent(): Boolean = generationIsCurrent(session) ||
+                (trackingGeneration == continuationGeneration && pendingMetadata === nextMetadata)
 
             lastAutoNextEmitMs = System.currentTimeMillis()
             autoNextNavigationPending = true
@@ -1160,9 +1222,11 @@ class ExternalPlaybackTracker @Inject constructor(
                 headers = null,
                 autoLaunch = true,
                 cloudSessionToken = sessionToken,
-                context = appContext
+                context = appContext,
+                launchStillCurrent = ::continuationIsCurrent
             )
-            if (!launched) {
+            if (!launched && (generationIsCurrent(session) ||
+                    (trackingGeneration == continuationGeneration && pendingMetadata == null))) {
                 cloudPlaybackSessionStore.update(sessionToken, playbackContext)
                 autoNextNavigationPending = false
                 _autoNextOverlay.value = null
@@ -1276,25 +1340,21 @@ class ExternalPlaybackTracker @Inject constructor(
      *  idempotent. Kept for a completion, dismissed by onActivityResult otherwise. */
     fun raiseAutoNextOverlayOnReturn() {
         val recoveredFromDisk = pendingMetadata == null
-        val metadata = pendingMetadata ?: loadPersistedMetadata() ?: return
-        if (recoveredFromDisk) {
-            nextEpisodeSnapshot = loadPersistedNextEpisodeSnapshot()
-            autoNextEnabledForPendingLaunch = loadPersistedAutoNextEnabled()
-            pendingCloudSessionToken = loadPersistedCloudSessionToken()
-        }
-        raiseAutoNextOverlay(metadata, allowUnknownNextEpisode = true)
+        val session = trackingSessionOrRecover() ?: return
+        raiseAutoNextOverlay(session.metadata, allowUnknownNextEpisode = true)
         // In-process handoffs keep pendingMetadata, so onActivityResult is guaranteed to run and
         // clear the loader. A disk-recovered session has no in-memory state: if the player killed us
         // without leaving a redeliverable result, onActivityResult never fires and this loader would
         // re-raise on every launch forever. Guard that dead case with a watchdog; a live redelivered
         // result cancels it at the top of onActivityResult before it can fire.
-        if (recoveredFromDisk) armStaleReturnWatchdog()
+        if (recoveredFromDisk) armStaleReturnWatchdog(session)
     }
 
-    private fun armStaleReturnWatchdog() {
+    private fun armStaleReturnWatchdog(session: TrackingSession) {
         staleReturnWatchdogJob?.cancel()
         staleReturnWatchdogJob = scope.launch {
             delay(STALE_RETURN_WATCHDOG_MS)
+            if (!trackingSessionIsCurrent(session)) return@launch
             Log.d(
                 AUTO_NEXT_TAG,
                 "stale-return watchdog fired: no ActivityResult after recovery -> clearing dead session"
@@ -1303,6 +1363,7 @@ class ExternalPlaybackTracker @Inject constructor(
             nextEpisodeSnapshot = ExternalNextEpisodeSnapshot.Unknown
             autoNextEnabledForPendingLaunch = null
             _autoNextOverlay.value = null
+            stopTracking()
         }
     }
 
@@ -1379,17 +1440,20 @@ class ExternalPlaybackTracker @Inject constructor(
     }
 
     private fun startZidooMonitor(
-        metadata: ExternalPlaybackMetadata,
+        session: TrackingSession,
         startFromBeginning: Boolean
     ) {
+        val metadata = session.metadata
         zidooMonitorJob?.cancel()
         zidooMonitorJob = scope.launch {
             val resumePosition = if (startFromBeginning) 0L else withContext(Dispatchers.Default) {
                 getResumePosition(metadata)
             }
+            if (!trackingSessionIsCurrent(session)) return@launch
             val result = ZidooPlayerMonitor.awaitPlaybackEnd(resumePositionMs = resumePosition)
+            currentCoroutineContext().ensureActive()
             // State changes run on Main with ActivityResult; the monitor's HTTP requests use IO.
-            if (pendingMetadata !== metadata) return@launch
+            if (!trackingSessionIsCurrent(session)) return@launch
             zidooMonitorJob = null
             if (result == null && awaitingExternalPlayerResult) {
                 Log.d(TAG, "No Zidoo playback detected; waiting for the external player's result")
@@ -1397,7 +1461,7 @@ class ExternalPlaybackTracker @Inject constructor(
             }
             if (result != null) {
                 Log.d(TAG, "Zidoo monitor: pos=${result.positionMs}ms, dur=${result.durationMs}ms")
-                saveProgress(metadata, result.positionMs, result.durationMs)
+                saveProgress(session, result.positionMs, result.durationMs)
             }
             clearPersistedMetadata()
             _autoNextOverlay.value = null
@@ -1434,17 +1498,21 @@ class ExternalPlaybackTracker @Inject constructor(
     // ===================== Progress save + Trakt scrobble =====================
 
     private fun saveProgress(
-        metadata: ExternalPlaybackMetadata,
+        session: TrackingSession,
         positionMs: Long,
         durationMs: Long?,
         explicitPercent: Float? = null
     ) {
+        val metadata = session.metadata
         // The synthetic sequence values are only for Cloud Library auto-next. Do not create
         // Continue Watching or tracking entries for files that did not have them before.
         if (metadata.contentType.equals("cloud", ignoreCase = true)) return
         val effectiveDuration = durationMs ?: 0L
 
         scope.launch {
+            // A consumed current result may save after stopTracking; only a newer start/recovery
+            // invalidates this queued write. Already-entered persistence is a separate boundary.
+            if (!generationIsCurrent(session)) return@launch
             val progress = WatchProgress(
                 contentId = metadata.contentId,
                 contentType = metadata.contentType,
@@ -1470,6 +1538,8 @@ class ExternalPlaybackTracker @Inject constructor(
                 Log.w(TAG, "Watch progress could not be saved", error)
             }
 
+            if (!generationIsCurrent(session)) return@launch
+
             val progressPercent = if (effectiveDuration > 0L) {
                 (positionMs.toFloat() / effectiveDuration.toFloat() * 100f).coerceIn(0f, 100f)
             } else {
@@ -1482,6 +1552,7 @@ class ExternalPlaybackTracker @Inject constructor(
                         TrackingScrobbleAction.START,
                         TrackingScrobbleEvent(scrobbleItem, 0.0)
                     )
+                    if (!generationIsCurrent(session)) return@launch
                     trackingScrobbleCoordinator.scrobble(
                         TrackingScrobbleAction.STOP,
                         TrackingScrobbleEvent(scrobbleItem, progressPercent.toDouble())

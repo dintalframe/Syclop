@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
@@ -46,6 +47,9 @@ internal fun HomeBrowseScaffold(section: HomeBrowseSection, onSelect: (HomeBrows
     val sidebarEntry = LocalContentFocusRequester.current
     val openSidebar = LocalOpenSidebar.current
     val tabs = remember { HomeBrowseSection.entries.associateWith { FocusRequester() } }
+    // One owner survives tab changes. Late Home/layout requests cannot leave a header
+    // that has actually received focus; Down explicitly grants entry before requesting it.
+    val headerOwnsFocus = remember { mutableStateOf(false) }
     val bodyEntry = remember(section) { FocusRequester() }
     val entry = remember(section) { HomeBrowseEntry().apply { enter = { runCatching { bodyEntry.requestFocus() }; Unit } } }
     val saved = rememberSaveableStateHolder()
@@ -55,12 +59,17 @@ internal fun HomeBrowseScaffold(section: HomeBrowseSection, onSelect: (HomeBrows
             HomeBrowseSection.entries.forEachIndexed { index, tab ->
                 Button(onClick = { onSelect(tab) }, modifier = Modifier
                     .focusRequester(tabs.getValue(tab))
-                    .onFocusChanged { if (it.isFocused && section != tab) onSelect(tab) }
+                    .onFocusChanged {
+                        if (it.isFocused) {
+                            headerOwnsFocus.value = true
+                            if (section != tab) onSelect(tab)
+                        }
+                    }
                     .then(if (section == tab && sidebarEntry != FocusRequester.Default) Modifier.focusRequester(sidebarEntry) else Modifier)
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) false else when (event.key) {
                             Key.DirectionUp -> true
-                            Key.DirectionDown -> { entry.enter(); true }
+                            Key.DirectionDown -> { headerOwnsFocus.value = false; entry.enter(); true }
                             Key.DirectionLeft -> {
                                 if (index > 0) tabs.getValue(HomeBrowseSection.entries[index - 1]).requestFocus()
                                 else openSidebar?.invoke()
@@ -78,7 +87,9 @@ internal fun HomeBrowseScaffold(section: HomeBrowseSection, onSelect: (HomeBrows
                 }
             }
         }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        Box(Modifier.weight(1f).fillMaxWidth()
+            .focusProperties { onEnter = { if (headerOwnsFocus.value) cancelFocusChange() } }
+            .focusGroup()) {
             saved.SaveableStateProvider(section.name) {
                 CompositionLocalProvider(
                     LocalContentFocusRequester provides bodyEntry,

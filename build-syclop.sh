@@ -151,6 +151,7 @@ if [ "$run_tests" -eq 1 ]; then
     --tests 'com.nuvio.tv.ui.screens.settings.SettingsStructureTest' \
     --tests 'com.nuvio.tv.ui.screens.home.*' \
     --tests 'com.nuvio.tv.core.initialization.*' \
+    --tests 'com.nuvio.tv.ui.components.StartupInitializationPolicyTest' \
     --tests 'com.nuvio.tv.data.repository.TraktProgressInitializationTest' \
     --tests 'com.nuvio.tv.data.repository.TraktProgressServiceRefreshTest' \
     --tests 'com.nuvio.tv.data.repository.TraktProgressServiceFailureTest' \

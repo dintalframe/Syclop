@@ -2,6 +2,8 @@ package com.nuvio.tv
 
 import com.nuvio.tv.core.initialization.StartupInitializationCoordinator
 import com.nuvio.tv.ui.components.StartupInitializationScreen
+import com.nuvio.tv.ui.components.StartupInitializationContent
+import com.nuvio.tv.ui.components.startupInitializationBlocksHome
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -63,6 +65,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -350,6 +354,8 @@ open class MainActivity : ComponentActivity() {
 
     /** True until the first onResume after onCreate completes. */
     private var isFirstResumeAfterCreate = false
+    /** Mirrors the committed visible gate; hidden overlays must not intercept its remote input. */
+    private var startupInitializationGateVisible = false
 
     @OptIn(ExperimentalTvMaterial3Api::class, ExperimentalFoundationApi::class)
     override fun attachBaseContext(newBase: Context) {
@@ -1154,6 +1160,9 @@ open class MainActivity : ComponentActivity() {
                         showBanner = updateState.showBanner && currentRoute?.startsWith("player/") != true
                     )
 
+                    val initializationBlocksContent = startupInitializationBlocksHome(initializationHomeEntry,
+                        activeProfileId, profileManager.activeProfileSelectionRevision, initializationState)
+                    StartupInitializationContent(blocked = initializationBlocksContent) {
                     UpdateBannerHost(
                         state = updateBannerState,
                         onDismissBanner = updateViewModel::dismissBanner,
@@ -1237,12 +1246,13 @@ open class MainActivity : ComponentActivity() {
                             }
                             AmbientModeHost(
                                 controller = ambientIdleController,
-                                allowed = currentRoute?.startsWith("player/") != true &&
+                                allowed = !initializationBlocksContent && currentRoute?.startsWith("player/") != true &&
                                     autoNextOverlay == null &&
                                     !isTrailerPlaying,
                                 onShown = { trailerPlayerPool.stop() }
                             )
                         }
+                    }
                     }
                 } 
             } 
@@ -1256,9 +1266,12 @@ open class MainActivity : ComponentActivity() {
                         if (initializationHomeEntry) startupInitializationCoordinator.onHomeEntry(activeProfileId, initializationSelection)
                         else startupInitializationCoordinator.onLeaveHome()
                     }
-                    val blockHomeForInitialization = initializationHomeEntry &&
-                        (initializationState.profileId != activeProfileId ||
-                            initializationState.selectionRevision != initializationSelection || initializationState.blocksHome)
+                    val blockHomeForInitialization = startupInitializationBlocksHome(initializationHomeEntry,
+                        activeProfileId, initializationSelection, initializationState)
+                    SideEffect { startupInitializationGateVisible = blockHomeForInitialization }
+                    DisposableEffect(Unit) {
+                        onDispose { startupInitializationGateVisible = false }
+                    }
 
                     LaunchedEffect(startupDestination, startupLoadingState) {
                         if (startupDestination == StartupDestination.Content) {
@@ -1381,6 +1394,8 @@ open class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // The same-window startup gate has the input priority its previous Dialog had.
+        if (startupInitializationGateVisible) return super.dispatchKeyEvent(event)
         if (ambientIdleController.consumeKeyEvent(event)) return true
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (longPressBackHeld.value) {

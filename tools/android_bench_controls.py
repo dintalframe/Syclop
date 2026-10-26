@@ -33,11 +33,13 @@ CATEGORY_TESTS = {
         "lateAnimeCatalogKeepsFocusedCardAndOneUpReturnsToHeader",
         "lateKidsGroupKeepsSafeEntryAndOneUpReturnsToHeader",
         "changingCategoriesKeepsHeaderFocusAndUsesNewCategoryRows",
-        "newRequestRevisionRestoresConfiguredOrderWithoutOldFocus")
+        "newRequestRevisionRestoresConfiguredOrderWithoutOldFocus",
+        "lateHomeBodyCannotStealHeaderAndDownRestoresRememberedCard")
 }
 CATEGORY_SCREENSHOTS = (
     "category-anime-late-arrival.png", "category-kids-late-group.png",
-    "category-change-anime-header.png", "category-request-order-reset.png")
+    "category-change-anime-header.png", "category-request-order-reset.png",
+    "category-home-late-header.png", "category-home-remembered-entry.png")
 EPISODE_TESTS = {
     "com.nuvio.tv.ui.screens.stream.EpisodeSourceCardsTvTest": (
         "completeSeasonPackIsHiddenAndExactEpisodeCardKeepsRemoteFocus",
@@ -45,10 +47,21 @@ EPISODE_TESTS = {
 }
 EPISODE_SCREENSHOTS = (
     "episode-source-only-single-episode.png", "episode-source-packs-only-empty.png")
+STARTUP_TESTS = {
+    "com.nuvio.tv.ui.components.StartupInitializationScreenTvTest": (
+        "lateBackgroundFocusCannotEscapeInitializationGate",
+        "retryContinueAndBackKeepTheirActionsAndRestoreHomeFocus",
+        "repeatedGateTransitionsKeepTheSameNativeWindowRoots")
+}
+STARTUP_SCREENSHOTS = (
+    "startup-gate-background-blocked.png", "startup-gate-actions.png",
+    "startup-gate-resumed-home.png", "startup-gate-same-window.png")
+SUITE_MIN_API = {"startup-initialization": 29}
 SUITES = {
     "playback-controls": (TESTS, SCREENSHOTS),
     "category-navigation": (CATEGORY_TESTS, CATEGORY_SCREENSHOTS),
     "episode-sources": (EPISODE_TESTS, EPISODE_SCREENSHOTS),
+    "startup-initialization": (STARTUP_TESTS, STARTUP_SCREENSHOTS),
 }
 
 

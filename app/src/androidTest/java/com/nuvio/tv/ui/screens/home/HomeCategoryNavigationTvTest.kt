@@ -47,6 +47,59 @@ class HomeCategoryNavigationTvTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
     @Test
+    fun lateHomeBodyCannotStealHeaderAndDownRestoresRememberedCard() {
+        val mounted = mutableStateOf(false)
+        val ready = AtomicReference(false)
+        val requests = AtomicInteger()
+        val homeRows = listOf(row("late-home", card("home-first", "First Home fixture card"),
+            card("home-second", "Remembered Home fixture card")))
+        compose.setContent {
+            NuvioTheme {
+                HomeBrowseScaffold(HomeBrowseSection.HOME, onSelect = {}) { _, _ ->
+                    if (mounted.value) {
+                        val state = HomeUiState(catalogRows = homeRows, homeRows = homeRows.map(HomeRow::Catalog),
+                            isLoading = false, layoutPreferencesReady = true,
+                            modernLandscapePostersEnabled = true, continueWatchingEnabled = false,
+                            heroEnrichmentEnabled = false, catalogTypeSuffixEnabled = false,
+                            focusedPosterBackdropTrailerEnabled = false, focusedPosterBackdropExpandEnabled = false)
+                        val prepared = rememberHomeCategoryPresentation(HomeBrowseSection.HOME, 1L, 1L, homeRows, state)
+                        SideEffect { ready.set(prepared.current && prepared.presentation.rows.list.isNotEmpty()) }
+                        if (prepared.presentation.rows.list.isNotEmpty()) ModernHomeContent(
+                            uiState = state, modernPresentation = prepared.presentation,
+                            focusState = HomeScreenFocusState(), // Keep Home's real default automatic entry enabled.
+                            onNavigateToDetail = { _, _, _ -> requests.incrementAndGet() },
+                            onContinueWatchingClick = { requests.incrementAndGet() },
+                            onRequestTrailerPreview = { _, _, _, _ -> requests.incrementAndGet() },
+                            onLoadMoreCatalog = { _, _, _ -> requests.incrementAndGet() },
+                            onRemoveContinueWatching = { _, _, _, _ -> requests.incrementAndGet() },
+                            onSaveFocusState = { _, _, _, _, _, _, _, _ -> }
+                        )
+                    }
+                }
+            }
+        }
+        focusHeader(HomeBrowseSection.HOME)
+        // Home's real body appears only after catalog preparation, later than its header.
+        compose.runOnIdle { mounted.value = true }
+        compose.waitUntil(timeoutMillis = 15_000) { ready.get() }
+        compose.waitForIdle()
+        assertHeaderFocused(HomeBrowseSection.HOME)
+        capture("category-home-late-header")
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertCardFocused("First Home fixture card")
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertCardFocused("Remembered Home fixture card")
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        assertHeaderFocused(HomeBrowseSection.HOME)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertCardFocused("Remembered Home fixture card")
+        capture("category-home-remembered-entry")
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        assertHeaderFocused(HomeBrowseSection.HOME)
+        assertEquals(0, requests.get())
+    }
+
+    @Test
     fun lateAnimeCatalogKeepsFocusedCardAndOneUpReturnsToHeader() {
         val ready = row("anime-ready", card("anime-ready", "Ready anime card", anime = true))
         val late = row("anime-late", card("anime-late", "Late anime card", anime = true))

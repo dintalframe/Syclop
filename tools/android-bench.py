@@ -336,6 +336,9 @@ class Bench:
     def episode_sources(self):
         self.fixed_fixtures("episode-sources")
 
+    def startup_initialization(self):
+        self.fixed_fixtures("startup-initialization")
+
     def fixed_fixtures(self, suite):
         """Run only the fixed synthetic fixtures, preserving the emulator's app data."""
         if suite not in controls.SUITES:
@@ -377,7 +380,8 @@ class Bench:
         self.verify_emulator()
         api = self.device("shell", "getprop", "ro.build.version.sdk").stdout.strip()
         abi = self.device("shell", "getprop", "ro.product.cpu.abi").stdout.strip()
-        if not api.isdigit() or any(fact["min_sdk"] > int(api) for fact in facts) or abi not in abis:
+        if (not api.isdigit() or any(fact["min_sdk"] > int(api) for fact in facts)
+                or int(api) < controls.SUITE_MIN_API.get(suite, 1) or abi not in abis):
             raise BenchError("Fixture APKs are incompatible with the selected emulator.")
         self.report["device"] = {"api": int(api), "abi": abi}
         self.report["fixture"] = "account-free-" + suite
@@ -628,7 +632,7 @@ def parser():
     playback.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     playback.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
     playback.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
-    category = commands.add_parser("category-navigation", help="Run the four fixed account-free category navigation fixtures")
+    category = commands.add_parser("category-navigation", help="Run the five fixed account-free category navigation fixtures")
     category.set_defaults(command="category_navigation")
     category.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     category.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
@@ -638,6 +642,11 @@ def parser():
     episode.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     episode.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
     episode.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
+    startup = commands.add_parser("startup-initialization", help="Run three fixed account-free startup focus/window fixtures (API29+)")
+    startup.set_defaults(command="startup_initialization")
+    startup.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
+    startup.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
+    startup.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
     commands.add_parser("stop")
     reset = commands.add_parser("reset", help="Explicit deletion, ownership marker required")
     reset.add_argument("--confirm-reset", action="store_true")
@@ -653,7 +662,7 @@ def main(argv=None):
     bench = None
     try:
         bench = Bench(options)
-        if options.command in ("status", "install", "smoke", "playback_controls", "category_navigation", "episode_sources"):
+        if options.command in ("status", "install", "smoke", "playback_controls", "category_navigation", "episode_sources", "startup_initialization"):
             bench.begin_report()
         getattr(bench, options.command)()
         bench.save_report(True)
