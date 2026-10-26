@@ -251,7 +251,8 @@ object DirectDebridStreamFilter {
     private fun streamFacts(stream: Stream, preferences: DebridStreamPreferences): StreamFacts {
         val parsed = stream.clientResolve?.stream?.raw?.parsed
         val searchText = streamSearchText(stream)
-        val verifiedResolution = com.nuvio.tv.core.mediafacts.SourceMediaFormatFacts.resolutionClass(stream.nativeFileMetadata?.verifiedTracks?.video)
+        val inspected = stream.nativeFileMetadata?.verifiedTracks
+        val verifiedResolution = com.nuvio.tv.core.mediafacts.SourceMediaFormatFacts.resolutionClass(inspected?.video)
         val resolution = verifiedResolution?.let { observed ->
             when { observed.rank >= 2160 -> com.nuvio.tv.domain.model.DebridStreamResolution.P2160
                 observed.rank >= 1440 -> com.nuvio.tv.domain.model.DebridStreamResolution.P1440
@@ -260,10 +261,10 @@ object DirectDebridStreamFilter {
                 else -> com.nuvio.tv.domain.model.DebridStreamResolution.P480 }
         } ?: streamResolution(parsed?.resolution, parsed?.quality, stream.quality, searchText)
         val quality = streamQuality(parsed?.quality, searchText)
-        val visualTags = streamVisualTags(parsed?.hdr.orEmpty(), searchText)
-        val audioTags = streamAudioTags(parsed?.audio.orEmpty(), searchText)
-        val audioChannels = streamAudioChannels(parsed?.channels.orEmpty(), searchText)
-        val encode = streamEncode(parsed?.codec, searchText)
+        val visualTags = VerifiedStreamFilterFacts.visual(inspected?.video, streamVisualTags(parsed?.hdr.orEmpty(), searchText))
+        val audioTags = VerifiedStreamFilterFacts.audio(inspected?.audio.orEmpty(), streamAudioTags(parsed?.audio.orEmpty(), searchText))
+        val audioChannels = VerifiedStreamFilterFacts.channels(inspected?.audio.orEmpty(), streamAudioChannels(parsed?.channels.orEmpty(), searchText))
+        val encode = VerifiedStreamFilterFacts.encode(inspected?.video, streamEncode(parsed?.codec, searchText))
         val languages = parsed?.languages.orEmpty().mapNotNull { languageFor(it) }.ifEmpty {
             val languageText = languageSearchText(stream)
             languageRegexes.filter { (_, regex) -> regex.containsMatchIn(languageText) }.map { it.first }

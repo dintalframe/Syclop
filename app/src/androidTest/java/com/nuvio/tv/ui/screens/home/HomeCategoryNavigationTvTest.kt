@@ -6,11 +6,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
@@ -24,6 +26,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.nuvio.tv.domain.model.CatalogRow
+import com.nuvio.tv.LocalContentFocusRequester
 import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.PosterShape
@@ -154,7 +157,7 @@ class HomeCategoryNavigationTvTest {
             HomeBrowseSection.DOCUMENTARY to listOf(row("documentary", card("documentary", "Documentary fixture card", genres = listOf("Documentary")))),
             HomeBrowseSection.KIDS to listOf(row("kids", card("kids", "Kids fixture card", rating = "TV-Y")))
         ))
-        show(fixture)
+        show(fixture, withSidebarEntry = true)
         waitForRows(fixture, HomeBrowseSection.MOVIES, listOf("movies"))
         focusHeader(HomeBrowseSection.MOVIES)
         press(KeyEvent.KEYCODE_DPAD_DOWN)
@@ -232,14 +235,17 @@ class HomeCategoryNavigationTvTest {
         }
     }
 
-    private fun show(fixture: Fixture) {
+    private fun show(fixture: Fixture, withSidebarEntry: Boolean = false) {
+        val sidebarEntry = if (withSidebarEntry) FocusRequester() else FocusRequester.Default
         compose.setContent {
             NuvioTheme {
                 Box(Modifier.fillMaxSize().background(NuvioTheme.colors.Background)) {
-                    HomeBrowseScaffold(fixture.section.value, onSelect = { fixture.section.value = it }) { _, entry ->
-                        val section = fixture.section.value
-                        val revision = fixture.requestRevision.longValue
-                        key(section, 1L, revision) { CategoryFixtureBody(fixture, section, revision, entry) }
+                    CompositionLocalProvider(LocalContentFocusRequester provides sidebarEntry) {
+                        HomeBrowseScaffold(fixture.section.value, onSelect = { fixture.section.value = it }) { _, entry ->
+                            val section = fixture.section.value
+                            val revision = fixture.requestRevision.longValue
+                            key(section, 1L, revision) { CategoryFixtureBody(fixture, section, revision, entry) }
+                        }
                     }
                 }
             }

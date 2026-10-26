@@ -78,4 +78,33 @@ class NativeDebridFallbackRouterTest {
         assertFalse(NativeDebridFallbackRouter.neutralHashSource(raw.copy(infoHash = "bad")))
         assertFalse(NativeDebridFallbackRouter.neutralHashSource(raw.copy(url = "https://provider.example.test/private")))
     }
+
+    @Test fun `processing remains processing when later service has unknown availability`() = runTest {
+        val result = NativeDebridFallbackRouter.resolve(accounts().take(2), { true }, {}) {
+            NativeDebridAttempt(DirectDebridResolveResult.Failure(DirectDebridFailure(
+                if (it.provider.id == "alldebrid") DirectDebridFailureReason.PROCESSING else DirectDebridFailureReason.UNAVAILABLE,
+                it.provider.id)))
+        }
+        assertEquals("alldebrid", result.providerId)
+        assertEquals(DirectDebridFailureReason.PROCESSING, (result.result as DirectDebridResolveResult.Failure).detail.reason)
+    }
+
+    @Test fun `expired account and rate limit may use another captured service but wrong episode cannot`() = runTest {
+        for (reason in listOf(DirectDebridFailureReason.AUTH_EXPIRED, DirectDebridFailureReason.RATE_LIMITED,
+            DirectDebridFailureReason.TIMED_OUT, DirectDebridFailureReason.WRONG_EPISODE)) {
+            val visited = mutableListOf<String>()
+            val route = NativeDebridFallbackRouter.resolve(accounts(), { true }, visited::add) {
+                NativeDebridAttempt(if (it.provider.id == "alldebrid")
+                    DirectDebridResolveResult.Failure(DirectDebridFailure(reason, "alldebrid"))
+                    else DirectDebridResolveResult.Success("https://cdn.example.test/file", "movie.mkv", 123L))
+            }
+            if (reason == DirectDebridFailureReason.WRONG_EPISODE) {
+                assertEquals(listOf("alldebrid"), visited)
+                assertTrue(route.result is DirectDebridResolveResult.Failure)
+            } else {
+                assertEquals(listOf("alldebrid", "realdebrid"), visited)
+                assertTrue(route.result is DirectDebridResolveResult.Success)
+            }
+        }
+    }
 }

@@ -427,8 +427,9 @@ internal fun HomeViewModel.loadContinueWatchingPipeline() {
                     }
                 }
                 val inProgressOnly = buildList {
-                    val liveInProgress = deduplicateInProgress(
-                        recentItems.filter { shouldTreatAsInProgressForContinueWatching(it) }
+                    val liveInProgress = reconcileContinueWatchingInProgress(
+                        items = recentItems,
+                        completedSeeds = (recentItems + recentNextUpSeeds).filter { shouldUseAsCompletedSeed(it) }
                     )
                     if (liveInProgress.isNotEmpty()) {
                         liveInProgress.forEach { progress ->
@@ -1217,6 +1218,26 @@ internal fun HomeViewModel.loadContinueWatchingPipeline() {
     }
 }
 
+/**
+ * A provider can keep an older paused episode after this TV has finished later episodes.
+ * Reconcile before rendering: otherwise that pause card suppresses the newly resolved Next Up.
+ * A later rewatch remains authoritative even when its episode number is lower.
+ */
+internal fun reconcileContinueWatchingInProgress(
+    items: List<WatchProgress>,
+    completedSeeds: List<WatchProgress>
+): List<WatchProgress> {
+    val completedAtByShow = completedSeeds.asSequence()
+        .filter { isSeriesTypeCW(it.contentType) && it.season != null && it.episode != null && it.isCompleted() }
+        .groupBy { it.contentId }
+        .mapValues { (_, episodes) -> episodes.maxOf(WatchProgress::lastWatched) }
+    return deduplicateInProgress(items.filter { progress ->
+        shouldTreatAsInProgressForContinueWatching(progress) &&
+            (!isSeriesTypeCW(progress.contentType) ||
+                completedAtByShow[progress.contentId]?.let { progress.lastWatched > it } != false)
+    })
+}
+
 private fun deduplicateInProgress(items: List<WatchProgress>): List<WatchProgress> {
     val (series, nonSeries) = items.partition { isSeriesTypeCW(it.contentType) }
     val latestPerShow = series
@@ -1295,12 +1316,15 @@ private fun isMalformedNextUpSeedContentId(contentId: String?): Boolean {
     }
 }
 
-private fun choosePreferredNextUpSeed(items: List<WatchProgress>, nextUpFromFurthestEpisode: Boolean = true): WatchProgress? {
+internal fun choosePreferredNextUpSeed(items: List<WatchProgress>, nextUpFromFurthestEpisode: Boolean = true): WatchProgress? {
     if (items.isEmpty()) return null
     val bestRank = items.minOf(::nextUpSeedSourceRank)
+    // Account-scoped local completion is durable playback evidence, not a legacy import.
+    // Compare it with the remote coordinates/timestamps instead of discarding it by source rank.
+    val hasLocalPlayback = items.any { it.source == WatchProgress.SOURCE_LOCAL && it.localPlaybackScope != null }
     return items
         .asSequence()
-        .filter { nextUpSeedSourceRank(it) == bestRank }
+        .filter { hasLocalPlayback || nextUpSeedSourceRank(it) == bestRank }
         .maxWithOrNull(
             if (nextUpFromFurthestEpisode) {
                 compareBy<WatchProgress>(

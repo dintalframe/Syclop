@@ -7,12 +7,26 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
+/** Positive observations from a successful owned remote read, never an optimistic projection. */
+class TrackingProgressAcknowledgement(
+    val profileId: Int,
+    val localPlaybackScope: String,
+    val progress: List<WatchProgress>,
+    val isCurrent: () -> Boolean
+)
+
 interface TrackingProgressProvider {
     val providerId: TrackingProviderId
     val isAuthenticated: Flow<Boolean>
     val allProgress: Flow<List<WatchProgress>>
     val remoteProgressLoaded: Flow<Boolean>
     val nextUpSeeds: Flow<List<WatchProgress>>
+    /** Stable across token refresh/restart, changes for a different connected account. */
+    val localPlaybackScope: Flow<String?>
+        get() = flowOf(null)
+    suspend fun captureLocalPlaybackScope(profileId: Int): String? = null
+    val confirmedProgress: Flow<TrackingProgressAcknowledgement?>
+        get() = flowOf(null)
     val watchedMovieIds: Flow<Set<String>>
     val ownsCompletedHistoryProjection: Boolean
         get() = false

@@ -525,6 +525,34 @@ class PlayerPlaybackActionControllerTest {
         verify(exactly = 0) { fixture.player.setMediaSource(any()) }
     }
 
+    @Test
+    fun `progress keeps the playback start account scope across asynchronous normalization`() = runTest {
+        val repository = mockk<WatchProgressRepository>(relaxed = true)
+        val fixture = fixture(PlayerUiState(), repository = repository, capturedPlaybackScope = "original-account")
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var currentAccountScope = "original-account"
+        val saved = mutableListOf<WatchProgress>()
+        coEvery { repository.captureLocalPlaybackScope(1) } answers { currentAccountScope }
+        coEvery { repository.normalizeParentContentId(any(), any(), any()) } coAnswers {
+            entered.complete(Unit)
+            release.await()
+            "tt-fixture"
+        }
+        coEvery { repository.saveProgress(any(), 1, true) } coAnswers { saved += firstArg<WatchProgress>() }
+
+        fixture.controller.saveWatchProgressInternal(120_000L, 3_600_000L)
+        runCurrent()
+        assertTrue(entered.isCompleted)
+        currentAccountScope = "replacement-account"
+        release.complete(Unit)
+        runCurrent()
+
+        assertEquals("original-account", saved.single().localPlaybackScope)
+        assertEquals("tt-fixture:1:1", saved.single().videoId)
+        coVerify(exactly = 0) { repository.captureLocalPlaybackScope(any()) }
+    }
+
     private data class Fixture(
         val controller: PlayerRuntimeController,
         val player: ExoPlayer,
@@ -539,7 +567,8 @@ class PlayerPlaybackActionControllerTest {
         repository: WatchProgressRepository = mockk(relaxed = true),
         profileId: Int = 1,
         episode: Int = 1,
-        activate: Boolean = true
+        activate: Boolean = true,
+        capturedPlaybackScope: String? = null
     ): Fixture {
         val controller = mockk<PlayerRuntimeController>(relaxed = true)
         val player = mockk<ExoPlayer>(relaxed = true)
@@ -562,6 +591,7 @@ class PlayerPlaybackActionControllerTest {
         val coordinator = PlayerProgressWriteCoordinator(authority)
         every { controller.progressWriteCoordinator } returns coordinator
         every { controller.watchProgressRepository } returns repository
+        every { controller.localPlaybackScope } returns CompletableDeferred<String?>(value = capturedPlaybackScope)
         every { controller.party.state } returns MutableStateFlow(PartyUiState())
         every { controller.party.playback } returns MutableStateFlow<PartyPlayback?>(null)
         every { controller.contentId } returns "tt-fixture"

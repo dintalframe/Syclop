@@ -9,6 +9,7 @@ import com.nuvio.tv.domain.model.AddonStreams
 import com.nuvio.tv.domain.model.DebridSettings
 import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.model.StreamDebridCacheState
+import com.nuvio.tv.domain.model.StreamAvailabilityScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -21,11 +22,19 @@ class DebridStreamPresentation internal constructor(
     private val dataStore: DebridSettingsDataStore,
     private val streamBadgeSettingsDataStore: StreamBadgeSettingsDataStore,
     private val formatter: DebridStreamFormatter,
-    private val nativeGrant: (String) -> Boolean
+    private val nativeGrant: (String) -> Boolean,
+    private val currentScope: () -> StreamAvailabilityScope?,
+    private val clock: () -> Long
 ) {
+    internal constructor(dataStore: DebridSettingsDataStore, streamBadgeSettingsDataStore: StreamBadgeSettingsDataStore,
+        formatter: DebridStreamFormatter, nativeGrant: (String) -> Boolean) :
+        this(dataStore, streamBadgeSettingsDataStore, formatter, nativeGrant, { null }, System::currentTimeMillis)
     @Inject constructor(dataStore: DebridSettingsDataStore, streamBadgeSettingsDataStore: StreamBadgeSettingsDataStore,
         formatter: DebridStreamFormatter) : this(dataStore, streamBadgeSettingsDataStore, formatter,
-        { com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(it) })
+        { com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(it) },
+        { dataStore.activeCredentialRevision.takeIf { it >= 0L }?.let {
+            StreamAvailabilityScope(dataStore.activeProfileId.value, dataStore.activeProfileSelectionRevision, it)
+        } }, System::currentTimeMillis)
     private val badgeFilterCache = AtomicReference<Pair<StreamBadgeRules, List<CompiledStreamBadgeFilter>>?>()
 
     suspend fun apply(
@@ -58,7 +67,7 @@ class DebridStreamPresentation internal constructor(
             if (includeBadgeMatches) getBadgeFilters(streamBadgeRules) else emptyList()
         }
         val visibleGroups = eligibleGroups.map { group -> group.copy(streams = group.streams
-            .filterNot { it.isUncachedDebridStream() }) }
+            .filterNot { it.isUncachedDebridStream(settings) }) }
         val managed = visibleGroups.flatMap { it.streams }.filter { it.isManagedDebridStream(settings) }
         val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits = false)
         val presented = ranked.associate { (stream, facts) -> stream to formatter.format(stream, settings, badgeFilters, facts) }
@@ -73,6 +82,7 @@ class DebridStreamPresentation internal constructor(
         episodeRequest: Boolean = false): List<Stream> {
         val eligible = EpisodeSourcePolicy.filter(streams, episodeRequest)
             .filter { NativeDebridSourceCards.eligible(it, settings, nativeGrant) }
+            .filterNot { it.isUncachedDebridStream(settings) }
         if (!settings.canResolvePlayableLinks) return eligible
         val managed = eligible.filter { it.isManagedDebridStream(settings) }
         val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits).map { it.first }
@@ -96,10 +106,9 @@ class DebridStreamPresentation internal constructor(
             clientResolve?.type.let { it.equals("hoster", true) || it.equals("http", true) })
     }
 
-    private fun Stream.isUncachedDebridStream(): Boolean =
-        needsLocalDebridResolve() &&
-            DebridProviders.byId(debridCacheStatus?.providerId)?.supports(DebridProviderCapability.LocalTorrentCacheCheck) == true &&
-            debridCacheStatus?.state == StreamDebridCacheState.NOT_CACHED
+    private fun Stream.isUncachedDebridStream(settings: DebridSettings): Boolean =
+        nativeDebridAvailability.isNotEmpty() &&
+            currentScope()?.let { allNativeAccountsUnavailable(settings, it, clock()) } == true
 
 
 }

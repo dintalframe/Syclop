@@ -36,7 +36,8 @@ class AllDebridDirectDebridResolver @Inject constructor(
                 Log.d("DebridResolve", "provider=alldebrid stage=readiness " + readiness.diagnosticFields())
                 when (readiness.classification) {
                     AllDebridReadiness.Classification.READY -> Unit
-                    AllDebridReadiness.Classification.PROCESSING -> return DirectDebridResolveResult.NotCached
+                    AllDebridReadiness.Classification.PROCESSING -> return DirectDebridResolveResult.Failure(
+                        DirectDebridFailure(DirectDebridFailureReason.PROCESSING, DebridProviders.ALL_DEBRID_ID))
                     AllDebridReadiness.Classification.SERVICE_ERROR,
                     AllDebridReadiness.Classification.MISSING_STATUS -> return DirectDebridResolveResult.Error
                 }
@@ -52,7 +53,7 @@ class AllDebridDirectDebridResolver @Inject constructor(
                     path = { it.path },
                     isPlayable = { it.path.hasDebridVideoExtension() },
                     size = { it.size ?: 0L }
-                ) ?: return DirectDebridResolveResult.Stale
+                ) ?: return wrongDebridFile(DebridProviders.ALL_DEBRID_ID)
                 source = selectedFile.link
             } else {
                 source = stream.getStreamUrl()?.takeIf { it.isHttpUrl() }
@@ -71,7 +72,7 @@ class AllDebridDirectDebridResolver @Inject constructor(
             val status = (error as? AllDebridApiException)?.httpStatus?.takeIf { it in 100..599 }
             Log.w("DebridResolve", "provider=alldebrid stage=$stage result=error " +
                 "httpStatus=${status ?: "none"} exception=${error.javaClass.simpleName}" + AllDebridJsonDiagnostics.fields(error))
-            DirectDebridResolveResult.Error
+            directDebridExceptionFailure(error, DebridProviders.ALL_DEBRID_ID)
         }
     }
 }

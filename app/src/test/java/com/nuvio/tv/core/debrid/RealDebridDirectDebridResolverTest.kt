@@ -97,7 +97,7 @@ class RealDebridDirectDebridResolverTest {
 
         val result = resolver.resolve(stream(fileIdx = 7), season = null, episode = null)
 
-        assertTrue(result is DirectDebridResolveResult.NotCached)
+        assertEquals(DirectDebridResolveResult.Failure(DirectDebridFailure(DirectDebridFailureReason.PROCESSING, "realdebrid")), result)
         assertEquals(0, api.deleteCalls)
         assertEquals(0, api.unrestrictCalls)
     }
@@ -112,7 +112,7 @@ class RealDebridDirectDebridResolverTest {
                 Response.success(RealDebridTorrentInfoDto(status = "downloaded", links = emptyList()))
             )
         )
-        assertEquals(DirectDebridResolveResult.Stale, resolver(api).resolve(stream(7), null, null))
+        assertEquals(wrongDebridFile("realdebrid"), resolver(api).resolve(stream(7), null, null))
         assertEquals(0, api.deleteCalls)
         assertEquals(0, api.unrestrictCalls)
     }
@@ -124,7 +124,7 @@ class RealDebridDirectDebridResolverTest {
                 addResponse = Response.success(201, RealDebridAddTorrentDto(id = "preserved_cloud_job")),
                 infoResponses = mutableListOf(Response.success(RealDebridTorrentInfoDto(status = status, files = emptyList())))
             )
-            assertEquals(DirectDebridResolveResult.NotCached, resolver(api).resolve(stream(7), null, null))
+            assertEquals(DirectDebridResolveResult.Failure(DirectDebridFailure(DirectDebridFailureReason.PROCESSING, "realdebrid")), resolver(api).resolve(stream(7), null, null))
             assertEquals(1, api.addCalls)
             assertEquals(1, api.infoCalls)
             assertEquals(0, api.selectCalls)
@@ -140,7 +140,7 @@ class RealDebridDirectDebridResolverTest {
                 addResponse = Response.success(201, RealDebridAddTorrentDto(id = "preserved_cloud_job")),
                 infoResponses = mutableListOf(Response.success(RealDebridTorrentInfoDto(status = status)))
             )
-            assertEquals(DirectDebridResolveResult.Stale, resolver(api).resolve(stream(7), null, null))
+            assertEquals(wrongDebridFile("realdebrid"), resolver(api).resolve(stream(7), null, null))
             assertEquals(1, api.infoCalls)
             assertEquals(0, api.selectCalls)
             assertEquals(0, api.unrestrictCalls)
@@ -160,7 +160,7 @@ class RealDebridDirectDebridResolverTest {
                 addResponse = Response.success(201, RealDebridAddTorrentDto(id = "preserved_cloud_job")),
                 infoResponses = mutableListOf(Response.success(RealDebridTorrentInfoDto(status = status, files = files)))
             )
-            assertEquals(DirectDebridResolveResult.Stale, resolver(api).resolve(stream(0), null, null))
+            assertEquals(wrongDebridFile("realdebrid"), resolver(api).resolve(stream(0), null, null))
             assertEquals(1, api.infoCalls)
             assertEquals(0, api.selectCalls)
             assertEquals(0, api.unrestrictCalls)
@@ -192,7 +192,7 @@ class RealDebridDirectDebridResolverTest {
             addResponse = Response.error(451, "restricted".toResponseBody()),
             infoResponses = mutableListOf()
         )
-        assertEquals(DirectDebridResolveResult.Error, resolver(api).resolve(stream(7), null, null))
+        assertEquals(directDebridHttpFailure(451, "realdebrid"), resolver(api).resolve(stream(7), null, null))
         assertEquals(1, api.addCalls)
         assertEquals(0, api.infoCalls)
         assertEquals(0, api.selectCalls)
@@ -246,7 +246,7 @@ class RealDebridDirectDebridResolverTest {
                 ),
                 selectResponse = Response.success(202, "".toResponseBody())
             )
-            assertEquals(DirectDebridResolveResult.Stale, resolver(api).resolve(stream(7), null, null))
+            assertEquals(wrongDebridFile("realdebrid"), resolver(api).resolve(stream(7), null, null))
             assertEquals("7", api.lastSelectedFiles)
             assertEquals(0, api.unrestrictCalls)
             assertEquals(0, api.deleteCalls)

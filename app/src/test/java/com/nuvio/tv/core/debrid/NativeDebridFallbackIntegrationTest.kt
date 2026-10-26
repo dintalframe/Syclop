@@ -92,7 +92,7 @@ class NativeDebridFallbackIntegrationTest {
     @Test fun `explicit AD client contract never falls back to RD`() = runBlocking {
         Harness().use { h ->
             h.adProcessing()
-            assertEquals(DirectDebridResolveResult.NotCached, withTimeout(10_000) {
+            assertEquals(DirectDebridResolveResult.Failure(DirectDebridFailure(DirectDebridFailureReason.PROCESSING, "alldebrid")), withTimeout(10_000) {
                 h.resolver.resolve(source().copy(url = null, clientResolve = explicit()), null, null)
             })
             assertEquals(2, h.ad.requestCount); assertEquals(0, h.rd.requestCount)
@@ -103,7 +103,7 @@ class NativeDebridFallbackIntegrationTest {
         Harness().use { h ->
             h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"ready":true}]}}"""))
             h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"files":[]}]}}"""))
-            assertEquals(DirectDebridResolveResult.Stale, withTimeout(10_000) { h.resolver.resolve(source(), null, null) })
+            assertEquals(wrongDebridFile("alldebrid"), withTimeout(10_000) { h.resolver.resolve(source(), null, null) })
             assertEquals(0, h.rd.requestCount); assertFalse(h.resolver.isPlaybackAuthorized(FILE))
         }
     }
@@ -136,7 +136,10 @@ class NativeDebridFallbackIntegrationTest {
 
     @Test fun `negative AD availability cannot be applied to RD and background preparation stays single service`() = runBlocking {
         Harness().use { h ->
-            val source = source().copy(debridCacheStatus = StreamDebridCacheStatus("alldebrid", "AllDebrid", StreamDebridCacheState.NOT_CACHED))
+            val now = System.currentTimeMillis()
+            val source = source().copy(nativeDebridAvailability = listOf(StreamDebridCacheStatus("alldebrid", "AllDebrid",
+                StreamDebridCacheState.NOT_CACHED, nativeScope = StreamAvailabilityScope(1, 1L, 1L), infoHash = HASH,
+                checkedAtMs = now, expiresAtMs = now + 10_000L)))
             h.rdReady()
             assertEquals(DirectDebridResolveResult.NotCached, h.resolver.resolve(source, null, null, allowFallback = false))
             assertEquals(0, h.ad.requestCount); assertEquals(0, h.rd.requestCount)
@@ -151,6 +154,16 @@ class NativeDebridFallbackIntegrationTest {
             assertEquals(DirectDebridResolveResult.Stale, h.resolver.resolve(source().copy(infoHash = "bad", url = null), null, null))
             assertEquals(0, h.ad.requestCount); assertEquals(0, h.rd.requestCount)
             assertFalse(h.resolver.isPlaybackAuthorized(FILE))
+        }
+    }
+
+    @Test fun `legacy provider cache claims cannot skip a native service resolution`() = runBlocking {
+        Harness().use { h ->
+            h.adProcessing(); h.rdReady()
+            val claimed = source().copy(debridCacheStatus = StreamDebridCacheStatus("alldebrid", "AllDebrid", StreamDebridCacheState.NOT_CACHED))
+            assertTrue(withTimeout(10_000) { h.resolver.resolve(claimed, null, null) } is DirectDebridResolveResult.Success)
+            assertEquals(2, h.ad.requestCount)
+            assertEquals(5, h.rd.requestCount)
         }
     }
 

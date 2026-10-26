@@ -30,6 +30,7 @@ internal object NativeDebridFallbackRouter {
     ): NativeDebridRoute {
         var last = NativeDebridRoute(null, DirectDebridResolveResult.MissingApiKey)
         var serviceFailed = false
+        var classifiedFailure: NativeDebridRoute? = null
         for (account in accounts.distinctBy { it.provider.id }.take(4)) {
             currentCoroutineContext().ensureActive()
             if (!isCurrent()) throw CancellationException("The active viewer or connected service changed.")
@@ -40,12 +41,27 @@ internal object NativeDebridFallbackRouter {
             last = NativeDebridRoute(account.provider.id, outcome.result)
             when (outcome.result) {
                 is DirectDebridResolveResult.Success -> return last
+                is DirectDebridResolveResult.Failure -> {
+                    if (outcome.result.detail.reason == DirectDebridFailureReason.WRONG_EPISODE) return last
+                    val previous = (classifiedFailure?.result as? DirectDebridResolveResult.Failure)?.detail?.reason
+                    if (previous == null || failurePriority(outcome.result.detail.reason) > failurePriority(previous)) classifiedFailure = last
+                }
                 DirectDebridResolveResult.NotCached -> Unit
                 DirectDebridResolveResult.Error -> serviceFailed = true
                 DirectDebridResolveResult.MissingApiKey, DirectDebridResolveResult.Stale -> return last
             }
         }
-        return if (serviceFailed) last.copy(result = DirectDebridResolveResult.Error) else last
+        return classifiedFailure ?: if (serviceFailed) last.copy(result = DirectDebridResolveResult.Error) else last
+    }
+
+    private fun failurePriority(reason: DirectDebridFailureReason): Int = when (reason) {
+        DirectDebridFailureReason.WRONG_EPISODE -> 7
+        DirectDebridFailureReason.PROCESSING -> 6
+        DirectDebridFailureReason.RATE_LIMITED -> 5
+        DirectDebridFailureReason.AUTH_EXPIRED -> 4
+        DirectDebridFailureReason.TIMED_OUT -> 3
+        DirectDebridFailureReason.NETWORK_FAILURE -> 2
+        DirectDebridFailureReason.UNAVAILABLE -> 1
     }
 }
 

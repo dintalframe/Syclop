@@ -11,12 +11,17 @@ import java.util.Locale
  */
 class NativeAnimeTitleIdentity private constructor(
     val malId: Long,
-    normalizedTitles: Set<String>
+    normalizedTitles: Set<String>,
+    queryTitles: List<String>
 ) {
     private val titles: Set<String> = Collections.unmodifiableSet(LinkedHashSet(normalizedTitles))
+    private val searchTitles: List<String> = Collections.unmodifiableList(ArrayList(queryTitles))
     internal val fingerprint: String = MessageDigest.getInstance("SHA-256")
         .digest(("native-anime-title-v1|$malId|" + titles.sorted().joinToString("|") { "${it.length}:$it" })
             .toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+
+    /** The same immutable exact-ID title set is used for searching and selected-file proof. */
+    internal fun queryTitles(): List<String> = searchTitles
 
     /** Title must occur outside release-group brackets and before any episode label. */
     fun matchesRelease(value: String): Boolean {
@@ -54,6 +59,7 @@ class NativeAnimeTitleIdentity private constructor(
         internal fun create(malId: Long, canonical: String, aliases: List<String>): NativeAnimeTitleIdentity? {
             if (malId !in 1..Int.MAX_VALUE.toLong() || aliases.size > 127) return null
             val variants = linkedSetOf<String>()
+            val queryCandidates = linkedMapOf<String, String>()
             for (raw in listOf(canonical) + aliases) {
                 if (raw.isBlank() || raw.length > MAX_TITLE || raw.any(Char::isISOControl)) continue
                 val title = Normalizer.normalize(raw, Normalizer.Form.NFKC).trim()
@@ -61,6 +67,7 @@ class NativeAnimeTitleIdentity private constructor(
                 // Only explicit terminal season notation or a parenthesized release year
                 // is removed. No colon-prefix, arbitrary number/token subset or fuzzy match.
                 val withoutYear = terminalYear.replace(title, "").trim()
+                val searchTitle = terminalSeason.replace(withoutYear, "").trim()
                 for (variant in listOf(title, withoutYear, terminalSeason.replace(title, ""),
                     terminalSeason.replace(withoutYear, ""))) {
                     val normalized = normalize(variant)
@@ -68,9 +75,30 @@ class NativeAnimeTitleIdentity private constructor(
                     val meaningful = tokens.filter { it !in generic && it.any(Char::isLetter) }
                     if (meaningful.isEmpty() || meaningful.sumOf(String::length) < 4) continue
                     variants += normalized
+                    // Prefer one narrow season/year-free spelling per title family. Never
+                    // manufacture a colon prefix, fuzzy spelling or token-subset alias.
+                    if (variant == searchTitle && variant.length <= 256) queryCandidates.putIfAbsent(normalized, variant)
                 }
             }
-            return variants.takeIf { it.isNotEmpty() }?.let { NativeAnimeTitleIdentity(malId, it) }
+            return variants.takeIf { it.isNotEmpty() }?.let {
+                NativeAnimeTitleIdentity(malId, it, diverseQueries(queryCandidates.values.toList()))
+            }
+        }
+
+        /** Keep separate Latin title families and a Japanese-script spelling ahead of duplicates. */
+        private fun diverseQueries(candidates: List<String>): List<String> {
+            if (candidates.size <= 3) return candidates
+            val selected = linkedSetOf(candidates.first())
+            val native = candidates.firstOrNull(::hasJapaneseScript)
+            candidates.firstOrNull { it !in selected && !hasJapaneseScript(it) }?.let(selected::add)
+            native?.let(selected::add)
+            candidates.forEach { if (selected.size < 3) selected += it }
+            return selected.take(3)
+        }
+
+        private fun hasJapaneseScript(value: String): Boolean = value.any { character ->
+            Character.UnicodeScript.of(character.code) in setOf(
+                Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA)
         }
 
         private fun normalize(value: String): String = words.findAll(apostrophe.replace(

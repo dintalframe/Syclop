@@ -40,6 +40,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
@@ -47,6 +49,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.net.URLEncoder
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -68,6 +72,7 @@ class StreamRepositoryImpl @Inject constructor(
 ) : StreamRepository {
     private val streamSearchSessions = StreamSearchSessionCache()
     private val localPluginSearchPaused = MutableStateFlow(false)
+    private val availabilityPermits = Semaphore(2)
 
     override fun setLocalPluginSearchPaused(paused: Boolean) {
         localPluginSearchPaused.value = paused
@@ -84,8 +89,14 @@ class StreamRepositoryImpl @Inject constructor(
         val detail: String
     )
 
+    // A CancellationException inside transformLatest only cancels that enrichment child.
+    // Propagate stale ownership as a failure until it reaches the observed search boundary.
+    private class StaleSourceConfiguration : IllegalStateException("The active viewer or connected service changed.")
+
     private data class StreamSourceConfigurationSnapshot(
         val profileId: Int,
+        val profileSelectionRevision: Long,
+        val credentialRevision: Long,
         val addons: List<Addon>,
         val pluginsEnabled: Boolean,
         val enabledScrapers: List<ScraperInfo>,
@@ -94,6 +105,7 @@ class StreamRepositoryImpl @Inject constructor(
         val debridSettings: DebridSettings
     )
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     override fun getStreamsFromAllAddons(
         type: String,
         videoId: String,
@@ -101,29 +113,60 @@ class StreamRepositoryImpl @Inject constructor(
         episode: Int?,
         forceRefresh: Boolean
     ): Flow<NetworkResult<List<AddonStreams>>> = flow {
-        val sourceConfiguration = captureSourceConfiguration()
-        val isNativeServerRequest = serverStreams.isNativeRequest(videoId)
-        val requestKey = buildStreamSearchRequestKey(sourceConfiguration, type, videoId, season, episode)
+        try {
+            val sourceConfiguration = captureSourceConfiguration()
+            val isNativeServerRequest = serverStreams.isNativeRequest(videoId)
+            val requestKey = buildStreamSearchRequestKey(sourceConfiguration, type, videoId, season, episode)
 
-        emitAll(
-            streamSearchSessions.observe(
-                key = requestKey,
-                forceRefresh = forceRefresh
-            ) {
-                fetchStreamsFromAllSources(
-                    type = type,
-                    videoId = videoId,
-                    season = season,
-                    episode = episode,
-                    addons = if (isNativeServerRequest) emptyList() else sourceConfiguration.addons,
-                    debridSettings = sourceConfiguration.debridSettings,
-                    hasCompatiblePlugins = !isNativeServerRequest &&
-                        sourceConfiguration.pluginsEnabled &&
-                        sourceConfiguration.enabledScrapers.any { scraper -> scraper.supportsType(type) },
-                    serverSources = serverStreams.sources(type, videoId, season, episode, forceRefresh)
-                )
-            }
-        )
+            emitAll(
+                streamSearchSessions.observe(
+                    key = requestKey,
+                    forceRefresh = forceRefresh
+                ) {
+                    fetchStreamsFromAllSources(
+                        type = type,
+                        videoId = videoId,
+                        season = season,
+                        episode = episode,
+                        sourceConfiguration = sourceConfiguration,
+                        addons = if (isNativeServerRequest) emptyList() else sourceConfiguration.addons,
+                        hasCompatiblePlugins = !isNativeServerRequest &&
+                            sourceConfiguration.pluginsEnabled &&
+                            sourceConfiguration.enabledScrapers.any { scraper -> scraper.supportsType(type) },
+                        serverSources = serverStreams.sources(type, videoId, season, episode, forceRefresh)
+                    )
+                }.transformLatest { result ->
+                    when (result) {
+                        is NetworkResult.Success -> {
+                            requireCurrentSourceConfiguration(sourceConfiguration)
+                            val checking = scopedAvailability {
+                                localDebridAvailabilityService.markChecking(result.data, sourceConfiguration.debridSettings)
+                            }
+                            requireCurrentSourceConfiguration(sourceConfiguration)
+                            emit(NetworkResult.Success(presentStreams(checking, sourceConfiguration.debridSettings,
+                                com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(type, episode))))
+                            // The search cache owns admitted candidates, never availability-filtered rows.
+                            // Re-enrich on every observation/cache reuse; one in-flight annotation per
+                            // collector is cancelled when a newer complete candidate snapshot arrives.
+                            if (checking.any { it.streams.isNotEmpty() }) {
+                                val annotated = availabilityPermits.withPermit {
+                                    scopedAvailability {
+                                        localDebridAvailabilityService.annotateCachedAvailability(checking, sourceConfiguration.debridSettings)
+                                    }
+                                }
+                                requireCurrentSourceConfiguration(sourceConfiguration)
+                                emit(NetworkResult.Success(presentStreams(annotated, sourceConfiguration.debridSettings,
+                                    com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(type, episode))))
+                            }
+                        }
+                        else -> { requireCurrentSourceConfiguration(sourceConfiguration); emit(result) }
+                    }
+                }
+            )
+            requireCurrentSourceConfiguration(sourceConfiguration)
+        } catch (_: StaleSourceConfiguration) {
+            throw CancellationException("The active viewer or connected service changed.")
+        }
     }
 
     override suspend fun getCachedStreamsFromAllAddons(
@@ -131,9 +174,45 @@ class StreamRepositoryImpl @Inject constructor(
         videoId: String,
         season: Int?,
         episode: Int?
-    ): List<AddonStreams>? = streamSearchSessions.peek(
-        buildStreamSearchRequestKey(captureSourceConfiguration(), type, videoId, season, episode)
-    )
+    ): List<AddonStreams>? {
+        try {
+            val sourceConfiguration = captureSourceConfiguration()
+            val raw = streamSearchSessions.peek(buildStreamSearchRequestKey(sourceConfiguration, type, videoId, season, episode))
+                ?: return null
+            requireCurrentSourceConfiguration(sourceConfiguration)
+            val annotated = availabilityPermits.withPermit {
+                scopedAvailability {
+                    localDebridAvailabilityService.annotateCachedAvailability(raw, sourceConfiguration.debridSettings)
+                }
+            }
+            requireCurrentSourceConfiguration(sourceConfiguration)
+            return presentStreams(annotated, sourceConfiguration.debridSettings,
+                com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(type, episode))
+        } catch (_: StaleSourceConfiguration) {
+            throw CancellationException("The active viewer or connected service changed.")
+        }
+    }
+
+    private suspend fun <T> scopedAvailability(operation: suspend () -> T): T = try {
+        operation()
+    } catch (_: CancellationException) {
+        // Superseding a snapshot cancels its coroutine. A service rejecting a stale captured
+        // account throws while this coroutine is still active; that must stop the whole search.
+        currentCoroutineContext().ensureActive()
+        throw StaleSourceConfiguration()
+    }
+
+    private suspend fun requireCurrentSourceConfiguration(snapshot: StreamSourceConfigurationSnapshot) {
+        if (profileManager.activeProfileId.value != snapshot.profileId ||
+            debridSettingsDataStore.activeProfileId.value != snapshot.profileId ||
+            debridSettingsDataStore.activeProfileSelectionRevision != snapshot.profileSelectionRevision ||
+            debridSettingsDataStore.activeCredentialRevision != snapshot.credentialRevision ||
+            debridSettingsDataStore.settings.first() != snapshot.debridSettings ||
+            debridSettingsDataStore.activeProfileSelectionRevision != snapshot.profileSelectionRevision ||
+            debridSettingsDataStore.activeCredentialRevision != snapshot.credentialRevision) {
+            throw StaleSourceConfiguration()
+        }
+    }
 
     private fun buildStreamSearchRequestKey(
         sourceConfiguration: StreamSourceConfigurationSnapshot,
@@ -156,13 +235,17 @@ class StreamRepositoryImpl @Inject constructor(
             debridPresentationConfiguration = Gson().toJson(
                 sourceConfiguration.debridSettings.withoutRawCredentials()
             ),
-            serverRevision = serverStreams.revision
+            serverRevision = serverStreams.revision,
+            nativeScopeRevision = "${sourceConfiguration.profileSelectionRevision}:${sourceConfiguration.credentialRevision}"
         )
     )
 
     private suspend fun captureSourceConfiguration(): StreamSourceConfigurationSnapshot {
         while (true) {
             val profileId = profileManager.activeProfileId.value
+            val selectionRevision = debridSettingsDataStore.activeProfileSelectionRevision
+            val credentialRevision = debridSettingsDataStore.activeCredentialRevision
+            if (credentialRevision < 0L) throw CancellationException("The connected service is changing.")
             val addons = addonRepository.getInstalledAddons().first().enabledAddons()
             val pluginsEnabled = pluginManager.pluginsEnabled.first()
             val enabledScrapers = if (pluginsEnabled) pluginManager.enabledScrapers.first() else emptyList()
@@ -170,10 +253,15 @@ class StreamRepositoryImpl @Inject constructor(
             val pluginRepositories = if (groupPluginsByRepository) pluginManager.repositories.first() else emptyList()
             val debridSettings = debridSettingsDataStore.settings.first()
 
-            if (profileManager.activeProfileId.value != profileId) continue
+            if (profileManager.activeProfileId.value != profileId ||
+                debridSettingsDataStore.activeProfileId.value != profileId ||
+                debridSettingsDataStore.activeProfileSelectionRevision != selectionRevision ||
+                debridSettingsDataStore.activeCredentialRevision != credentialRevision) continue
 
             return StreamSourceConfigurationSnapshot(
                 profileId = profileId,
+                profileSelectionRevision = selectionRevision,
+                credentialRevision = credentialRevision,
                 addons = addons,
                 pluginsEnabled = pluginsEnabled,
                 enabledScrapers = enabledScrapers,
@@ -190,14 +278,15 @@ class StreamRepositoryImpl @Inject constructor(
         videoId: String,
         season: Int?,
         episode: Int?,
+        sourceConfiguration: StreamSourceConfigurationSnapshot,
         addons: List<Addon>,
-        debridSettings: DebridSettings,
         hasCompatiblePlugins: Boolean,
         serverSources: List<ServerStreamSource>
     ): Flow<NetworkResult<List<AddonStreams>>> = flow {
         emit(NetworkResult.Loading)
 
         try {
+            requireCurrentSourceConfiguration(sourceConfiguration)
             // Filter addons that support streams for this type and id
             val streamAddons = addons.filter { addon ->
                 addon.supportsStreamResource(type, videoId)
@@ -223,9 +312,25 @@ class StreamRepositoryImpl @Inject constructor(
                 streamAddons.forEach { addon ->
                     launch {
                         try {
-                            val streamsResult = if (expressAdapter?.isExpress(addon) == true) {
-                                getExpressStreams(addon, type, videoId, season, episode)
-                            } else getStreamsFromAddon(addon, type, videoId)
+                            requireCurrentSourceConfiguration(sourceConfiguration)
+                            if (expressAdapter?.isExpress(addon) == true) {
+                                val seen = mutableSetOf<String>()
+                                expressAdapter.searchProgressively(addon, ExpressMediaRequest(type, videoId, season, episode))
+                                    .collect { update ->
+                                        requireCurrentSourceConfiguration(sourceConfiguration)
+                                        val fresh = update.streams.filter { seen.add(it.dedupKey()) }.map {
+                                            it.copy(addonName = addon.displayName, addonLogo = addon.logo)
+                                        }
+                                        resultChannel.send(AddonStreams(addon.displayName, addon.logo, fresh,
+                                            searchDiagnostics = update.report.diagnostics()))
+                                        if (update.report.complete && update.error != null) {
+                                            attemptedFailures += StreamAttemptFailure(addon.displayName,
+                                                StreamFailureKind.REQUEST_FAILED, update.error)
+                                        }
+                                    }
+                                return@launch
+                            }
+                            val streamsResult = getStreamsFromAddon(addon, type, videoId)
                             when (streamsResult) {
                                 is NetworkResult.Success -> {
                                     if (streamsResult.data.isNotEmpty()) {
@@ -264,6 +369,7 @@ class StreamRepositoryImpl @Inject constructor(
                                 NetworkResult.Loading -> Unit
                             }
                         } catch (e: Exception) {
+                            if (e is StaleSourceConfiguration) throw e
                             if (e is CancellationException) throw e
                             Log.e(TAG, "Addon ${addon.name} failed: ${e.javaClass.simpleName}")
                             attemptedFailures += StreamAttemptFailure(
@@ -282,7 +388,9 @@ class StreamRepositoryImpl @Inject constructor(
                 serverSources.forEach { source ->
                     launch {
                         try {
+                            requireCurrentSourceConfiguration(sourceConfiguration)
                             val streams = source.load()
+                            requireCurrentSourceConfiguration(sourceConfiguration)
                             if (streams.isNotEmpty()) {
                                 resultChannel.send(AddonStreams(addonName = source.name, addonLogo = null, streams = streams))
                             } else {
@@ -293,6 +401,7 @@ class StreamRepositoryImpl @Inject constructor(
                                 )
                             }
                         } catch (e: Exception) {
+                            if (e is StaleSourceConfiguration) throw e
                             if (e is CancellationException) throw e
                             attemptedFailures += StreamAttemptFailure(
                                 addonName = source.name,
@@ -309,6 +418,7 @@ class StreamRepositoryImpl @Inject constructor(
 
                 launch {
                     try {
+                        requireCurrentSourceConfiguration(sourceConfiguration)
                         if (!hasCompatiblePlugins) return@launch
 
                         val tmdbId = tmdbService.ensureTmdbId(videoId, type)
@@ -336,6 +446,7 @@ class StreamRepositoryImpl @Inject constructor(
                             }
                             .first()
                     } catch (e: Exception) {
+                        if (e is StaleSourceConfiguration) throw e
                         if (e is CancellationException) throw e
                         Log.e(TAG, "Plugin execution failed: ${e.javaClass.simpleName}")
                     } finally {
@@ -345,15 +456,12 @@ class StreamRepositoryImpl @Inject constructor(
                     }
                 }
 
-                // Emit results as they arrive
+                val episodeRequest = com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(type, episode)
                 for (result in resultChannel) {
-                    val episodeRequest = com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(type, episode)
+                    requireCurrentSourceConfiguration(sourceConfiguration)
                     val admitted = result.copy(streams = com.nuvio.tv.core.debrid.EpisodeSourcePolicy.filter(result.streams, episodeRequest))
-                    val checkingResult = localDebridAvailabilityService.markChecking(listOf(admitted)).firstOrNull() ?: admitted
-                    val checkedResult = localDebridAvailabilityService.annotateCachedAvailability(listOf(checkingResult)).firstOrNull() ?: checkingResult
-                    mergePresentedResult(accumulatedResults, checkedResult, debridSettings, episodeRequest)
+                    mergeCandidateResult(accumulatedResults, admitted)
                     emit(NetworkResult.Success(accumulatedResults.toList()))
-                    Log.d(TAG, "Emitted ${accumulatedResults.size} addon(s), latest: ${checkedResult.addonName} with ${checkedResult.streams.size} streams")
                 }
             }
 
@@ -372,6 +480,7 @@ class StreamRepositoryImpl @Inject constructor(
                 }
             }
         } catch (e: Exception) {
+            if (e is StaleSourceConfiguration) throw CancellationException("The active viewer or connected service changed.")
             if (e is CancellationException) throw e
             Log.e(TAG, "Failed to fetch streams: ${e.javaClass.simpleName}")
             emit(NetworkResult.Error(e.message ?: context.getString(com.nuvio.tv.R.string.stream_error_fetch_failed)))
@@ -385,7 +494,8 @@ class StreamRepositoryImpl @Inject constructor(
         groupPluginsByRepository: Boolean,
         pluginRepositories: List<PluginRepository>,
         debridPresentationConfiguration: String,
-        serverRevision: Int
+        serverRevision: Int,
+        nativeScopeRevision: String
     ): String = buildString {
         append("addons:")
         addons.forEach { addon ->
@@ -403,6 +513,7 @@ class StreamRepositoryImpl @Inject constructor(
         }
         append("|debrid:").append(debridPresentationConfiguration)
         append("|servers:").append(serverRevision)
+        append("|native-scope:").append(nativeScopeRevision)
     }.sha256()
 
     private fun DebridSettings.withoutRawCredentials(): DebridSettings = copy(
@@ -461,32 +572,21 @@ class StreamRepositoryImpl @Inject constructor(
         }
     }
 
-    private suspend fun mergePresentedResult(
-        accumulatedResults: MutableList<AddonStreams>,
-        result: AddonStreams,
-        debridSettings: DebridSettings,
-        episodeRequest: Boolean
-    ) {
+    private fun mergeCandidateResult(accumulatedResults: MutableList<AddonStreams>, result: AddonStreams) {
         val existingIndex = accumulatedResults.indexOfFirst { it.addonName == result.addonName }
         if (existingIndex >= 0) {
             val existing = accumulatedResults[existingIndex]
-            val merged = existing.copy(
-                streams = mergeStreams(existing.streams, result.streams)
+            accumulatedResults[existingIndex] = existing.copy(
+                streams = mergeStreams(existing.streams, result.streams),
+                searchDiagnostics = result.searchDiagnostics ?: existing.searchDiagnostics
             )
-            accumulatedResults[existingIndex] = presentStreams(merged, debridSettings, episodeRequest)
-        } else {
-            accumulatedResults.add(presentStreams(result, debridSettings, episodeRequest))
-        }
+        } else accumulatedResults.add(result)
     }
 
-    private fun presentStreams(result: AddonStreams, debridSettings: DebridSettings, episodeRequest: Boolean): AddonStreams {
-        return debridStreamPresentation.apply(
-            groups = listOf(result),
-            settings = debridSettings,
-            includeBadgeMatches = false,
-            episodeRequest = episodeRequest
-        ).firstOrNull() ?: result
-    }
+    private fun presentStreams(groups: List<AddonStreams>, debridSettings: DebridSettings,
+        episodeRequest: Boolean): List<AddonStreams> = debridStreamPresentation.apply(
+            groups = groups, settings = debridSettings, includeBadgeMatches = false,
+            episodeRequest = episodeRequest)
 
     private fun mergeStreams(existing: List<Stream>, incoming: List<Stream>): List<Stream> {
         val streamsByKey = LinkedHashMap<String, Stream>()
@@ -686,9 +786,7 @@ class StreamRepositoryImpl @Inject constructor(
 
     private suspend fun getExpressStreams(addon: Addon, type: String, videoId: String, season: Int? = null, episode: Int? = null): NetworkResult<List<Stream>> {
         val adapter = expressAdapter ?: return NetworkResult.Error("Express source support is unavailable.")
-        val result = adapter.search(addon, ExpressMediaRequest(type, videoId, season, episode))
-        adapter.lastReport(addon)?.let { Log.d(TAG, it.summary()) }
-        return result
+        return adapter.search(addon, ExpressMediaRequest(type, videoId, season, episode))
     }
 
     /**

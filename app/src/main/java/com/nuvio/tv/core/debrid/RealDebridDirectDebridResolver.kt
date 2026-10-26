@@ -33,6 +33,7 @@ class RealDebridDirectDebridResolver @Inject constructor(
         fun finish(result: DirectDebridResolveResult): DirectDebridResolveResult {
             val label = when (result) {
                 is DirectDebridResolveResult.Success -> "success"
+                is DirectDebridResolveResult.Failure -> result.detail.reason.name.lowercase(java.util.Locale.ROOT)
                 DirectDebridResolveResult.NotCached -> "not_cached"
                 DirectDebridResolveResult.Stale -> "stale"
                 DirectDebridResolveResult.Error -> "error"
@@ -52,6 +53,7 @@ class RealDebridDirectDebridResolver @Inject constructor(
                 stage = "hoster_unrestrict"
                 val response = scopedDebridRequest(operation) { api.unrestrictLink(authorization, source) }
                 httpStatus = response.code()
+                if (!response.isSuccessful) return finish(response.toStructuredFailure())
                 val body = response.body()
                 response.errorBody()?.close()
                 val url = body?.download?.takeIf { response.isSuccessful && it.isHttpUrl() }
@@ -69,14 +71,14 @@ class RealDebridDirectDebridResolver @Inject constructor(
             val infoBefore = scopedDebridRequest(operation) { api.getTorrentInfo(authorization, torrentId) }
             httpStatus = infoBefore.code()
             diagnosticInfo = infoBefore.body()
-            if (!infoBefore.isSuccessful) return finish(DirectDebridResolveResult.Stale)
+            if (!infoBefore.isSuccessful) return finish(infoBefore.toStructuredFailure())
             stage = "file_select"
             val files = diagnosticInfo?.files.orEmpty()
             // A converting cloud job may not have a playable file list yet. Never turn a
             // present-but-contradictory filename or episode proof into a processing claim.
             if (diagnosticInfo?.status in RD_PROCESSING_STATES &&
                 files.none { it.displayName().hasDebridVideoExtension() }) {
-                return finish(DirectDebridResolveResult.NotCached)
+                return finish(processing())
             }
             val file = fileSelector.selectFile(
                 files = files,
@@ -84,7 +86,7 @@ class RealDebridDirectDebridResolver @Inject constructor(
                 season = season,
                 episode = episode,
                 animeProof = operation?.animeProof
-            ) ?: return finish(DirectDebridResolveResult.Stale)
+            ) ?: return finish(wrongDebridFile(DebridProviders.REAL_DEBRID_ID))
             stage = "file_id"
             val fileId = file.id ?: return finish(DirectDebridResolveResult.Stale)
             stage = "select_files"
@@ -98,7 +100,7 @@ class RealDebridDirectDebridResolver @Inject constructor(
             select.body()?.close()
             select.errorBody()?.close()
             if (!select.isSuccessful && select.code() != 202) {
-                return finish(DirectDebridResolveResult.Stale)
+                return finish(select.toStructuredFailure())
             }
 
             stage = "info_after"
@@ -106,23 +108,23 @@ class RealDebridDirectDebridResolver @Inject constructor(
             val infoAfter = scopedDebridRequest(operation) { api.getTorrentInfo(authorization, torrentId) }
             httpStatus = infoAfter.code()
             diagnosticInfo = infoAfter.body()
-            if (!infoAfter.isSuccessful) return finish(DirectDebridResolveResult.Stale)
+            if (!infoAfter.isSuccessful) return finish(infoAfter.toStructuredFailure())
             if (diagnosticInfo?.status in RD_PROCESSING_STATES) {
-                return finish(DirectDebridResolveResult.NotCached)
+                return finish(processing())
             }
             stage = "anime_file_check"
             if (operation?.animeProof?.let { proof ->
                 infoAfter.body()?.files?.singleOrNull { it.selected == 1 && it.id == fileId }
                     ?.path?.let(proof::matchesFile) != true
-            } == true) return finish(DirectDebridResolveResult.Stale)
+            } == true) return finish(wrongDebridFile(DebridProviders.REAL_DEBRID_ID))
             stage = "selected_link"
             val link = diagnosticInfo?.selectedDownloadLink(fileId)
-                ?: return finish(DirectDebridResolveResult.Stale)
+                ?: return finish(wrongDebridFile(DebridProviders.REAL_DEBRID_ID))
             stage = "unrestrict_link"
             httpStatus = null
             val unrestrict = scopedDebridRequest(operation) { api.unrestrictLink(authorization, link) }
             httpStatus = unrestrict.code()
-            if (!unrestrict.isSuccessful) return finish(DirectDebridResolveResult.Stale)
+            if (!unrestrict.isSuccessful) return finish(unrestrict.toStructuredFailure())
             stage = "final_url"
             val url = unrestrict.body()?.download?.takeIf { it.isHttpUrl() }
                 ?: return finish(DirectDebridResolveResult.Stale)
@@ -135,16 +137,21 @@ class RealDebridDirectDebridResolver @Inject constructor(
             ))
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            finish(DirectDebridResolveResult.Error)
+            finish(directDebridExceptionFailure(error, DebridProviders.REAL_DEBRID_ID))
         }
     }
 
     private fun retrofit2.Response<com.nuvio.tv.data.remote.dto.RealDebridAddTorrentDto>.toFailureForAdd(): DirectDebridResolveResult {
-        return when (code()) {
-            401, 403, 451 -> DirectDebridResolveResult.Error
-            else -> DirectDebridResolveResult.Stale
-        }
+        return toStructuredFailure()
     }
+
+    private fun retrofit2.Response<*>.toStructuredFailure(): DirectDebridResolveResult {
+        errorBody()?.close()
+        return directDebridHttpFailure(code(), DebridProviders.REAL_DEBRID_ID, headers()["Retry-After"])
+    }
+
+    private fun processing() = DirectDebridResolveResult.Failure(
+        DirectDebridFailure(DirectDebridFailureReason.PROCESSING, DebridProviders.REAL_DEBRID_ID))
 
     private fun RealDebridTorrentInfoDto.selectedDownloadLink(requestedFileId: Int): String? {
         if (!status.equals("downloaded", ignoreCase = true)) return null
@@ -164,7 +171,8 @@ private val RD_PROCESSING_STATES = setOf("magnet_conversion", "queued", "downloa
 internal object RealDebridResolveDiagnostics {
     private val stages = setOf("input", "hoster_unrestrict", "magnet_add", "info_before", "file_select", "file_id",
         "select_files", "info_after", "anime_file_check", "selected_link", "unrestrict_link", "final_url", "complete")
-    private val results = setOf("success", "not_cached", "stale", "error", "missing_key")
+    private val results = setOf("success", "not_cached", "stale", "error", "missing_key") +
+        DirectDebridFailureReason.entries.map { it.name.lowercase(java.util.Locale.ROOT) }
     private val statuses = RD_PROCESSING_STATES + setOf("magnet_error", "waiting_files_selection", "downloaded", "error", "virus", "dead")
 
     fun fields(stage: String, result: String, httpStatus: Int?, info: RealDebridTorrentInfoDto?,

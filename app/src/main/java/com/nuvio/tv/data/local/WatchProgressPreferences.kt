@@ -289,6 +289,32 @@ class WatchProgressPreferences @Inject constructor(
         }
     }
 
+    /** Retire exactly the acknowledged local version; newer playback or a foreign owner wins. */
+    suspend fun compareAndClearLocalPlaybackScope(
+        expected: WatchProgress,
+        profileId: Int,
+        isCurrent: () -> Boolean
+    ): Boolean {
+        if (expected.localPlaybackScope == null) return false
+        return storageMutex.withLock {
+            if (!isCurrent()) return@withLock false
+            ensureStorageLocked(profileId)
+            val key = createKey(expected)
+            val recent = readBucket(recentStore(profileId), profileId, true)
+            val bucket = if (key in recent) recentStore(profileId) else archiveStore(profileId)
+            var cleared = false
+            bucket.edit { preferences ->
+                if (!isCurrent()) return@edit
+                val entries = parseProgressMap(preferences[watchProgressEntriesKey] ?: "{}").toMutableMap()
+                if (entries[key] != expected) return@edit
+                entries[key] = expected.copy(localPlaybackScope = null)
+                preferences[watchProgressEntriesKey] = gson.toJson(entries)
+                cleared = true
+            }
+            cleared
+        }
+    }
+
     suspend fun saveProgressBatch(
         progressList: List<WatchProgress>,
         profileId: Int = profileManager.activeProfileId.value
@@ -858,7 +884,9 @@ class WatchProgressPreferences @Inject constructor(
             traktPlaybackId = obj.getLong("traktPlaybackId", "trakt_playback_id"),
             traktMovieId = obj.getInt("traktMovieId", "trakt_movie_id"),
             traktShowId = obj.getInt("traktShowId", "trakt_show_id"),
-            traktEpisodeId = obj.getInt("traktEpisodeId", "trakt_episode_id")
+            traktEpisodeId = obj.getInt("traktEpisodeId", "trakt_episode_id"),
+            localPlaybackScope = obj.getString("localPlaybackScope", "local_playback_scope")
+                ?.takeIf { it.isNotBlank() && it.length <= 256 }
         )
     }
 

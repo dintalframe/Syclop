@@ -57,10 +57,10 @@ class TorboxDirectDebridResolver @Inject constructor(
                 bypassCache = true
             ) }
             Log.d(TAG, "resolve: getTorrent done in ${System.currentTimeMillis() - getTorrentStartMs}ms code=${torrent.code()}")
-            if (!torrent.isSuccessful) return DirectDebridResolveResult.Stale
+            if (!torrent.isSuccessful) return torrent.toStructuredFailure()
             val files = torrent.body()?.data?.files.orEmpty()
             val file = fileSelector.selectFile(files, resolve, season, episode, operation?.animeProof)
-                ?: return DirectDebridResolveResult.Stale
+                ?: return wrongDebridFile(DebridProviders.TORBOX_ID)
             val fileId = file.id ?: return DirectDebridResolveResult.Stale
 
             Log.d(TAG, "resolve: requestDownloadLink torrentId=$torrentId fileId=$fileId")
@@ -75,7 +75,7 @@ class TorboxDirectDebridResolver @Inject constructor(
                 appendName = false
             ) }
             Log.d(TAG, "resolve: requestDownloadLink done in ${System.currentTimeMillis() - linkStartMs}ms code=${link.code()}")
-            if (!link.isSuccessful) return DirectDebridResolveResult.Stale
+            if (!link.isSuccessful) return link.toStructuredFailure()
             val url = link.body()?.data?.takeIf { it.isNotBlank() }
                 ?: return DirectDebridResolveResult.Stale
 
@@ -87,7 +87,7 @@ class TorboxDirectDebridResolver @Inject constructor(
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             Log.w(TAG, "resolve: failed with ${error.javaClass.simpleName}")
-            DirectDebridResolveResult.Error
+            directDebridExceptionFailure(error, DebridProviders.TORBOX_ID)
         }
     }
 
@@ -100,10 +100,14 @@ class TorboxDirectDebridResolver @Inject constructor(
 
     private fun Response<com.nuvio.tv.data.remote.dto.TorboxEnvelopeDto<TorboxCreateTorrentDataDto>>.toFailureForCreate(): DirectDebridResolveResult {
         return when (code()) {
-            401, 403 -> DirectDebridResolveResult.Error
             409 -> DirectDebridResolveResult.NotCached
-            else -> DirectDebridResolveResult.Stale
+            else -> toStructuredFailure()
         }
+    }
+
+    private fun Response<*>.toStructuredFailure(): DirectDebridResolveResult {
+        errorBody()?.close()
+        return directDebridHttpFailure(code(), DebridProviders.TORBOX_ID, headers()["Retry-After"])
     }
 
     private fun buildMagnetUri(resolve: StreamClientResolve): String? {
@@ -131,6 +135,8 @@ sealed class DirectDebridResolveResult {
         val filename: String?,
         val videoSize: Long?
     ) : DirectDebridResolveResult()
+
+    data class Failure(val detail: DirectDebridFailure) : DirectDebridResolveResult()
 
     data object MissingApiKey : DirectDebridResolveResult()
     data object NotCached : DirectDebridResolveResult()

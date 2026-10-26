@@ -25,6 +25,7 @@ import com.nuvio.tv.core.tracking.TrackingProgressProvider
 import com.nuvio.tv.core.tracking.TrackingProgressProviderRegistry
 import com.nuvio.tv.core.tracking.mergeProgressProjectionWithRetainedLocal
 import com.nuvio.tv.core.tracking.mergeWatchedEpisodeProjection
+import com.nuvio.tv.core.tracking.isConfirmedPlaybackAcknowledgement
 import com.nuvio.tv.core.tracking.TrackingProviderId
 import com.nuvio.tv.core.tracking.TrackingRefreshIntent
 import com.nuvio.tv.core.tracking.buildTrackingMediaReference
@@ -55,6 +56,8 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
@@ -372,6 +375,39 @@ class WatchProgressRepositoryImpl @Inject constructor(
 
     init {
         syncScope.launch {
+            profileManager.activeProfileId.collectLatest { profileId ->
+                activeProgressProviderFlow().collectLatest providerLoop@ { provider ->
+                    if (provider == null) return@providerLoop
+                    provider.confirmedProgress.filterNotNull().collectLatest acknowledgementLoop@ { acknowledgement ->
+                        try {
+                            val selection = profileManager.activeProfileSelectionRevision
+                            fun current(): Boolean = acknowledgement.profileId == profileId &&
+                                profileManager.activeProfileId.value == profileId &&
+                                profileManager.activeProfileSelectionRevision == selection &&
+                                activeProgressProviderState.value === provider && acknowledgement.isCurrent()
+                            if (!current()) return@acknowledgementLoop
+                            val actualScope = provider.captureLocalPlaybackScope(profileId)
+                            if (!current() || actualScope != acknowledgement.localPlaybackScope) return@acknowledgementLoop
+                            val remoteByOwner = acknowledgement.progress.groupBy { Triple(it.contentId, it.season, it.episode) }
+                            watchProgressPreferences.getAllRawEntries(profileId).values
+                                .asSequence().filter { it.localPlaybackScope == actualScope }
+                                .sortedByDescending(WatchProgress::lastWatched).take(300).forEach { local ->
+                                    if (!current()) return@acknowledgementLoop
+                                    val remote = remoteByOwner[Triple(local.contentId, local.season, local.episode)].orEmpty()
+                                    if (remote.any { isConfirmedPlaybackAcknowledgement(local, it) }) {
+                                        watchProgressPreferences.compareAndClearLocalPlaybackScope(local, profileId, ::current)
+                                    }
+                                }
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            Log.w(TAG, "Confirmed tracker acknowledgement could not be saved; retaining local playback")
+                        }
+                    }
+                }
+            }
+        }
+        syncScope.launch {
             activeProgressProviderState.collect { provider ->
                 activeProgressProviderId = provider?.providerId
             }
@@ -408,12 +444,14 @@ class WatchProgressRepositoryImpl @Inject constructor(
                     combine(
                         provider.allProgress,
                         watchProgressPreferences.observeAllProgress(profileId),
-                        metadataState
-                    ) { items, localItems, metadata ->
+                        metadataState,
+                        provider.localPlaybackScope
+                    ) { items, localItems, metadata, playbackScope ->
                         mergeProgressProjectionWithRetainedLocal(
                             providerEntries = items,
                             localEntries = localItems,
-                            retainsLocalProgress = provider::retainsLocalProgress
+                            retainsLocalProgress = provider::retainsLocalProgress,
+                            localPlaybackScope = playbackScope
                         ).map { progress -> enrichWithMetadata(progress, metadata) }
                             .sortedByDescending(WatchProgress::lastWatched)
                     }.onEach { items ->
@@ -459,8 +497,12 @@ class WatchProgressRepositoryImpl @Inject constructor(
         return profileProgressProviderFlow(profileId)
             .flatMapLatest { provider ->
                 if (provider != null) {
-                    provider.allProgress.map { items ->
-                        items
+                    combine(
+                        provider.allProgress,
+                        watchProgressPreferences.observeAllProgress(profileId),
+                        provider.localPlaybackScope
+                    ) { remote, local, playbackScope ->
+                        mergeProgressProjectionWithRetainedLocal(remote, local, provider::retainsLocalProgress, playbackScope)
                             .filter { it.contentId.equals(contentId, ignoreCase = true) }
                             .maxByOrNull(WatchProgress::lastWatched)
                     }
@@ -487,15 +529,20 @@ class WatchProgressRepositoryImpl @Inject constructor(
                 if (provider != null) {
                     combine(
                         provider.episodeProgress(contentId),
-                        provider.allProgress
-                    ) { items, allProgress ->
-                        resolveProviderEpisodeProgress(
+                        provider.allProgress,
+                        watchProgressPreferences.getEpisodeProgress(contentId, season, episode, profileId),
+                        provider.localPlaybackScope
+                    ) { items, allProgress, local, playbackScope ->
+                        val remote = resolveProviderEpisodeProgress(
                             contentId = contentId,
                             season = season,
                             episode = episode,
                             episodeProgress = items,
                             allProgress = allProgress
                         )
+                        mergeProgressProjectionWithRetainedLocal(
+                            listOfNotNull(remote), listOfNotNull(local), provider::retainsLocalProgress, playbackScope
+                        ).maxByOrNull(WatchProgress::lastWatched)
                     }
                 } else {
                     watchProgressPreferences.getEpisodeProgress(contentId, season, episode, profileId)
@@ -523,15 +570,26 @@ class WatchProgressRepositoryImpl @Inject constructor(
                                 it.contentId.equals(contentId, ignoreCase = true) &&
                                     it.season != null && it.episode != null
                             }
-                        }
-                    ) { remoteMap, liveEpisodes ->
+                        },
+                        watchProgressPreferences.getAllEpisodeProgress(contentId, profileId),
+                        provider.localPlaybackScope
+                    ) { remoteMap, liveEpisodes, localEpisodes, playbackScope ->
                         val merged = remoteMap.toMutableMap()
                         liveEpisodes.forEach { episodeProgress ->
                             val seasonNum = episodeProgress.season ?: return@forEach
                             val episodeNum = episodeProgress.episode ?: return@forEach
-                            merged[seasonNum to episodeNum] = episodeProgress
+                            val previous = merged[seasonNum to episodeNum]
+                            if (previous == null || episodeProgress.lastWatched > previous.lastWatched) {
+                                merged[seasonNum to episodeNum] = episodeProgress
+                            }
                         }
-                        merged
+                        mergeProgressProjectionWithRetainedLocal(
+                            merged.values.toList(), localEpisodes.values.toList(), provider::retainsLocalProgress, playbackScope
+                        ).mapNotNull { progress ->
+                            val season = progress.season ?: return@mapNotNull null
+                            val episode = progress.episode ?: return@mapNotNull null
+                            (season to episode) to progress
+                        }.toMap()
                     }.distinctUntilChanged()
                 } else {
                     watchProgressPreferences.getAllEpisodeProgress(contentId, profileId)
@@ -548,10 +606,21 @@ class WatchProgressRepositoryImpl @Inject constructor(
     }
 
     override fun observeNextUpSeeds(): Flow<List<WatchProgress>> {
-        return activeProgressProviderFlow()
-            .flatMapLatest { provider ->
+        return profileManager.activeProfileId.flatMapLatest { profileId ->
+            activeProgressProviderFlow().flatMapLatest { provider ->
                 if (provider != null) {
-                    provider.nextUpSeeds
+                    combine(
+                        provider.nextUpSeeds,
+                        watchProgressPreferences.observeAllProgress(profileId),
+                        provider.localPlaybackScope
+                    ) { remoteSeeds, localItems, playbackScope ->
+                        mergeProgressProjectionWithRetainedLocal(
+                            providerEntries = remoteSeeds,
+                            localEntries = localItems.filter { it.isCompleted() },
+                            retainsLocalProgress = { false },
+                            localPlaybackScope = playbackScope
+                        )
+                    }
                 } else {
                     // Use watched items (fully synced with pagination) to build seeds
                     // instead of watch progress (limited to 1000 entries).
@@ -601,7 +670,7 @@ class WatchProgressRepositoryImpl @Inject constructor(
                     }.flowOn(Dispatchers.Default)
                 }
             }
-            .distinctUntilChanged()
+        }.distinctUntilChanged()
     }
 
     private fun isMalformedNextUpSeedContentId(contentId: String?): Boolean {
@@ -618,6 +687,28 @@ class WatchProgressRepositoryImpl @Inject constructor(
 
     override fun observeOptimisticContinueWatchingUpdates(): Flow<WatchProgress> {
         return optimisticContinueWatchingUpdates
+    }
+
+    override suspend fun captureLocalPlaybackScope(profileId: Int): String? {
+        val selection = profileManager.activeProfileSelectionRevision
+        if (profileManager.activeProfileId.value != profileId) return null
+        val provider = activeProgressProvider() ?: return null
+        val captured = provider.captureLocalPlaybackScope(profileId)
+        return captured.takeIf {
+            profileManager.activeProfileId.value == profileId &&
+                selection == profileManager.activeProfileSelectionRevision &&
+                activeProgressProviderState.value === provider
+        }
+    }
+
+    override suspend fun refreshContinueWatching() {
+        val profileId = profileManager.activeProfileId.value
+        val selection = profileManager.activeProfileSelectionRevision
+        val provider = activeProgressProvider() ?: return
+        if (profileId != profileManager.activeProfileId.value ||
+            selection != profileManager.activeProfileSelectionRevision ||
+            activeProgressProviderState.value !== provider) return
+        provider.refresh(TrackingRefreshIntent.AUTOMATIC)
     }
 
     override suspend fun prepareNextUpSeed(progress: WatchProgress): WatchProgress {
@@ -973,7 +1064,12 @@ class WatchProgressRepositoryImpl @Inject constructor(
             progress.contentType.equals("tv", ignoreCase = true)) {
             traktSettingsDataStore.removeDismissedNextUpKeysForContent(progress.contentId, profileId)
         }
-        val now = System.currentTimeMillis()
+        val commitTime = System.currentTimeMillis()
+        // Playback captured this event before asynchronous normalization/storage. Finishing that
+        // write later must not turn an outgoing episode into the most recently watched episode.
+        val now = if (!broadcastTrackingHistory) {
+            progress.lastWatched.takeIf { it in 1L..commitTime } ?: commitTime
+        } else commitTime
         val progressKey = progressKey(progress)
         val duration = progress.duration.takeIf { it > 1L }
             ?: watchProgressPreferences.getAllRawEntries(profileId)[progressKey]

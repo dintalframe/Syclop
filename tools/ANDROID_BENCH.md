@@ -158,6 +158,18 @@ This fixed suite uses the same signed development APK preflight, isolated emulat
 
 The loading gate shares the activity window instead of briefly creating a separate dialog window. These component checks do not run `MainActivity`, import account data or establish the cause of the Android 14 framework crash. Run the unchanged full Home smoke separately and preserve any failure; a component pass alone does not close the startup stability gate.
 
+## Progressive sources and Continue Watching fixtures
+
+```sh
+./tools/conda-bench.sh build --test --ui-tests
+./tools/conda-bench.sh --serial emulator-5580 progressive-sources \
+  --apk ../dist/development/syclop-arm64-debug.apk
+./tools/conda-bench.sh --serial emulator-5580 continue-watching \
+  --apk ../dist/development/syclop-arm64-debug.apk
+```
+
+Each fixed command requires its exact two instrumentation cases and two fresh screenshots. The source fixtures mount the production list, deliver a better late result, retain the selected source's focus/click target, and show structured empty-search reasons. The progress fixtures begin with an old episode 3 pause, update production reconciliation to episode 7, and check both partial-playback and completed-to-episode-8 Next Up labels and click targets. No account, provider call, media URL or playback is created. Artifact/signature/QEMU checks and arbitrary-argument rejection match the existing fixtures. Inspect all four images after passing; these component tests do not establish live cloud synchronization or playback. See [behavior and limits](../SYCLOP_SOURCE_SYNC.md).
+
 ## Capture and smoke
 
 ```sh
@@ -238,3 +250,17 @@ The unchanged full Home smoke passed all six category Down/Up entries and both b
 The emulator crash buffer was byte-identical before the first new-build smoke and after the final pass. Keeping the initialization gate in the activity window avoids its earlier dialog creation/removal, but neither the root cause of the intermittent Android 14 crash nor freedom from recurrence is established by this sample. Repeated startup, broader hardware/API/native compatibility and live playback/account checks remain release work.
 
 Twelve production-tracker tests cover stale asynchronous external-player continuations using mocked Android/persistence boundaries. Tracking generations fence pending backfill, monitor/auto-next callbacks and not-yet-entered saves; normal current results and disk recovery still work. They do not provide a durable accepted-intent lease, shared internal/external write authority, physical result correlation, already-entered operation ordering or profile/account-origin acceptance. See [external player boundaries](../SYCLOP_PLAYBACK_CONTROLS.md#external-players). The physical Shield, its debugging state and stable artifacts were unchanged.
+
+## Source discovery and progress follow-up — 26 October 2026
+
+The final development app/test APKs built with **1,604 selected JVM tests in 213 suites** and **105 pure bench-tool tests** passing, without failures/errors/skips. On the same final API 34 app APK, fourteen fixed fixtures passed: two progressive-source, two Continue Watching, two episode-source, three startup and five category cases. All sixteen fresh images were inspected. The final arm64 development app is SHA-256 `aa995cc9c3792c1411e207b6bc6de1ae9e13595ab7a9fb014c4e4b8ebcf02184`; both app APKs exclude the local P2P engine and retain the existing signing identity.
+
+Two earlier Continue Watching runs failed before the first assertion because composition never settled. A temporary staged diagnostic showed the theme and actual card could commit/layout/idle, while the real section could not settle. Cached Compose bytecode confirmed that its deprecated focus-restoration factory executes during composition; the callback read changing `LazyListState.layoutInfo` on each measure. The production fix uses a modern fallback and an explicitly equal stable derived index. The unchanged progress-label/click checks then passed with episode 7 and episode 8 Next Up visible. The temporary probe was removed from source and verified absent from the final test APK. Earlier failed reports and build attempts remain private evidence.
+
+Two full Home runs on the preceding source/progress APK lost the expected Movies-header focus; the previous startup APK passed a controlled comparison on the same emulator. The failed screenshots showed a late Popular row above an already focused Featured row. A concrete ViewModel reset path restarted partial category loading for equivalent provider-list emissions. Relevant request plans are now compared before the cancelling collector, and two actual-ViewModel regressions verify pending requests and visible rows survive duplicate/unrelated emissions while genuine query changes cancel old work.
+
+After the request-plan guard and concurrent cooldown corrections, the unchanged full Home smoke passed all six Down/Up category entries and both boundary directions. All thirteen fresh captures were inspected on the final arm64 APK, in addition to the sixteen fixed-fixture images. This successful sample does not erase the preceding focus failures or establish reliability across response orders and devices.
+
+One final-APK startup fixture invocation completed zero tests: Android reported an app-bind timeout before the runner began. A later host preflight exited with SIGKILL before reaching the emulator. Individual manifest, signature and badging checks then passed, followed by all three unchanged startup fixtures and all five category fixtures on the same APK. Both failed reports remain evidence; the successful replay does not establish repeated-startup reliability. The Java crash buffer was unchanged at the bind-timeout inspection, which does not rule out the separately recorded ANR.
+
+The JVM checks cover positive remote acknowledgement versus optimistic/absent data, exact-record retirement races, account changes, local storage compatibility, native cache TTL/scope/fallback, malformed responses, deadlines/cooldowns/cancellation, anime title/coordinate identity and inspected-versus-reported quality. They use synthetic services and account storage. They do not establish live provider availability, measured cloud latency or playback on the physical Shield. The physical Shield and stable artifacts were unchanged.

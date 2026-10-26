@@ -42,9 +42,24 @@ class AllDebridIntegrationTest {
                 fail("Expected authentication failure")
             } catch (error: AllDebridApiException) {
                 assertEquals("AllDebrid API key is invalid.", error.message)
+                assertEquals(DirectDebridFailureReason.AUTH_EXPIRED, error.reason)
                 assertFalse(error.toString().contains(TOKEN))
                 assertFalse(error.toString().contains("private.example"))
             }
+        }
+    }
+
+    @Test fun `HTTP rate limit retains retry after and emits no server message`() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(json("""{"status":"error","error":{"code":"RATE_LIMIT","message":"$TOKEN"}}""")
+                .setResponseCode(429).setHeader("Retry-After", "120"))
+            val store = mockk<DebridSettingsDataStore>()
+            every { store.settings } returns flowOf(DebridSettings(allDebridApiKey = TOKEN))
+            val result = AllDebridDirectDebridResolver(store, service(server)).resolve(stream(), 1, 2) as DirectDebridResolveResult.Failure
+            assertEquals(DirectDebridFailureReason.RATE_LIMITED, result.detail.reason)
+            assertEquals(120L, result.detail.retryAfterSeconds)
+            assertFalse(result.toString().contains(TOKEN))
+            assertEquals(1, server.requestCount)
         }
     }
 
@@ -72,13 +87,13 @@ class AllDebridIntegrationTest {
     }
 
     @Test
-    fun `uncached magnet returns not cached without file download or repeated polling`() = runTest {
+    fun `uncached magnet returns processing without file download or repeated polling`() = runTest {
         MockWebServer().use { server ->
             server.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"ready":false}]}}"""))
             server.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"statusCode":1}]}}"""))
             val store = mockk<DebridSettingsDataStore>()
             every { store.settings } returns flowOf(DebridSettings(allDebridApiKey = TOKEN))
-            assertEquals(DirectDebridResolveResult.NotCached, AllDebridDirectDebridResolver(store, service(server)).resolve(stream(), 1, 2))
+            assertEquals(DirectDebridResolveResult.Failure(DirectDebridFailure(DirectDebridFailureReason.PROCESSING, "alldebrid")), AllDebridDirectDebridResolver(store, service(server)).resolve(stream(), 1, 2))
             assertEquals(2, server.requestCount)
         }
     }
@@ -149,13 +164,13 @@ class AllDebridIntegrationTest {
             server.enqueue(json("""{"status":"success","data":{"magnets":{"id":42,"statusCode":1}}}"""))
             val store=mockk<DebridSettingsDataStore>()
             every { store.settings } returns flowOf(DebridSettings(allDebridApiKey=TOKEN))
-            assertEquals(DirectDebridResolveResult.NotCached,AllDebridDirectDebridResolver(store,service(server)).resolve(stream(),1,2))
+            assertEquals(DirectDebridResolveResult.Failure(DirectDebridFailure(DirectDebridFailureReason.PROCESSING, "alldebrid")),AllDebridDirectDebridResolver(store,service(server)).resolve(stream(),1,2))
             assertEquals(2,server.requestCount)
         }
     }
 
-    @Test fun `all documented processing codes return not cached after exactly one status request`() = runTest {
-        for (code in 0..3) assertReadinessResult("""{"magnets":{"id":42,"statusCode":$code}}""", DirectDebridResolveResult.NotCached)
+    @Test fun `all documented processing codes return processing after exactly one status request`() = runTest {
+        for (code in 0..3) assertReadinessResult("""{"magnets":{"id":42,"statusCode":$code}}""", DirectDebridResolveResult.Failure(DirectDebridFailure(DirectDebridFailureReason.PROCESSING, "alldebrid")))
     }
 
     @Test fun `service error codes return error instead of a misleading cache miss`() = runTest {
@@ -171,7 +186,7 @@ class AllDebridIntegrationTest {
 
     @Test fun `malformed status still fails without file requests retries or a cache claim`() = runTest {
         for (data in listOf("""{"magnets":null}""", """{"magnets":true}""", """{"magnets":{"id":42,"statusCode":"invalid"}}""")) {
-            assertReadinessResult(data, DirectDebridResolveResult.Error)
+            assertReadinessResult(data, DirectDebridResolveResult.Failure(DirectDebridFailure(DirectDebridFailureReason.NETWORK_FAILURE, "alldebrid")))
         }
     }
 

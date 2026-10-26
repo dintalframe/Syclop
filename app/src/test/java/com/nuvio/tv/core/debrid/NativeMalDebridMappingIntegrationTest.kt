@@ -56,7 +56,7 @@ class NativeMalDebridMappingIntegrationTest {
             source().copy(behaviorHints = source().behaviorHints!!.copy(filename = "Frieren.S01E01.mkv")) to 0)) {
             Harness().use { h ->
                 if (expectedRequests > 0) h.beforePack()
-                assertEquals(DirectDebridResolveResult.Stale, withTimeout(10_000) {
+                assertEquals(wrongDebridFile(if (expectedRequests > 0) "realdebrid" else null), withTimeout(10_000) {
                     h.resolver.resolve(wrong, 1, 1, nativeVideoId = MAL, nativeMediaType = "series")
                 })
                 assertEquals(expectedRequests, h.rd.requestCount); assertFalse(h.resolver.isPlaybackAuthorized(FILE))
@@ -103,7 +103,7 @@ class NativeMalDebridMappingIntegrationTest {
             assertTrue(h.resolver.resolveToPlayableStream(ready.stream, 1, 1, nativeVideoId = MAL, nativeMediaType = "series") is DirectDebridPlayableResult.Success)
             assertTrue(h.resolver.isPlaybackAuthorized(FILE, 1, MAL, 1, 1, "series"))
             assertFalse(h.resolver.isPlaybackAuthorized(FILE, 1, "mal:52991:1", 1, 1, "series"))
-            assertEquals(DirectDebridPlayableResult.Stale, h.resolver.resolveToPlayableStream(ready.stream, 1, 1,
+            assertEquals(DirectDebridPlayableResult.Failure(DirectDebridFailure(DirectDebridFailureReason.WRONG_EPISODE)), h.resolver.resolveToPlayableStream(ready.stream, 1, 1,
                 nativeVideoId = "mal:52991:1", nativeMediaType = "series"))
             h.credentials.incrementAndGet()
             assertEquals(DirectDebridPlayableResult.Stale, h.resolver.resolveToPlayableStream(ready.stream, 1, 1,
@@ -143,7 +143,7 @@ class NativeMalDebridMappingIntegrationTest {
         Harness().use { h ->
             h.beforePack(); h.rd.enqueue(MockResponse().setResponseCode(204))
             h.rd.enqueue(json("""{"status":"downloaded","files":[{"id":2,"path":"/Frieren.S01E01.mkv","bytes":222,"selected":1}],"links":["https://real-debrid.example.test/selected"]}"""))
-            assertEquals(DirectDebridResolveResult.Stale, h.resolver.resolve(source(), 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
+            assertEquals(wrongDebridFile("realdebrid"), h.resolver.resolve(source(), 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
             assertEquals(4, h.rd.requestCount); assertFalse(h.resolver.isPlaybackAuthorized(FILE))
         }
     }
@@ -151,7 +151,7 @@ class NativeMalDebridMappingIntegrationTest {
     @Test fun `final unlock filename contradicting selected episode is never cached or granted`() = runBlocking {
         Harness().use { h ->
             h.readyPack(unlockFilename = "Frieren.S01E01.mkv")
-            assertEquals(DirectDebridResolveResult.Stale, h.resolver.resolve(source(), 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
+            assertEquals(wrongDebridFile("realdebrid"), h.resolver.resolve(source(), 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
             assertNull(h.resolver.cachedPlayableStream(source(), 1, 1, MAL, "series"))
             assertEquals(5, h.rd.requestCount); assertFalse(h.resolver.isPlaybackAuthorized(FILE))
         }
@@ -160,7 +160,7 @@ class NativeMalDebridMappingIntegrationTest {
     @Test fun `unrelated declared show with matching coordinates cannot create any RD job`() = runBlocking {
         Harness().use { h ->
             val unrelated = source().copy(title = "IT.Welcome.to.Derry.S02E01.29.Neibolt.Street.mkv")
-            assertEquals(DirectDebridResolveResult.Stale, h.resolver.resolve(unrelated, 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
+            assertEquals(wrongDebridFile(null), h.resolver.resolve(unrelated, 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
             assertNull(h.resolver.cachedPlayableStream(unrelated, 1, 1, MAL, "series"))
             assertEquals(0, h.rd.requestCount); assertFalse(h.resolver.isPlaybackAuthorized(FILE))
         }
@@ -170,7 +170,7 @@ class NativeMalDebridMappingIntegrationTest {
         Harness().use { h ->
             h.rd.enqueue(json("""{"id":"synthetic-job"}"""))
             h.rd.enqueue(json("""{"status":"downloaded","files":[{"id":1,"path":"/Night.on.Earth.S02E01.mkv","bytes":222,"selected":0}]}"""))
-            assertEquals(DirectDebridResolveResult.Stale, h.resolver.resolve(source(), 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
+            assertEquals(wrongDebridFile("realdebrid"), h.resolver.resolve(source(), 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
             assertEquals(2, h.rd.requestCount); assertFalse(h.resolver.isPlaybackAuthorized(FILE))
         }
     }
@@ -190,14 +190,14 @@ class NativeMalDebridMappingIntegrationTest {
             assertTrue(h.resolver.resolve(valid, 1, 1, nativeVideoId = MAL, nativeMediaType = "series") is DirectDebridResolveResult.Success)
             for (rawFilename in listOf("Other.Show.S02E01.mkv", "Frieren.S01E01.mkv", "Frieren.S02E01.EncodeB.mkv", "")) {
                 val changed = valid.copy(clientResolve = contract.copy(stream = nested.copy(raw = raw.copy(filename = rawFilename))))
-                assertEquals(rawFilename, DirectDebridResolveResult.Stale,
+                assertEquals(rawFilename, wrongDebridFile(null),
                     h.resolver.resolve(changed, 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
                 assertNull(h.resolver.cachedPlayableStream(changed, 1, 1, MAL, "series"))
             }
             val blankHint = valid.copy(behaviorHints = valid.behaviorHints!!.copy(filename = " "))
-            assertEquals(DirectDebridResolveResult.Stale, h.resolver.resolve(blankHint, 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
+            assertEquals(wrongDebridFile(null), h.resolver.resolve(blankHint, 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
             val conflictingIndex = valid.copy(clientResolve = contract.copy(fileIdx = 0))
-            assertEquals(DirectDebridResolveResult.Stale, h.resolver.resolve(conflictingIndex, 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
+            assertEquals(wrongDebridFile(null), h.resolver.resolve(conflictingIndex, 1, 1, nativeVideoId = MAL, nativeMediaType = "series"))
             val missingRawHint = valid.copy(clientResolve = contract.copy(stream = nested.copy(raw = raw.copy(filename = null))))
             assertNull(h.resolver.cachedPlayableStream(missingRawHint, 1, 1, MAL, "series"))
             assertEquals(5, h.rd.requestCount)

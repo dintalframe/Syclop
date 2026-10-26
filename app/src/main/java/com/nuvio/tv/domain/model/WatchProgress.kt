@@ -32,7 +32,9 @@ data class WatchProgress(
     override val trackingProviderItemId: String? = null,
     override val trackingSourceUrl: String? = null,
     val completionThresholdOverride: Float? = null,
-    val excludedNextUpSeasons: Set<Int> = emptySet()
+    val excludedNextUpSeasons: Set<Int> = emptySet(),
+    // Opaque account scope captured when local playback starts; never contains credentials.
+    val localPlaybackScope: String? = null
 ) : TrackingAttributedItem {
     override val trackingContentId: String
         get() = contentId

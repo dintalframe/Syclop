@@ -897,7 +897,10 @@ internal fun PlayerRuntimeController.saveWatchProgressInternal(position: Long, d
                 videoId = progress.videoId,
                 profileId = owner.profileId
             )
-            val normalizedProgress = progress.copy(contentId = effectiveContentId)
+            val normalizedProgress = progress.copy(
+                contentId = effectiveContentId,
+                localPlaybackScope = localPlaybackScope.await()
+            )
             progressWriteCoordinator.writeIfCurrent(request, normalizedProgress.isCompleted()) {
                 // An outgoing episode can still finish saving, but its completion latch belongs
                 // to that episode, not whichever video is now playing in this controller.

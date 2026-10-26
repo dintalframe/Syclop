@@ -12,6 +12,7 @@ import java.math.BigDecimal
 import java.security.MessageDigest
 import java.text.Normalizer
 import java.util.Collections
+import java.util.Locale
 
 /** A native proof is not a Stream field and cannot be minted from provider JSON or filenames. */
 class NativeAnimeEpisodeProof private constructor(
@@ -102,7 +103,8 @@ class NativeAnimeEpisodeProof private constructor(
             } }) return null
             // Titles are metadata from this exact expected-MAL public mapping, never a
             // provider query/release claim. Missing/generic titles cannot mint playable proof.
-            val trustedTitles = root["titles"].objectOrNull()?.entrySet()?.mapNotNull { it.value.stringOrNull() }
+            val trustedTitles = root["titles"].objectOrNull()?.entrySet()
+                ?.sortedBy { titleLanguagePriority(it.key) }?.mapNotNull { it.value.stringOrNull() }
                 ?: return null
             val titleIdentity = NativeAnimeTitleIdentity.create(expectedMalId,
                 trustedTitles.firstOrNull().orEmpty(), trustedTitles.drop(1)) ?: return null
@@ -147,6 +149,14 @@ class NativeAnimeEpisodeProof private constructor(
 
         private fun titles(value: JsonElement): Boolean = value.isJsonObject && value.asJsonObject.size() <= 128 &&
             value.asJsonObject.entrySet().all { (key, text) -> language.matches(key) && text.stringOrNull() != null }
+        // Mapping object order is not language preference. Give the bounded query snapshot a
+        // useful English/Romaji/Japanese order without dropping any trusted proof aliases.
+        private fun titleLanguagePriority(language: String): Int = when (language.lowercase(Locale.ROOT)) {
+            "en", "english" -> 0
+            "x-jat", "ja-latn", "romaji" -> 1
+            "ja", "jp", "japanese" -> 2
+            else -> 3
+        }
         private fun JsonObject.only(allowed: Set<String>) = keySet().all(allowed::contains)
         private fun JsonObject.optional(name: String, valid: (JsonElement) -> Boolean): Boolean = get(name).let { it == null || it.isJsonNull || valid(it) }
         private fun JsonElement?.objectOrNull() = this?.takeIf { it.isJsonObject }?.asJsonObject

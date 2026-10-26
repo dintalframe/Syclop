@@ -1812,6 +1812,14 @@ internal suspend fun PlayerRuntimeController.resolveDirectDebridStreamIfNeeded(
             message = context.getString(com.nuvio.tv.R.string.syclop_debrid_trying_service,
                 com.nuvio.tv.core.debrid.DebridProviders.displayName(providerId)))
     })) {
+        is DirectDebridPlayableResult.Failure -> {
+            recordLoadingDiagnosticEvent(
+                phase = "resolving_debrid_failed",
+                message = context.getString(result.detail.messageRes),
+                detail = result.detail.reason.name
+            )
+            null
+        }
         is DirectDebridPlayableResult.Success -> {
             recordLoadingDiagnosticEvent(
                 phase = "resolving_debrid_done",

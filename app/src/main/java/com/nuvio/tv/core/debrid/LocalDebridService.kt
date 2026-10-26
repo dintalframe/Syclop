@@ -43,11 +43,12 @@ class LocalDebridService @Inject constructor(
                 authorization = "Bearer ${apiKey.trim()}",
                 body = TorboxCheckCachedRequestDto(hashes = normalizedHashes)
             )
+            response.throwAccountRejection()
             val body = response.body()
-            if (!response.isSuccessful || body?.success == false) {
+            if (!response.isSuccessful || body?.success != true || body.data == null) {
                 null
             } else {
-                body?.data.orEmpty().mapKeys { it.key.lowercase() }.mapValues { (_, value) ->
+                body.data.mapKeys { it.key.lowercase() }.mapValues { (_, value) ->
                     LocalDebridCachedItem(
                         name = value.name,
                         size = value.size
@@ -56,6 +57,7 @@ class LocalDebridService @Inject constructor(
             }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
+            if (error is DirectDebridHttpException) throw error
             null
         }
 
@@ -70,8 +72,10 @@ class LocalDebridService @Inject constructor(
                 authorization = "Bearer ${apiKey.trim()}",
                 items = normalizedHashes.map { hash -> "magnet:?xt=urn:btih:$hash" }
             )
+            response.throwAccountRejection()
             val body = response.body()
-            if (!response.isSuccessful || body?.status.equals("error", ignoreCase = true)) {
+            if (!response.isSuccessful || !body?.status.equals("success", ignoreCase = true) ||
+                body?.response?.size != normalizedHashes.size) {
                 null
             } else {
                 normalizedHashes.mapIndexedNotNull { index, hash ->
@@ -84,6 +88,7 @@ class LocalDebridService @Inject constructor(
             }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
+            if (error is DirectDebridHttpException) throw error
             null
         }
 
@@ -91,4 +96,11 @@ class LocalDebridService @Inject constructor(
         map { it.trim().lowercase() }
             .filter { it.isNotBlank() }
             .distinct()
+
+    private fun retrofit2.Response<*>.throwAccountRejection() {
+        if (code() in setOf(401, 403, 429)) {
+            errorBody()?.close()
+            throw DirectDebridHttpException(code(), parseDebridRetryAfter(headers()["Retry-After"]))
+        }
+    }
 }

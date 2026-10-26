@@ -53,6 +53,7 @@ import com.nuvio.tv.domain.repository.MetaRepository
 import com.nuvio.tv.domain.repository.StreamRepository
 import com.nuvio.tv.domain.repository.WatchProgressRepository
 import androidx.media3.session.MediaSession
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Job
@@ -115,6 +116,18 @@ class PlayerRuntimeController(
 
     /** Resolved once so every `context.getString(...)` here follows the app language. */
     internal val context: Context = context.withAppLocale()
+
+    // Start synchronously so a later save can never capture a replacement account's identity.
+    internal val localPlaybackScope = scope.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+        try {
+            watchProgressRepository.captureLocalPlaybackScope(profileId)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            android.util.Log.w("PlayerProgress", "Playback account scope unavailable", error)
+            null
+        }
+    }
 
     companion object {
         private val CONVERTIBLE_DV_PROFILES = setOf("5", "7")

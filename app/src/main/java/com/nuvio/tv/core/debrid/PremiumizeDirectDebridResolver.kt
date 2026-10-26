@@ -33,19 +33,16 @@ class PremiumizeDirectDebridResolver @Inject constructor(
         return try {
             val response = scopedDebridRequest(operation) { api.directDownload(authorization, source) }
             if (!response.isSuccessful) {
-                return when (response.code()) {
-                    401, 403 -> DirectDebridResolveResult.Error
-                    else -> DirectDebridResolveResult.Stale
-                }
+                response.errorBody()?.close()
+                return directDebridHttpFailure(response.code(), DebridProviders.PREMIUMIZE_ID, response.headers()["Retry-After"])
             }
             val body = response.body() ?: return DirectDebridResolveResult.Stale
             if (body.status.equals("error", ignoreCase = true)) {
-                val message = listOfNotNull(body.message, body.code).joinToString(" ").lowercase()
-                return if (message.contains("cache") || message.contains("not found")) {
-                    DirectDebridResolveResult.NotCached
-                } else {
-                    DirectDebridResolveResult.Stale
-                }
+                // No verified machine-code cache-miss contract is available for directdl.
+                // Human error text ("cache server unavailable", for example) is never a
+                // negative cache observation or a reason to refresh every source.
+                return DirectDebridResolveResult.Failure(DirectDebridFailure(
+                    DirectDebridFailureReason.UNAVAILABLE, DebridProviders.PREMIUMIZE_ID))
             }
             val file = fileSelector.selectFile(
                 files = body.content.orEmpty(),
@@ -53,7 +50,7 @@ class PremiumizeDirectDebridResolver @Inject constructor(
                 season = season,
                 episode = episode,
                 animeProof = operation?.animeProof
-            ) ?: return DirectDebridResolveResult.Stale
+            ) ?: return wrongDebridFile(DebridProviders.PREMIUMIZE_ID)
             val url = file.link?.takeIf { it.isNotBlank() } ?: return DirectDebridResolveResult.Stale
             DirectDebridResolveResult.Success(
                 url = url,
@@ -62,7 +59,7 @@ class PremiumizeDirectDebridResolver @Inject constructor(
             )
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            DirectDebridResolveResult.Error
+            directDebridExceptionFailure(error, DebridProviders.PREMIUMIZE_ID)
         }
     }
 

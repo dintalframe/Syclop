@@ -180,6 +180,9 @@ class TraktProgressService @Inject constructor(
     private var historyProjectionTruncated = false
     private val remoteProgress = MutableStateFlow<List<WatchProgress>>(emptyList())
     private val optimisticProgress = MutableStateFlow<Map<String, OptimisticProgressEntry>>(emptyMap())
+    private val confirmedProgress = MutableStateFlow<com.nuvio.tv.core.tracking.TrackingProgressAcknowledgement?>(null)
+
+    fun observeConfirmedProgress(): Flow<com.nuvio.tv.core.tracking.TrackingProgressAcknowledgement?> = confirmedProgress
     private val metadataState = MutableStateFlow<Map<String, ContentMetadata>>(emptyMap())
     private val watchedMoviesState = MutableStateFlow<Set<String>>(emptySet())
     private val watchedShowSeedsState = MutableStateFlow<List<WatchProgress>>(emptyList())
@@ -242,6 +245,8 @@ class TraktProgressService @Inject constructor(
     private var progressRecheckAtMs: Long = 0L
     @Volatile
     private var lastManualRefreshSignalMs: Long = 0L
+    private var lastAutomaticRefreshSignalMs: Long = 0L
+    private val automaticRefreshSignalLock = Any()
     @Volatile
     private var metadataWarmupScheduled: Boolean = false
     private val episodeProgressActivityVersion = AtomicLong(0L)
@@ -331,6 +336,7 @@ class TraktProgressService @Inject constructor(
         activeSnapshotSelection = null
         importedScopeKey = null
         remoteProgress.value = emptyList()
+        confirmedProgress.value = null
         optimisticProgress.value = emptyMap()
         metadataState.value = emptyMap()
         watchedMoviesState.value = emptySet()
@@ -358,6 +364,7 @@ class TraktProgressService @Inject constructor(
         activityRefreshPending = false
         progressRecheckAtMs = 0L
         lastManualRefreshSignalMs = 0L
+        synchronized(automaticRefreshSignalLock) { lastAutomaticRefreshSignalMs = 0L }
         metadataWarmupScheduled = false
         refreshIntervalMs = baseRefreshIntervalMs
         consecutiveRefreshFailures = 0
@@ -387,6 +394,17 @@ class TraktProgressService @Inject constructor(
     private fun recentWatchWindowMs(): Long? {
         if (isAllHistoryWindow()) return null
         return continueWatchingWindowDays.toLong() * 24L * 60L * 60L * 1000L
+    }
+
+    /** Foreground invalidation checks last_activities; it does not force all playback lists. */
+    fun requestAutomaticRefresh() {
+        val now = System.currentTimeMillis()
+        synchronized(automaticRefreshSignalLock) {
+            val elapsed = now - lastAutomaticRefreshSignalMs
+            if (lastAutomaticRefreshSignalMs > 0L && elapsed in 0L until manualRefreshSignalThrottleMs) return
+            lastAutomaticRefreshSignalMs = now
+        }
+        refreshSignals.tryEmit(Unit)
     }
 
     suspend fun refreshNow() {
@@ -1118,6 +1136,14 @@ class TraktProgressService @Inject constructor(
             throw InitializationReadException(InitializationFailure.UNAVAILABLE)
         }
         val generation = refreshGeneration.get()
+        val playbackAccountScope = try {
+            traktLocalPlaybackScope(traktAuthService.getCurrentAuthState())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null // Failing to capture acknowledgement identity must never retire local playback.
+        }
+        expected.checkpoint()
         if (fullImport) {
             continueWatchingWindowDays = traktSettingsDataStore.continueWatchingDaysCap.first()
             expected.checkpoint()
@@ -1166,6 +1192,14 @@ class TraktProgressService @Inject constructor(
                     val visibleSnapshot = suppressKnownWatchedPlayback(snapshot)
                     remoteProgress.value = visibleSnapshot
                     hasLoadedRemoteProgress.value = true
+                    // Publish only positive records from the successful complete component read.
+                    // Neither absent records nor the optimistic UI projection acknowledge a write.
+                    confirmedProgress.value = playbackAccountScope?.let { accountScope ->
+                        com.nuvio.tv.core.tracking.TrackingProgressAcknowledgement(
+                            profileManager.activeProfileId.value, accountScope, visibleSnapshot,
+                            expected::isCurrent
+                        )
+                    }
                     reconcileOptimistic(visibleSnapshot)
                     hydrateMetadata(visibleSnapshot, expected)
                     activityRefreshPending = false

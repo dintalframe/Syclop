@@ -27,6 +27,59 @@ class WatchProgressPreferencesStorageTest {
     private val gson = Gson()
 
     @Test
+    fun `account playback provenance survives persisted storage recreation`() = runTest {
+        val harness = harness(emptyMap())
+        val authored = progress("item", lastWatched = 700L).copy(localPlaybackScope = "trakt-local-v1:" + "a".repeat(64))
+        harness.preferences.saveProgress(authored)
+        val recreated = WatchProgressPreferences(harness.factory, harness.profileManager)
+
+        assertEquals(authored.localPlaybackScope, recreated.getAllRawEntries().getValue("item").localPlaybackScope)
+    }
+
+    @Test
+    fun `legacy records without playback provenance remain unscoped`() = runTest {
+        val harness = harness(mapOf("item" to progress("item", lastWatched = 1L)))
+
+        assertNull(harness.preferences.getAllRawEntries().getValue("item").localPlaybackScope)
+    }
+
+    @Test
+    fun `confirmed scope compare clear changes only the exact saved playback version`() = runTest {
+        val harness = harness(emptyMap())
+        val authored = progress("item", lastWatched = 700L).copy(localPlaybackScope = "account-scope")
+        harness.preferences.saveProgress(authored)
+        val exact = harness.preferences.getAllRawEntries().getValue("item")
+
+        assertTrue(harness.preferences.compareAndClearLocalPlaybackScope(exact, 1) { true })
+        val saved = harness.preferences.getAllRawEntries().getValue("item")
+        assertEquals(exact.copy(localPlaybackScope = null), saved)
+    }
+
+    @Test
+    fun `newer playback between snapshot and compare clear retains its provenance`() = runTest {
+        val harness = harness(emptyMap())
+        val original = progress("item", lastWatched = 700L).copy(localPlaybackScope = "account-scope")
+        harness.preferences.saveProgress(original)
+        val beforeAcknowledgement = harness.preferences.getAllRawEntries().getValue("item")
+        val newer = original.copy(lastWatched = 900L, position = 90_000L)
+        harness.preferences.saveProgress(newer)
+
+        assertFalse(harness.preferences.compareAndClearLocalPlaybackScope(beforeAcknowledgement, 1) { true })
+        assertEquals(newer, harness.preferences.getAllRawEntries().getValue("item"))
+    }
+
+    @Test
+    fun `stale account guard prevents compare clear after the store lock wait`() = runTest {
+        val harness = harness(emptyMap())
+        val authored = progress("item", lastWatched = 700L).copy(localPlaybackScope = "account-scope")
+        harness.preferences.saveProgress(authored)
+        var checks = 0
+
+        assertFalse(harness.preferences.compareAndClearLocalPlaybackScope(authored, 1) { ++checks == 1 })
+        assertEquals(authored, harness.preferences.getAllRawEntries().getValue("item"))
+    }
+
+    @Test
     fun `empty legacy storage initializes without writing bucket files`() = runTest {
         val harness = harness(emptyMap())
 

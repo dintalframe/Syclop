@@ -70,13 +70,13 @@ class NativeMalTitleAdmissionTest {
         }
     }
 
-    @Test fun `only trusted terminal season qualifier gets a bounded query variant without coordinate changes`() {
+    @Test fun `only proof bound aliases get bounded query variants without coordinate changes`() {
         val media = media()
-        assertEquals(listOf("Sousou no Frieren 2nd Season", "Sousou no Frieren", "Frieren: Beyond Journey’s End"), media.queryTitles())
+        assertEquals(listOf("Sousou no Frieren", "Frieren: Beyond Journey’s End"), media.queryTitles())
         assertEquals(1, media.episode); assertEquals(29, media.absoluteNumber)
         assertEquals("mal:59978:1", request().videoId)
         val noStrip = media.copy(title = "Franchise: Subtitle Part 2", titleAliases = emptyList())
-        assertEquals(listOf("Franchise: Subtitle Part 2"), noStrip.queryTitles())
+        assertEquals(media.queryTitles(), noStrip.queryTitles())
         val nonNative = media.copy(nativeAnimeIdentity = null)
         assertFalse(nonNative.queryTitles().contains("Sousou no Frieren"))
     }

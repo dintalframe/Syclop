@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -224,20 +226,29 @@ fun ContinueWatchingSection(
             }
         }
 
+        // The deprecated lambda overload invokes its fallback factory during composition.
+        // Observing layoutInfo there creates a compose/measure loop. Observe only the selected
+        // visible index, with explicit equality, so a fresh layout object alone cannot recompose.
+        val itemCount = items.size
+        val fallbackVisibleIndex by remember(listState, lastFocusedIndexState, itemCount) {
+            derivedStateOf(policy = structuralEqualityPolicy<Int?>()) {
+                val visibleIndices = listState.layoutInfo.visibleItemsInfo
+                    .map { it.index }
+                    .filter { it in 0 until itemCount }
+                lastFocusedIndexState.intValue.takeIf { it in visibleIndices }
+                    ?: visibleIndices.firstOrNull()
+            }
+        }
+        val fallbackFocusRequester = fallbackVisibleIndex?.let { index ->
+            focusRequesters.getOrPut(index) { FocusRequester() }
+        } ?: FocusRequester.Default
+
         CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalBringIntoViewSpec) {
         LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(rowFocusRequester)
-                .focusRestorer {
-                    val visibleIndices = listState.layoutInfo.visibleItemsInfo
-                        .map { it.index }
-                        .filter { it in items.indices }
-                    val idx = lastFocusedIndex.takeIf { it in visibleIndices }
-                        ?: visibleIndices.firstOrNull()
-                    idx?.let { focusRequesters[it] }
-                        ?: FocusRequester.Default
-                }
+                .focusRestorer(fallback = fallbackFocusRequester)
                 .focusGroup(),
             contentPadding = PaddingValues(horizontal = NuvioTheme.spacing.xxxl),
             horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.lg),

@@ -197,6 +197,91 @@ class HomeBrowseViewModelTest {
         assertEquals(listOf("ready", "slow"), f.vm.state.value.rows.mapNotNull { it.data?.catalogId })
     }
 
+    @Test fun `equivalent addon emissions preserve partial rows and the original pending catalog request`() = runTest {
+        val f = fixture(catalogs = listOf(descriptor("popular", ContentType.MOVIE), descriptor("featured", ContentType.MOVIE)))
+        val emissions = MutableSharedFlow<List<Addon>>(extraBufferCapacity = 4)
+        every { f.addons.getInstalledAddons() } returns flow { emit(listOf(f.addon)); emitAll(emissions) }
+        val popular = CompletableDeferred<Unit>()
+        var popularCancellations = 0
+        every { f.catalogs.getCatalog(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } answers {
+            val id = arg<String>(3)
+            val url = arg<String>(0)
+            flow {
+                f.calls += Triple(url, id, 0)
+                if (id == "popular") try { popular.await() }
+                finally { if (!popular.isCompleted) popularCancellations++ }
+                emit(NetworkResult.Success(row(id, listOf(item("tt$id", ContentType.MOVIE)))))
+            }
+        }
+        f.vm.select(HomeBrowseSection.MOVIES)
+        runCurrent()
+        val partial = f.vm.state.value
+        assertEquals(listOf("featured"), partial.rows.mapNotNull { it.data?.catalogId })
+        assertTrue(partial.rows.first { it.title == "popular" }.loading)
+        assertEquals(2, f.calls.size)
+        val visibleSnapshots = mutableListOf<HomeBrowseState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            f.vm.state.collect { visibleSnapshots += it }
+        }
+
+        // The real addon repository can re-emit an equal relevant request snapshot through
+        // combine, or publish a native anime-only addon update while Movies is still loading.
+        emissions.emit(listOf(f.addon))
+        runCurrent()
+        assertSame(partial, f.vm.state.value)
+        assertTrue(visibleSnapshots.all { state -> state.rows.any { it.data?.catalogId == "featured" } })
+        val nativeAnime = f.addon.copy(id = com.nuvio.tv.data.mal.MalCatalog.ADDON_ID,
+            baseUrl = com.nuvio.tv.data.mal.MalCatalog.BASE_URL, version = "unrelated-change",
+            catalogs = listOf(descriptor("ranking", ContentType.SERIES)))
+        emissions.emit(listOf(f.addon, nativeAnime))
+        runCurrent()
+        assertSame(partial, f.vm.state.value)
+        assertTrue(visibleSnapshots.all { state -> state.rows.any { it.data?.catalogId == "featured" } })
+        assertEquals(0, popularCancellations)
+        assertEquals(2, f.calls.size)
+        assertEquals(partial.requestRevision, f.vm.state.value.requestRevision)
+
+        popular.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("popular", "featured"), f.vm.state.value.rows.mapNotNull { it.data?.catalogId })
+        assertTrue(f.vm.state.value.rows.none { it.loading })
+        assertEquals(1, f.calls.count { it.second == "popular" })
+        assertEquals(1, f.calls.count { it.second == "featured" })
+        assertEquals(0, popularCancellations)
+        assertEquals(partial.requestRevision, f.vm.state.value.requestRevision)
+        assertTrue(visibleSnapshots.all { state -> state.rows.any { it.data?.catalogId == "featured" } })
+    }
+
+    @Test fun `same-version query configuration change cancels the old request and starts a new scope`() = runTest {
+        val action = descriptor("movies", ContentType.MOVIE).copy(extra = listOf(CatalogExtra("genre", defaultValue = "Action")))
+        val f = fixture(catalogs = listOf(action))
+        val oldResponse = CompletableDeferred<Unit>()
+        var cancelled = false
+        val genres = mutableListOf<String>()
+        every { f.catalogs.getCatalog(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } answers {
+            val genre = arg<Map<String, String>>(8).getValue("genre")
+            flow {
+                genres += genre
+                if (genre == "Action") try { oldResponse.await() } finally { cancelled = true }
+                emit(NetworkResult.Success(row("movies", listOf(item("tt$genre", ContentType.MOVIE)))))
+            }
+        }
+        f.vm.select(HomeBrowseSection.MOVIES)
+        runCurrent()
+        val originalRevision = f.vm.state.value.requestRevision
+        f.installed.value = listOf(f.addon.copy(catalogs = listOf(action.copy(
+            extra = listOf(CatalogExtra("genre", defaultValue = "Drama"))))))
+        runCurrent()
+        assertTrue(cancelled)
+        assertEquals(listOf("Action", "Drama"), genres)
+        assertTrue(f.vm.state.value.requestRevision > originalRevision)
+        assertEquals(listOf("ttDrama"), f.vm.state.value.rows.single().data!!.items.map { it.id })
+        oldResponse.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("ttDrama"), f.vm.state.value.rows.single().data!!.items.map { it.id })
+        assertEquals(listOf("Action", "Drama"), genres)
+    }
+
     private fun fixture(catalogs: List<CatalogDescriptor> = listOf(descriptor("movie", ContentType.MOVIE))) = Fixture(catalogs).also(fixtures::add)
     private class Fixture(descriptors: List<CatalogDescriptor>) {
         val profile = MutableStateFlow(1); val revision = AtomicLong(1)

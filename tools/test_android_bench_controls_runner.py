@@ -66,6 +66,26 @@ STARTUP_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
     "INSTRUMENTATION_RESULT: stream=\n\nTime: 16.2\n\nOK (3 tests)\n\nINSTRUMENTATION_CODE: -1\n")
 
 
+PROGRESSIVE_CLASS = "com.nuvio.tv.ui.screens.stream.ProgressiveSourcesTvTest"
+PROGRESSIVE_CASES = (
+    (PROGRESSIVE_CLASS, "laterBetterResultDoesNotStealTheSelectedSourceFocus"),
+    (PROGRESSIVE_CLASS, "emptySearchDisplaysStructuredReasonsWithoutMediaOrAccountData"),
+)
+PROGRESSIVE_IMAGES = ("progressive-sources-stable-focus.png", "progressive-sources-empty-diagnostics.png")
+PROGRESSIVE_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
+                              for i, case in enumerate(PROGRESSIVE_CASES, 1)).replace("numtests=11", "numtests=2") + (
+    "INSTRUMENTATION_RESULT: stream=\n\nTime: 12.3\n\nOK (2 tests)\n\nINSTRUMENTATION_CODE: -1\n")
+
+WATCHING_CLASS = "com.nuvio.tv.ui.screens.home.ContinueWatchingPlaybackTvTest"
+WATCHING_CASES = (
+    (WATCHING_CLASS, "latestLocalEpisodeReplacesOlderPausedEpisode"),
+    (WATCHING_CLASS, "completedLatestEpisodeAdvancesNextUp"),
+)
+WATCHING_IMAGES = ("continue-watching-latest-episode.png", "continue-watching-next-up.png")
+WATCHING_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
+                           for i, case in enumerate(WATCHING_CASES, 1)).replace("numtests=11", "numtests=2") + (
+    "INSTRUMENTATION_RESULT: stream=\n\nTime: 12.3\n\nOK (2 tests)\n\nINSTRUMENTATION_CODE: -1\n")
+
 def answer(output="", code=0, binary=False):
     return subprocess.CompletedProcess([], code, output, b"" if binary else "")
 
@@ -143,6 +163,79 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
 
     def assert_no_installs(self, device):
         self.assertFalse(any(call.args and call.args[0] == "install" for call in device.call_args_list))
+
+    def test_progressive_sources_requires_its_exact_cases_and_fresh_images(self):
+        self.protocol = PROGRESSIVE_SUCCESS
+        instance = self.instance(command="progressive-sources")
+        with self.mocks(instance) as (_, device):
+            instance.progressive_sources()
+        invocation = next(call for call in device.call_args_list if call.args[:3] == ("shell", "am", "instrument"))
+        self.assertEqual(("shell", "am", "instrument", "-w", "-r", "-e", "class", PROGRESSIVE_CLASS, FIXED_RUNNER), invocation.args)
+        removal = next(call for call in device.call_args_list if call.args[:3] == ("shell", "rm", "-f"))
+        self.assertEqual(("shell", "rm", "-f", *[REMOTE + name for name in PROGRESSIVE_IMAGES]), removal.args)
+        self.assertEqual({"expected": 2, "completed": 2, "passed": True}, instance.report["instrumentation"])
+        self.assertEqual(list(PROGRESSIVE_IMAGES), instance.report["screenshots"])
+        self.assertEqual("required", instance.report["visual_inspection"])
+
+    def test_progressive_protocol_rejects_other_suite_or_missing_case(self):
+        for output in (SUCCESS, EPISODE_SUCCESS, STARTUP_SUCCESS,
+                       PROGRESSIVE_SUCCESS.replace("OK (2 tests)", "OK (1 test)"),
+                       PROGRESSIVE_SUCCESS.replace("INSTRUMENTATION_STATUS_CODE: 0", "INSTRUMENTATION_STATUS_CODE: -2", 1),
+                       PROGRESSIVE_SUCCESS.replace("INSTRUMENTATION_CODE: -1", "")):
+            with self.subTest(output=output[-45:]):
+                self.assertFalse(bench.controls.instrumentation_result(output, 0, "progressive-sources")["passed"])
+        self.assertFalse(bench.controls.instrumentation_result(PROGRESSIVE_SUCCESS, 1, "progressive-sources")["passed"])
+
+    def test_progressive_capture_failure_cannot_reuse_an_earlier_image(self):
+        self.protocol = PROGRESSIVE_SUCCESS
+        self.capture_override[PROGRESSIVE_IMAGES[0]] = answer(b"", 1, binary=True)
+        instance = self.instance(command="progressive-sources")
+        with self.mocks(instance), self.assertRaises(bench.BenchError):
+            instance.progressive_sources()
+        self.assertNotIn(PROGRESSIVE_IMAGES[0], instance.report["screenshots"])
+
+    def test_progressive_command_rejects_arbitrary_instrumentation_arguments(self):
+        options = bench.parser().parse_args(["progressive-sources", "--test-timeout", "600"])
+        self.assertEqual("progressive_sources", options.command)
+        for flag in ("--class", "--runner", "--arguments"):
+            with self.subTest(flag=flag), patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
+                bench.parser().parse_args(["progressive-sources", flag, "untrusted"])
+
+    def test_continue_watching_requires_exact_cases_and_fresh_images(self):
+        self.protocol = WATCHING_SUCCESS
+        instance = self.instance(command="continue-watching")
+        with self.mocks(instance) as (_, device):
+            instance.continue_watching()
+        invocation = next(call for call in device.call_args_list if call.args[:3] == ("shell", "am", "instrument"))
+        self.assertEqual(("shell", "am", "instrument", "-w", "-r", "-e", "class", WATCHING_CLASS, FIXED_RUNNER), invocation.args)
+        removal = next(call for call in device.call_args_list if call.args[:3] == ("shell", "rm", "-f"))
+        self.assertEqual(("shell", "rm", "-f", *[REMOTE + name for name in WATCHING_IMAGES]), removal.args)
+        self.assertEqual({"expected": 2, "completed": 2, "passed": True}, instance.report["instrumentation"])
+        self.assertEqual(list(WATCHING_IMAGES), instance.report["screenshots"])
+
+    def test_continue_watching_protocol_rejects_other_suite_or_incomplete_run(self):
+        for output in (SUCCESS, EPISODE_SUCCESS, PROGRESSIVE_SUCCESS,
+                       WATCHING_SUCCESS.replace("OK (2 tests)", "OK (1 test)"),
+                       WATCHING_SUCCESS.replace("INSTRUMENTATION_STATUS_CODE: 0", "INSTRUMENTATION_STATUS_CODE: -2", 1),
+                       WATCHING_SUCCESS.replace("INSTRUMENTATION_CODE: -1", "")):
+            with self.subTest(output=output[-45:]):
+                self.assertFalse(bench.controls.instrumentation_result(output, 0, "continue-watching")["passed"])
+        self.assertFalse(bench.controls.instrumentation_result(WATCHING_SUCCESS, 1, "continue-watching")["passed"])
+
+    def test_continue_watching_capture_failure_cannot_reuse_old_image(self):
+        self.protocol = WATCHING_SUCCESS
+        self.capture_override[WATCHING_IMAGES[0]] = answer(b"", 1, binary=True)
+        instance = self.instance(command="continue-watching")
+        with self.mocks(instance), self.assertRaises(bench.BenchError):
+            instance.continue_watching()
+        self.assertNotIn(WATCHING_IMAGES[0], instance.report["screenshots"])
+
+    def test_continue_watching_command_rejects_arbitrary_instrumentation_arguments(self):
+        options = bench.parser().parse_args(["continue-watching", "--test-timeout", "600"])
+        self.assertEqual("continue_watching", options.command)
+        for flag in ("--class", "--runner", "--arguments"):
+            with self.subTest(flag=flag), patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
+                bench.parser().parse_args(["continue-watching", flag, "untrusted"])
 
     def test_category_navigation_runs_only_its_fixed_class_and_six_fresh_images(self):
         self.protocol = CATEGORY_SUCCESS

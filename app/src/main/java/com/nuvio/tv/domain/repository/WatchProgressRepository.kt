@@ -76,6 +76,12 @@ interface WatchProgressRepository {
 
     suspend fun prepareNextUpSeed(progress: WatchProgress): WatchProgress
 
+    /** Capture once at playback start, before deferred progress work can outlive its account. */
+    suspend fun captureLocalPlaybackScope(profileId: Int): String? = null
+
+    /** Event-driven selected tracker refresh when Home returns to the foreground. */
+    suspend fun refreshContinueWatching() {}
+
 
     /**
      * Returns whether the item is marked as watched/completed.

@@ -17,7 +17,8 @@ data class AllDebridFile(val path: String, val size: Long?, val link: String) {
 }
 
 /** API error text is deliberately not surfaced: servers can echo input links and credentials. */
-class AllDebridApiException(message: String, val httpStatus: Int? = null) : IOException(message)
+class AllDebridApiException(message: String, val httpStatus: Int? = null,
+    val reason: DirectDebridFailureReason? = null, val retryAfterSeconds: Long? = null) : IOException(message)
 
 @Singleton
 class AllDebridService @Inject constructor(private val api: AllDebridApi) {
@@ -63,7 +64,7 @@ class AllDebridService @Inject constructor(private val api: AllDebridApi) {
                 if (delayed.link.isHttpUrl()) return result.copy(link = delayed.link)
                 if (delayed.status == 3) throw AllDebridApiException("AllDebrid could not prepare this link.")
             }
-            throw AllDebridApiException("This link is still being prepared. Try again shortly.")
+            throw AllDebridApiException("This link is still being prepared. Try again shortly.", reason = DirectDebridFailureReason.PROCESSING)
         }
         if (!result.link.isHttpUrl()) throw AllDebridApiException("AllDebrid did not return a playable link.")
         return result
@@ -90,7 +91,14 @@ internal fun <T> Response<AllDebridEnvelope<T>>.dataOrThrow(): T {
         envelope?.error?.code in setOf("MUST_BE_PREMIUM", "MAGNET_MUST_BE_PREMIUM") -> "An active AllDebrid subscription is required."
         else -> "AllDebrid request failed. Check the service and network connection."
     }
-    throw AllDebridApiException(message, code().takeIf { it in 100..599 })
+    val reason = when {
+        code() == 429 -> DirectDebridFailureReason.RATE_LIMITED
+        code() in setOf(401, 403) || envelope?.error?.code in setOf("AUTH_BAD_APIKEY", "AUTH_MISSING_APIKEY",
+            "AUTH_BLOCKED", "MUST_BE_PREMIUM", "MAGNET_MUST_BE_PREMIUM") -> DirectDebridFailureReason.AUTH_EXPIRED
+        else -> DirectDebridFailureReason.UNAVAILABLE
+    }
+    throw AllDebridApiException(message, code().takeIf { it in 100..599 }, reason,
+        if (reason == DirectDebridFailureReason.RATE_LIMITED) parseDebridRetryAfter(headers()["Retry-After"]) ?: 60L else null)
 }
 
 internal fun String?.isHttpUrl(): Boolean =

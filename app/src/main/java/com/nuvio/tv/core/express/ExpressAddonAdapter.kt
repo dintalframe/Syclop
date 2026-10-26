@@ -14,9 +14,10 @@ import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.AddonResource
 import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.domain.model.SourceSearchDiagnostics
+import com.nuvio.tv.domain.model.SourceSearchReason
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,16 +26,32 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.last
+import java.util.ArrayDeque
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 
 data class ExpressSearchReport(
     val providers: Int, val completed: Int, val failed: Int, val unsupported: Int,
-    val missingMetadata: Int, val sourceCount: Int, val timedOut: Boolean
+    val missingMetadata: Int, val sourceCount: Int, val timedOut: Boolean,
+    val reasons: Map<SourceSearchReason, Int> = emptyMap(),
+    val complete: Boolean = true
 ) {
-    fun summary(): String = "Express sources: $completed/$providers completed, $failed failed, " +
-        "$unsupported unsupported, $missingMetadata missing metadata, $sourceCount results" + if (timedOut) "; search time limit reached" else ""
+    fun diagnostics() = SourceSearchDiagnostics(providers, completed, failed, sourceCount, complete, reasons)
+    fun summary(): String = "Express sources: " + diagnostics().summary() +
+        if (timedOut) "; search time limit reached" else ""
 }
+
+data class ExpressSearchUpdate(
+    val streams: List<Stream>,
+    val report: ExpressSearchReport,
+    val error: String? = null
+)
+
+private class ExpressBudgetExceeded : ExpressException("Provider request limit reached.")
+private class ExpressParserFailure : ExpressException("Provider response did not match its declarative parser.")
 
 /** User-selected immutable declarative configuration, with an atomic last-valid disk snapshot. */
 @Singleton
@@ -42,7 +59,8 @@ class ExpressAddonAdapter internal constructor(
     private val http: ExpressHttpClient,
     private val metadata: ExpressMetadataSource,
     private val clock: () -> Long,
-    private val snapshots: ExpressConfigurationStore? = null
+    private val snapshots: ExpressConfigurationStore? = null,
+    private val searchTimeoutMs: Long = SEARCH_TIMEOUT_MS
 ) {
     @Inject constructor(http: ExpressHttpClient, metadata: ExpressMetadataResolver, snapshots: AndroidExpressConfigurationStore) : this(http, metadata, System::currentTimeMillis, snapshots)
 
@@ -63,9 +81,25 @@ class ExpressAddonAdapter internal constructor(
     }
 
     suspend fun search(addon: Addon, request: ExpressMediaRequest): NetworkResult<List<Stream>> {
+        val result = searchProgressively(addon, request).last()
+        return result.error?.let { NetworkResult.Error(it) } ?: NetworkResult.Success(result.streams)
+    }
+
+    /**
+     * Request-local immutable snapshots. The caller owns cancellation; no singleton mutable report
+     * is used to associate a result with a title, profile or source configuration.
+     */
+    fun searchProgressively(addon: Addon, request: ExpressMediaRequest): Flow<ExpressSearchUpdate> = channelFlow {
         var stage = "configuration"
-        return try {
+        val counts = ConcurrentHashMap<SourceSearchReason, AtomicInteger>()
+        fun count(reason: SourceSearchReason, amount: Int = 1) {
+            if (amount > 0) counts.getOrPut(reason) { AtomicInteger() }.addAndGet(amount)
+        }
+        var providerCount = 0
+        try {
+            // A configuration replacement cannot mutate this in-flight search snapshot.
             val config = configuration(addon.baseUrl)
+            providerCount = config.packages.sumOf { it.providers.size }
             stage = "metadata"
             val media = metadata.resolve(request)
             val episodeRequest = EpisodeSourcePolicy.isEpisodeRequest(media.type, media.episode)
@@ -73,74 +107,175 @@ class ExpressAddonAdapter internal constructor(
                 throw ExpressException("A confirmed anime title identity is unavailable.")
             stage = "provider search"
             val all = config.packages.flatMap { it.providers }
+            providerCount = all.size
             val unsupported = AtomicInteger()
             val missing = AtomicInteger()
             val completed = AtomicInteger()
             val failed = AtomicInteger()
-            val requests = AtomicInteger()
-            val streams = ConcurrentLinkedQueue<Stream>()
-            val finished = withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
-                coroutineScope {
-                    all.map { (id, provider) -> async {
-                        try {
-                            if (!ExpressParser.supported(provider)) { unsupported.incrementAndGet(); return@async }
-                            val urls = providerQueries(provider, media)
-                            if (urls.isEmpty()) { missing.incrementAndGet(); return@async }
-                            var succeeded = false
-                            for (url in urls) {
-                                if (requests.incrementAndGet() > MAX_REQUESTS) break
-                                try {
-                                    val document = http.get(url)
-                                    val rows = ExpressParser.parse(provider, document.text)
-                                    // Broad search engines can return unrelated rows for one term or a
-                                    // numeric episode. Reject them before subpage fetches or any result
-                                    // budget so unrelated matches cannot crowd out native MAL sources.
-                                    for (row in rows.asSequence().filter { media.acceptsNativeAnimeRow(it) }
-                                        .filterNot { episodeRequest && EpisodeSourcePolicy.hasReportedPackText(it.title, it.filename) }
-                                        .take(MAX_ROWS)) {
-                                        var resolved = row
-                                        if (row.hash == null && row.url?.startsWith("magnet:", true) != true &&
-                                            provider.get("source_is_in_sub_page")?.asBoolean == true) {
-                                            val link = row.url?.let { document.url.toHttpUrl().resolve(it)?.toString() } ?: continue
-                                            if (requests.incrementAndGet() > MAX_REQUESTS) break
-                                            val page = http.get(link)
-                                            val magnets = Jsoup.parse(page.text).select("a[href]")
-                                                .map { it.attr("href") }.filter { it.startsWith("magnet:", true) }
-                                                .distinctBy { it.substringAfter("urn:btih:", "").substringBefore('&').lowercase() }
-                                            if (magnets.size != 1) continue
-                                            resolved = row.copy(url = magnets.single())
-                                        }
-                                        resolved.toStream(provider.string("name") ?: id)?.let(streams::add)
-                                        if (streams.size >= MAX_RESULTS) break
+            val streams = LinkedHashMap<String, Stream>()
+            val resultMutex = Mutex()
+            fun report(complete: Boolean = false, timedOut: Boolean = false) = ExpressSearchReport(
+                all.size, completed.get(), failed.get(), unsupported.get(), missing.get(), streams.size,
+                timedOut, SourceSearchReason.entries.mapNotNull { reason ->
+                    counts[reason]?.get()?.takeIf { it > 0 }?.let { reason to it }
+                }.toMap(), complete)
+            suspend fun publish() = resultMutex.withLock {
+                send(ExpressSearchUpdate(streams.values.toList(), report()))
+            }
+            suspend fun admit(row: ExpressRow, providerName: String) {
+                val stream = row.toStream(providerName)
+                if (stream == null) { count(SourceSearchReason.INVALID_HASH); return }
+                resultMutex.withLock {
+                    val key = listOf(stream.infoHash, stream.fileIdx, stream.behaviorHints?.filename).joinToString("|")
+                    if (streams.containsKey(key)) count(SourceSearchReason.DUPLICATE)
+                    else if (streams.size < MAX_RESULTS) streams[key] = stream
+                }
+            }
+            data class Task(val url: String, val row: ExpressRow? = null)
+            class Provider(val id: String, val definition: JsonObject, urls: List<String>) {
+                val queries = ArrayDeque(urls.map { Task(it) })
+                val subpages = ArrayDeque<Task>()
+                var requests = 0
+                var succeeded = false
+                var finalized = false
+                fun next(): Task? = subpages.peekFirst() ?: queries.peekFirst()
+                fun removeNext(): Task = if (subpages.isNotEmpty()) subpages.removeFirst() else queries.removeFirst()
+                fun finish() {
+                    if (!finalized && next() == null) {
+                        finalized = true
+                        if (succeeded) completed.incrementAndGet() else failed.incrementAndGet()
+                    }
+                }
+            }
+            val providers = all.mapNotNull { (id, definition) ->
+                try {
+                    if (!ExpressParser.supported(definition)) {
+                        unsupported.incrementAndGet(); count(SourceSearchReason.UNSUPPORTED); null
+                    } else {
+                        val urls = providerQueries(definition, media)
+                        if (urls.isEmpty()) {
+                            missing.incrementAndGet(); count(SourceSearchReason.MISSING_COORDINATES); null
+                        } else Provider(id, definition, urls)
+                    }
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    failed.incrementAndGet(); count(SourceSearchReason.REQUEST_FAILED); null
+                }
+            }
+            var requests = 0
+            val hostRequests = mutableMapOf<String, Int>()
+            val budgetLock = Any()
+            fun reserve(provider: Provider, url: okhttp3.HttpUrl): Boolean = synchronized(budgetLock) {
+                val host = "${url.scheme}://${url.host}:${url.port}"
+                if (requests >= MAX_REQUESTS || provider.requests >= MAX_REQUESTS_PER_PROVIDER ||
+                    hostRequests.getOrDefault(host, 0) >= MAX_REQUESTS_PER_HOST) false
+                else {
+                    requests++; provider.requests++
+                    hostRequests[host] = hostRequests.getOrDefault(host, 0) + 1
+                    true
+                }
+            }
+            val finished = withTimeoutOrNull(searchTimeoutMs) {
+                while (providers.any { it.next() != null }) {
+                    // One request per provider per round, interleaved by origin. Every eligible
+                    // provider gets its first turn before another consumes an alias/subpage turn.
+                    val byHost = providers.filter { it.next() != null }.groupBy {
+                        http.validatedUrl(it.next()!!.url).let { url -> "${url.scheme}://${url.host}:${url.port}" }
+                    }.values.map { ArrayDeque(it) }
+                    val round = buildList {
+                        while (byHost.any { it.isNotEmpty() }) byHost.forEach { queue ->
+                            if (queue.isNotEmpty()) add(queue.removeFirst())
+                        }
+                    }
+                    val scheduled = round.mapNotNull { provider ->
+                        val task = provider.next() ?: return@mapNotNull null
+                        if (!reserve(provider, http.validatedUrl(task.url))) {
+                            count(SourceSearchReason.REQUEST_BUDGET)
+                            provider.queries.clear(); provider.subpages.clear(); provider.finish()
+                            null
+                        } else {
+                            provider to provider.removeNext()
+                        }
+                    }
+                    coroutineScope {
+                        scheduled.map { (provider, task) -> async {
+                            try {
+                                val document = http.get(task.url, beforeRedirect = { destination ->
+                                    if (!reserve(provider, destination)) throw ExpressBudgetExceeded()
+                                })
+                                if (task.row != null) {
+                                    val magnets = Jsoup.parse(document.text).select("a[href]")
+                                        .map { it.attr("href") }.filter { it.startsWith("magnet:", true) }
+                                        .distinctBy { it.substringAfter("urn:btih:", "").substringBefore('&').lowercase() }
+                                    if (magnets.size == 1) admit(task.row.copy(url = magnets.single()), provider.definition.string("name") ?: provider.id)
+                                    else count(SourceSearchReason.INVALID_HASH)
+                                } else {
+                                    val rows = try { ExpressParser.parse(provider.definition, document.text) }
+                                    catch (error: Exception) {
+                                        if (error is CancellationException) throw error
+                                        count(SourceSearchReason.PARSER_ERROR)
+                                        throw ExpressParserFailure()
                                     }
-                                    succeeded = true
+                                    var admittedRows = 0
+                                    for (row in rows) {
+                                        if (!media.acceptsNativeAnimeRow(row)) { count(SourceSearchReason.TITLE_MISMATCH); continue }
+                                        if (episodeRequest && EpisodeSourcePolicy.hasReportedPackText(row.title, row.filename)) {
+                                            count(SourceSearchReason.SEASON_PACK_HIDDEN); continue
+                                        }
+                                        if (admittedRows++ >= MAX_ROWS) break
+                                        if (row.hash == null && row.url?.startsWith("magnet:", true) != true &&
+                                            provider.definition.get("source_is_in_sub_page")?.asBoolean == true) {
+                                            val link = row.url?.let { document.url.toHttpUrl().resolve(it)?.toString() }
+                                            if (link == null) count(SourceSearchReason.INVALID_HASH)
+                                            else provider.subpages.addLast(Task(http.validatedUrl(link).toString(), row))
+                                        } else admit(row, provider.definition.string("name") ?: provider.id)
+                                    }
+                                }
+                                provider.succeeded = true
                             } catch (error: Exception) {
                                 if (error is CancellationException) throw error
+                                when {
+                                    error is ExpressBudgetExceeded -> {
+                                        count(SourceSearchReason.REQUEST_BUDGET)
+                                        provider.queries.clear(); provider.subpages.clear()
+                                    }
+                                    error is ExpressParserFailure -> Unit // Already counted at the parser boundary.
+                                    error is ExpressHttpException && error.failure == ExpressHttpFailure.RATE_LIMITED -> {
+                                        count(SourceSearchReason.RATE_LIMITED)
+                                        // The host cooldown persists in HTTP; don't repeatedly spend
+                                        // this search's budget on aliases known to be blocked.
+                                        provider.queries.clear(); provider.subpages.clear()
+                                    }
+                                    error is ExpressHttpException && error.failure == ExpressHttpFailure.TIMEOUT -> count(SourceSearchReason.TIMEOUT)
+                                    else -> count(SourceSearchReason.REQUEST_FAILED)
+                                }
+                            } finally {
+                                provider.finish()
                             }
-                        }
-                        if (succeeded) completed.incrementAndGet() else failed.incrementAndGet()
-                        } catch (error: Exception) {
-                            if (error is CancellationException) throw error
-                            failed.incrementAndGet()
-                            // Only a fixed stage and exception class; no provider/media URLs or payloads.
-                            Log.w("SyclopExpress", "Provider query/setup failed class=${error.javaClass.simpleName}")
-                        }
-                    } }.awaitAll()
+                            publish()
+                        } }.awaitAll()
+                    }
                 }
                 true
             } ?: false
-            stage = "results"
-            val unique = streams.distinctBy { listOf(it.infoHash, it.fileIdx, it.behaviorHints?.filename).joinToString("|") }.take(MAX_RESULTS)
-            val report = ExpressSearchReport(all.size, completed.get(), failed.get(), unsupported.get(), missing.get(), unique.size, !finished)
-            reports[addon.id] = report
-            if (unique.isEmpty() && (report.failed > 0 || report.unsupported > 0 || report.missingMetadata > 0 || report.timedOut)) {
-                NetworkResult.Error(report.summary())
-            } else NetworkResult.Success(unique)
+            if (!finished) count(SourceSearchReason.TIMEOUT, providers.count { !it.finalized }.coerceAtLeast(1))
+            resultMutex.withLock {
+                val finalReport = report(complete = true, timedOut = !finished)
+                reports[addon.id] = finalReport // Compatibility diagnostics only, never consumed by the repository.
+                val error = if (streams.isEmpty() && (finalReport.failed > 0 || finalReport.unsupported > 0 ||
+                        finalReport.missingMetadata > 0 || finalReport.timedOut)) finalReport.summary() else null
+                send(ExpressSearchUpdate(streams.values.toList(), finalReport, error))
+            }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            // Avoid Throwable.toString()/message: either can contain a credential-bearing URL.
+            count(if (stage == "metadata" && request.videoId.startsWith("mal:")) SourceSearchReason.MISSING_MAPPING
+                else SourceSearchReason.REQUEST_FAILED)
             Log.w("SyclopExpress", "Source search failed stage=$stage class=${error.javaClass.simpleName}")
-            NetworkResult.Error((error as? ExpressException)?.message ?: "Express source search failed.")
+            val report = ExpressSearchReport(providerCount, 0, 0, 0, 0, 0, false,
+                counts.mapValues { it.value.get() }, complete = true)
+            reports[addon.id] = report
+            send(ExpressSearchUpdate(emptyList(), report,
+                (error as? ExpressException)?.message ?: "Express source search failed."))
         }
     }
 
@@ -284,11 +419,12 @@ class ExpressAddonAdapter internal constructor(
     internal fun providerQueries(provider: JsonObject, media: ExpressMedia): List<String> {
         val scopes = when {
             media.type == "movie" -> listOf("movie")
+            media.anime && media.hasMappedEpisodeCoordinates -> listOf("anime", "episode")
             media.anime -> listOf("anime")
             else -> listOf("episode")
         }
-        return scopes.flatMap { scope ->
-            val config = provider.get(scope)?.takeIf { it.isJsonObject }?.asJsonObject ?: return@flatMap emptyList()
+        val scopeQueries = scopes.map { scope ->
+            val config = provider.get(scope)?.takeIf { it.isJsonObject }?.asJsonObject ?: return@map emptyList<String>()
             val queryValue = config.get("query")
             if (queryValue == null || !queryValue.isJsonPrimitive || !queryValue.asJsonPrimitive.isString) {
                 throw ExpressException("Provider query configuration is invalid.")
@@ -311,7 +447,14 @@ class ExpressAddonAdapter internal constructor(
                     http.validatedUrl(base.trimEnd('/') + "/" + path.trimStart('/')).toString()
                 }
             }
-        }.distinct().let { if (media.anime) it.take(3) else it }
+        }
+        // Alternate coordinate strategies before taking the bound: a valid mapped S/E query
+        // cannot be crowded out by three absolute-title aliases from the first scope.
+        return buildList {
+            repeat(scopeQueries.maxOfOrNull { it.size } ?: 0) { index ->
+                scopeQueries.forEach { queries -> queries.getOrNull(index)?.let(::add) }
+            }
+        }.distinct().let { if (media.anime) it.take(6) else it }
     }
 
     private fun fingerprint(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
@@ -323,6 +466,8 @@ class ExpressAddonAdapter internal constructor(
         // Periodic ProviderUpdateCoordinator explicitly refreshes validated snapshots every24h.
         private const val MAX_PROVIDERS = 80
         private const val MAX_REQUESTS = 90
+        private const val MAX_REQUESTS_PER_PROVIDER = 9
+        private const val MAX_REQUESTS_PER_HOST = 30
         private const val MAX_ROWS = 20
         private const val MAX_RESULTS = 300
         private const val SEARCH_TIMEOUT_MS = 30_000L

@@ -461,6 +461,9 @@ fun StreamScreen(
                     isLoading = uiState.isLoading,
                     resumeText = resumeText,
                     error = uiState.error,
+                    searchDiagnostics = uiState.addonStreams.filter {
+                        uiState.selectedAddonFilter == null || it.addonName == uiState.selectedAddonFilter
+                    }.mapNotNull { it.searchDiagnostics },
                     streams = uiState.filteredStreams,
                     availableAddons = uiState.availableAddons,
                     sourceChips = uiState.sourceChips,
@@ -754,10 +757,11 @@ private fun LeftContentSection(
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun RightStreamSection(
+internal fun RightStreamSection(
     isLoading: Boolean,
     resumeText: String?,
     error: String?,
+    searchDiagnostics: List<com.nuvio.tv.domain.model.SourceSearchDiagnostics>,
     streams: List<Stream>,
     availableAddons: List<String>,
     sourceChips: List<SourceChipItem>,
@@ -783,8 +787,6 @@ private fun RightStreamSection(
     val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     var enter by remember { mutableStateOf(false) }
     var firstStreamFocusRequestId by remember { mutableStateOf(0) }
-    var listHasFocus by remember { mutableStateOf(false) }
-    var focusedStreamKeyInList by remember { mutableStateOf<String?>(null) }
     var userMovedFromFirstResult by remember { mutableStateOf(shouldRestoreFocusedStream) }
     var firstResultFocusAssigned by remember { mutableStateOf(shouldRestoreFocusedStream) }
     val scope = rememberCoroutineScope()
@@ -796,6 +798,9 @@ private fun RightStreamSection(
         }
     }
     val firstStreamKey = streams.firstOrNull()?.stableKey(0)
+    val searchDiagnosticSummary = remember(searchDiagnostics) {
+        com.nuvio.tv.domain.model.SourceSearchDiagnostics.combine(searchDiagnostics)
+    }
     val refreshFocusRequester = remember { FocusRequester() }
     val allFocusRequester = remember { FocusRequester() }
     val addonFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
@@ -839,22 +844,8 @@ private fun RightStreamSection(
             firstStreamFocusRequestId += 1
         }
     }
-    var trackedFirstStreamKey by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(firstStreamKey, selectedAddonFilter, listHasFocus) {
-        if (selectedAddonFilter != null) {
-            trackedFirstStreamKey = firstStreamKey
-            return@LaunchedEffect
-        }
-        val focusWasOnFirst = trackedFirstStreamKey != null &&
-            focusedStreamKeyInList == trackedFirstStreamKey
-        if (firstStreamKey != null && trackedFirstStreamKey != null &&
-            firstStreamKey != trackedFirstStreamKey &&
-            listHasFocus && focusWasOnFirst
-        ) {
-            firstStreamFocusRequestId += 1
-        }
-        trackedFirstStreamKey = firstStreamKey
-    }
+    // Later discoveries/metadata can re-rank rows. StreamsList restores the focused stable
+    // source key; never follow a newly ranked first item while the user is choosing a source.
     fun requestChipFocus(index: Int) {
         if (index !in chipFocusRequesters.indices) return
         userMovedFromFirstResult = true
@@ -955,6 +946,16 @@ private fun RightStreamSection(
                     style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary,
                     modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm))
 
+                if (streams.isEmpty() && searchDiagnostics.isNotEmpty()) {
+                    Text(
+                        text = (if (searchDiagnostics.any { !it.complete }) "Searching sources: " else "Why no sources? ") +
+                            searchDiagnosticSummary.summary(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NuvioTheme.extendedColors.textSecondary,
+                        modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm, vertical = NuvioTheme.spacing.xs)
+                    )
+                }
+
                 // Streams / loading / error / empty
                 Box(
                     modifier = Modifier
@@ -963,7 +964,7 @@ private fun RightStreamSection(
                     contentAlignment = Alignment.Center
                 ) {
                     when {
-                        sharedStream == null && isLoading -> {
+                        sharedStream == null && (isLoading || (streams.isEmpty() && searchDiagnostics.any { !it.complete })) -> {
                             LoadingState()
                         }
                         sharedStream == null && error != null -> {
@@ -998,8 +999,8 @@ private fun RightStreamSection(
                                 onUserNavigatedFromFirstResult = {
                                     userMovedFromFirstResult = true
                                 },
-                                onFocusedStreamKeyChanged = { focusedStreamKeyInList = it },
-                                onFocusChanged = { listHasFocus = it },
+                                onFocusedStreamKeyChanged = {},
+                                onFocusChanged = {},
                                 onExpandStreams = onExpandStreams
                             )
                         }

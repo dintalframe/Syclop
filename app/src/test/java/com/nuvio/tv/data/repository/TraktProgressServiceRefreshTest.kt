@@ -7,6 +7,11 @@ import com.nuvio.tv.core.initialization.InitializationReadScope
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.local.TraktSettingsDataStore
+import com.nuvio.tv.data.local.TraktAuthState
+import com.nuvio.tv.data.remote.dto.trakt.TraktUserEpisodeHistoryItemDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktShowDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktEpisodeDto
+import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.data.local.WatchedSeriesStateHolder
 import com.nuvio.tv.data.remote.api.TraktApi
 import com.nuvio.tv.data.remote.dto.trakt.TraktIdsDto
@@ -48,6 +53,9 @@ class TraktProgressServiceRefreshTest {
 
     @Volatile
     private var playbackHangs = false
+    @Volatile private var playbackFails = false
+    @Volatile private var completedHistory = false
+    private val historyWatchedAt = java.time.Instant.now().minusSeconds(60).toString()
 
     @Test
     fun `watch action refetches only the changed watched list and the next poll skips it`() = runBlocking {
@@ -120,6 +128,61 @@ class TraktProgressServiceRefreshTest {
         assertEquals(2, playbackCalls.get())
     }
 
+    @Test
+    fun `automatic Home return checks activities without forcing unchanged playback lists`() = runBlocking {
+        val service = loadedService()
+
+        service.requestAutomaticRefresh()
+        waitUntil { lastActivitiesCalls.get() >= 1 }
+        delay(SETTLE_MS)
+
+        assertEquals(0, playbackCalls.get())
+        assertEquals(0, watchedShowsCalls.get())
+        assertEquals(0, watchedMoviesCalls.get())
+    }
+
+    @Test
+    fun `automatic Home return imports another device changed history`() = runBlocking {
+        val service = loadedService()
+        episodesWatchedAt = "2026-01-02T00:00:00.000Z"
+
+        service.requestAutomaticRefresh()
+        waitUntil { playbackCalls.get() >= 2 }
+        delay(SETTLE_MS)
+
+        assertEquals(1, watchedShowsCalls.get())
+        assertEquals(0, watchedMoviesCalls.get())
+    }
+
+    @Test
+    fun `confirmed acknowledgement contains actual completed history timestamp and no optimistic record`() = runBlocking {
+        completedHistory = true
+        val service = loadedService()
+        val confirmed = withTimeout(TIMEOUT_MS) { service.observeConfirmedProgress().first { it != null }!! }
+        val history = confirmed.progress.single { it.contentId == "tt0898266" }
+        assertEquals(7, history.episode)
+        assertEquals(WatchProgress.SOURCE_TRAKT_HISTORY, history.source)
+        assertEquals(java.time.Instant.parse(historyWatchedAt).toEpochMilli(), history.lastWatched)
+        assertEquals(null, history.localPlaybackScope)
+
+        service.updateOptimisticProgressQuietly(history.copy(episode = 8, videoId = "tt0898266:1:8", lastWatched = System.currentTimeMillis()))
+        assertEquals(confirmed, service.observeConfirmedProgress().first())
+        assertEquals(false, service.observeConfirmedProgress().first()!!.progress.any { it.episode == 8 })
+    }
+
+    @Test
+    fun `failed component refresh never publishes a new acknowledgement`() = runBlocking {
+        val service = loadedService()
+        val previous = service.observeConfirmedProgress().first { it != null }
+        playbackFails = true
+        episodesWatchedAt = "2026-01-02T00:00:00.000Z"
+        service.refreshNow()
+        waitUntil { playbackCalls.get() >= 2 }
+        delay(SETTLE_MS)
+
+        assertEquals(previous, service.observeConfirmedProgress().first())
+    }
+
     private suspend fun loadedService(): TraktProgressService {
         val service = createService()
         withTimeout(TIMEOUT_MS) {
@@ -157,7 +220,8 @@ class TraktProgressServiceRefreshTest {
         coEvery { traktApi.getPlayback(any(), any(), any(), any()) } coAnswers {
             playbackCalls.incrementAndGet()
             if (playbackHangs) awaitCancellation()
-            if (secondArg<String>() == "movies") {
+            if (playbackFails) Response.error(503, "".toResponseBody())
+            else if (secondArg<String>() == "movies") {
                 Response.success(
                     listOf(
                         TraktPlaybackItemDto(
@@ -173,7 +237,13 @@ class TraktProgressServiceRefreshTest {
                 Response.success(emptyList())
             }
         }
-        coEvery { traktApi.getEpisodeHistory(any(), any(), any(), any(), any()) } returns Response.success(emptyList())
+        coEvery { traktApi.getEpisodeHistory(any(), any(), any(), any(), any()) } answers {
+            Response.success(if (completedHistory) listOf(TraktUserEpisodeHistoryItemDto(
+                id = 7L, watchedAt = historyWatchedAt,
+                show = TraktShowDto(title = "The Big Bang Theory", ids = TraktIdsDto(imdb = "tt0898266")),
+                episode = TraktEpisodeDto(title = "Episode Seven", season = 1, number = 7)
+            )) else emptyList())
+        }
         coEvery { traktApi.getHiddenItems(any(), any(), any(), any(), any()) } returns Response.success(emptyList())
         coEvery { traktApi.getWatched(any(), any(), any(), any(), any()) } answers {
             watchedMoviesCalls.incrementAndGet()
@@ -186,6 +256,10 @@ class TraktProgressServiceRefreshTest {
 
         val authService = mockk<TraktAuthService>()
         every { authService.isCircuitClosed() } returns true
+        coEvery { authService.getCurrentAuthState() } returns TraktAuthState(
+            accessToken = "synthetic-access", refreshToken = "synthetic-refresh", userSlug = "fixture-account",
+            registrationClientId = "fixture-public-client", profileId = 1
+        )
         coEvery { authService.captureInitializationReadScope() } returns
             InitializationReadScope(InitializationProvider.TRAKT, "test-profile-grant") { true }
         coEvery { authService.executeAuthorizedRequest<Any?>(any()) } coAnswers {
@@ -213,7 +287,9 @@ class TraktProgressServiceRefreshTest {
             tmdbService = mockk<TmdbService>(relaxed = true),
             traktSettingsDataStore = settings,
             layoutPreferenceDataStore = layout,
-            traktEpisodeMappingService = mockk(relaxed = true),
+            traktEpisodeMappingService = mockk<TraktEpisodeMappingService>(relaxed = true) {
+                coEvery { resolveAddonEpisodeMapping(any(), any(), any(), any(), any()) } returns null
+            },
             profileManager = profileManager,
             watchedSeriesStateHolder = watchedSeries
         )

@@ -36,10 +36,10 @@ class CapturedDebridOperation private constructor(
             // A final service-local rejection is not a stale source/file selection. Let the
             // provider return its existing safe Error so another captured service can be tried.
             (result as? retrofit2.Response<*>)?.let { response ->
-                if (response.code() in setOf(401, 403)) {
+                if (response.code() in setOf(401, 403, 429)) {
                     runCatching { response.errorBody()?.close() }
                     runCatching { (response.body() as? java.io.Closeable)?.close() }
-                    throw java.io.IOException("The connected service rejected this request.")
+                    throw DirectDebridHttpException(response.code(), parseDebridRetryAfter(response.headers()["Retry-After"]))
                 }
             }
             return result

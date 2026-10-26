@@ -81,7 +81,7 @@ class TorboxDirectDebridResolverTest {
 
         val result = resolver.resolve(stream(fileIdx = 1), season = null, episode = null)
 
-        assertTrue(result is DirectDebridResolveResult.Stale)
+        assertEquals(directDebridHttpFailure(400, "torbox"), result)
         assertEquals(1, api.createCalls)
         assertEquals(0, api.torrentCalls)
         assertEquals(0, api.requestCalls)
@@ -109,7 +109,7 @@ class TorboxDirectDebridResolverTest {
 
         val result = resolver(api).resolve(pmrStream(), season = 1, episode = 2)
 
-        assertTrue(result is DirectDebridResolveResult.Stale)
+        assertEquals(wrongDebridFile("torbox"), result)
         assertEquals(0, api.requestCalls)
     }
 

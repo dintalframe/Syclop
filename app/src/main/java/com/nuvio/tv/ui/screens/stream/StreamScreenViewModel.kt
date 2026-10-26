@@ -786,7 +786,7 @@ class StreamScreenViewModel @Inject constructor(
                         availableAddons = availableAddons,
                         sourceChips = mergeSourceChipStatuses(
                             existing = _uiState.value.sourceChips,
-                            succeededNames = mergedAddonStreams.map { it.addonName }
+                            succeededNames = mergedAddonStreams.filter { it.searchDiagnostics?.complete != false }.map { it.addonName }
                         ),
                         // Preserve an already-resolved stream: the post-collect
                         // "isAllLoaded=true" pass re-runs the selector with
@@ -1466,6 +1466,10 @@ class StreamScreenViewModel @Inject constructor(
         Log.d(TAG, "resolveStreamForPlayback: debrid resolve completed in ${resolveMs}ms result=${result::class.simpleName}")
 
         return when (result) {
+            is DirectDebridResolveResult.Failure -> {
+                showDirectDebridPlaybackError(context.getString(result.detail.messageRes), refreshStreams = false)
+                null
+            }
             is DirectDebridResolveResult.Success -> {
                 if (!_uiState.value.isDirectAutoPlayFlow) {
                     updateUiStateIfChanged {

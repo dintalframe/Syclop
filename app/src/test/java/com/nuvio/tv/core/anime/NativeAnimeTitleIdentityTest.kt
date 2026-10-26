@@ -84,4 +84,28 @@ class NativeAnimeTitleIdentityTest {
         assertNotEquals(first.fingerprint, otherMal.fingerprint)
         assertEquals("NativeAnimeTitleIdentity(validated=true)", first.toString())
     }
+
+    @Test fun `query snapshot reserves room for Latin aliases and Japanese instead of season duplicates`() {
+        val aliases = mutableListOf("Sousou.no.Frieren.S2", "Sousou no Frieren Season 2",
+            "Frieren: Beyond Journey’s End (2026)", "葬送のフリーレン 第2期", "Another Alias")
+        val snapshot = requireNotNull(NativeAnimeTitleIdentity.create(59978, "Sousou no Frieren 2nd Season", aliases))
+        val expected = listOf("Sousou no Frieren", "Frieren: Beyond Journey’s End", "葬送のフリーレン 第2期")
+        assertEquals(expected, snapshot.queryTitles())
+        aliases.clear(); aliases += "Unrelated Remake"
+        assertEquals(expected, snapshot.queryTitles())
+        assertFalse(snapshot.matchesRelease("Unrelated Remake S02E01.mkv"))
+        for (title in expected) assertTrue(title, snapshot.matchesRelease("$title S02E01.mkv"))
+        try {
+            (snapshot.queryTitles() as MutableList<String>).add("Unrelated Remake")
+            fail("Query snapshot must be immutable")
+        } catch (_: UnsupportedOperationException) { }
+    }
+
+    @Test fun `query snapshot never invents aliases from subtitles or untrusted query text`() {
+        val identity = requireNotNull(NativeAnimeTitleIdentity.create(1, "Franchise: Subtitle Part 2",
+            listOf("Franchise: Subtitle Part 2", "Bad\nAlias", "x".repeat(257))))
+        assertEquals(listOf("Franchise: Subtitle Part 2"), identity.queryTitles())
+        assertFalse(identity.matchesRelease("Franchise S01E01.mkv"))
+        assertTrue(identity.matchesRelease("Franchise Subtitle Part 2 S01E01.mkv"))
+    }
 }

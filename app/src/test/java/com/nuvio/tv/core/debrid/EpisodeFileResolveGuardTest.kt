@@ -37,7 +37,7 @@ class EpisodeFileResolveGuardTest {
             episode = 4
         )
 
-        assertEquals(DirectDebridResolveResult.Stale, result)
+        assertEquals(wrongDebridFile("alldebrid"), result)
         coVerify(exactly = 1) { service.upload(TOKEN, any()) }
         coVerify(exactly = 1) { service.files(TOKEN, listOf(42L)) }
         coVerify(exactly = 0) { service.unlock(any(), any()) }
@@ -61,7 +61,7 @@ class EpisodeFileResolveGuardTest {
                 episode = 4
             )
 
-            assertEquals(filename, DirectDebridResolveResult.Stale, result)
+            assertEquals(filename, wrongDebridFile("alldebrid"), result)
             coVerify(exactly = 1) { service.files(TOKEN, listOf(42L)) }
             coVerify(exactly = 0) { service.unlock(any(), any()) }
         }
@@ -112,7 +112,7 @@ class EpisodeFileResolveGuardTest {
             episode = 4
         )
 
-        assertEquals(DirectDebridResolveResult.Stale, result)
+        assertEquals(wrongDebridFile("realdebrid"), result)
         coVerify(exactly = 1) { api.getTorrentInfo(any(), "fixture-job") }
         coVerify(exactly = 0) { api.selectFiles(any(), any(), any()) }
         coVerify(exactly = 0) { api.unrestrictLink(any(), any()) }

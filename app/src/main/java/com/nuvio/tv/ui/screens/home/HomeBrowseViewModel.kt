@@ -32,6 +32,8 @@ class HomeBrowseViewModel @Inject constructor(
 ) : ViewModel() {
     private data class Origin(val profile: Int, val selection: Long, val generation: Long, val section: HomeBrowseSection)
     private data class Cached(val fingerprint: List<String>, val state: HomeBrowseState)
+    private data class RequestPlan(val profile: Int, val selection: Long,
+        val requests: List<HomeBrowseRequest>, val fingerprint: List<String>, val failed: Boolean = false)
     private val generation = AtomicLong()
     private var section = HomeBrowseSection.HOME
     private var origin: Origin? = null
@@ -89,6 +91,7 @@ class HomeBrowseViewModel @Inject constructor(
         section == value.section && profiles.activeProfileId.value == value.profile &&
         profiles.activeProfileSelectionRevision == value.selection
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun select(selected: HomeBrowseSection) {
         if (section == selected && (selected == HomeBrowseSection.HOME || observer?.isActive == true && origin?.let(::current) == true)) return
         observer?.cancel(); work.values.forEach { it.cancel() }; work.clear()
@@ -97,6 +100,12 @@ class HomeBrowseViewModel @Inject constructor(
         _state.value = HomeBrowseState(section = selected)
         observer = viewModelScope.launch {
             combine(profiles.activeProfileId, addons.getInstalledAddons()) { profile, installed -> profile to installed }
+                // collectLatest cancels its previous block before invoking the next one. Prepare
+                // and compare relevant requests upstream so an unrelated addon emission cannot
+                // cancel an initial batch, clear partial rows and remount the focused renderer.
+                .mapLatest { (profile, installed) -> preparePlan(profile, installed, selected) }
+                .filterNotNull()
+                .distinctUntilChangedBy { it.fingerprint }
                 .catch {
                     val captured = Origin(profiles.activeProfileId.value, profiles.activeProfileSelectionRevision,
                         generation.incrementAndGet(), selected)
@@ -104,32 +113,19 @@ class HomeBrowseViewModel @Inject constructor(
                     if (current(captured)) _state.value = HomeBrowseState(selected, loading = false,
                         originRevision = captured.selection, failed = true)
                 }
-                .collectLatest { (profile, installed) ->
+                .collectLatest { plan ->
                     work.values.forEach { it.cancel() }; work.clear()
-                    val captured = Origin(profile, profiles.activeProfileSelectionRevision, generation.incrementAndGet(), selected)
+                    val captured = Origin(plan.profile, plan.selection, generation.incrementAndGet(), selected)
                     origin = captured
                     if (!current(captured)) return@collectLatest
-                    val effectiveProfile = if (profiles.activeProfile?.usesPrimaryAddons == true) 1 else profile
-                    val enabledUrls = try { preferences.enabledUrlsForProfile(effectiveProfile) }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) {
-                        if (current(captured)) _state.value = HomeBrowseState(selected, loading = false,
+                    if (plan.failed) {
+                        _state.value = HomeBrowseState(selected, loading = false,
                             originRevision = captured.selection, failed = true)
                         return@collectLatest
                     }
-                    if (!current(captured)) return@collectLatest
-                    requests = installed.filter { HomeBrowseRules.allowed(it, enabledUrls) }.flatMap { addon -> addon.catalogs.mapNotNull {
-                        HomeBrowseRules.request(selected, addon, it)
-                    } }.distinctBy { it.key }.sortedBy { request ->
-                        if (selected == HomeBrowseSection.KIDS &&
-                            request.addon.id == com.nuvio.tv.data.catalog.RatedKidsCatalog.ADDON_ID &&
-                            com.nuvio.tv.data.catalog.RatedKidsCatalog.isNativeAddon(request.addon.baseUrl)) 0 else 1
-                    }.take(MAX_CATALOGS)
-                    val nextFingerprint = listOf(profile.toString(), captured.selection.toString()) + requests.map {
-                        "${it.key}|${it.addon.version}|${it.addon.configVersion}|${it.addon.timestamp}|${it.extraArgs}"
-                    }
-                    if (fingerprint != nextFingerprint) requestRevision++
-                    fingerprint = nextFingerprint
+                    requests = plan.requests
+                    if (fingerprint != plan.fingerprint) requestRevision++
+                    fingerprint = plan.fingerprint
                     val previous = cache[selected]?.takeIf { it.fingerprint == fingerprint }
                     if (previous != null) {
                         _state.value = previous.state.copy(originRevision = captured.selection, requestRevision = requestRevision)
@@ -141,6 +137,37 @@ class HomeBrowseViewModel @Inject constructor(
                     }
                 }
         }
+    }
+
+    private suspend fun preparePlan(profile: Int, installed: List<Addon>, selected: HomeBrowseSection): RequestPlan? {
+        val selection = profiles.activeProfileSelectionRevision
+        fun selectedOrigin() = profiles.activeProfileId.value == profile &&
+            profiles.activeProfileSelectionRevision == selection && section == selected
+        if (!selectedOrigin()) return null
+        val effectiveProfile = if (profiles.activeProfile?.usesPrimaryAddons == true) 1 else profile
+        val enabledUrls = try { preferences.enabledUrlsForProfile(effectiveProfile) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            return if (selectedOrigin()) RequestPlan(profile, selection, emptyList(),
+                listOf(profile.toString(), selection.toString(), selected.name, "unavailable"), failed = true) else null
+        }
+        if (!selectedOrigin()) return null
+        val planned = installed.filter { HomeBrowseRules.allowed(it, enabledUrls) }.flatMap { addon -> addon.catalogs.mapNotNull {
+            HomeBrowseRules.request(selected, addon, it)
+        } }.distinctBy { it.key }.sortedBy { request ->
+            if (selected == HomeBrowseSection.KIDS &&
+                request.addon.id == com.nuvio.tv.data.catalog.RatedKidsCatalog.ADDON_ID &&
+                com.nuvio.tv.data.catalog.RatedKidsCatalog.isNativeAddon(request.addon.baseUrl)) 0 else 1
+        }.take(MAX_CATALOGS)
+        val identity = listOf(profile.toString(), selection.toString(), selected.name) + planned.map { request ->
+            // Include real catalog/query semantics; a same-version descriptor change must still
+            // invalidate the request. Hash private source identity rather than retaining its text.
+            java.security.MessageDigest.getInstance("SHA-256").digest(listOf(request.key, request.addon.version,
+                request.addon.configVersion, request.addon.timestamp, request.addon.displayName,
+                request.catalog, request.extraArgs.toSortedMap()).joinToString("\u0000").toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it.toInt() and 255) }
+        }
+        return RequestPlan(profile, selection, planned, identity)
     }
 
     fun reload() {

@@ -850,6 +850,36 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    private var continueWatchingRefreshJob: Job? = null
+    private var continueWatchingRefreshAtMs = Long.MIN_VALUE
+    private var continueWatchingRefreshSelection: Pair<Int, Long>? = null
+
+    fun refreshContinueWatchingOnHomeReturn() {
+        // The startup import owns the first load; do not cancel it with a duplicate signal.
+        if (!_initialCwResolved.value) return
+        val selection = profileManager.activeProfileId.value to profileManager.activeProfileSelectionRevision
+        if (continueWatchingRefreshSelection != selection) {
+            continueWatchingRefreshJob?.cancel()
+            continueWatchingRefreshAtMs = Long.MIN_VALUE
+            continueWatchingRefreshSelection = selection
+        }
+        val now = SystemClock.elapsedRealtime()
+        val elapsed = now - continueWatchingRefreshAtMs
+        if (continueWatchingRefreshJob?.isActive == true ||
+            (continueWatchingRefreshAtMs != Long.MIN_VALUE && elapsed in 0..9_999L)) return
+        continueWatchingRefreshAtMs = now
+        cwPipelineRefreshTrigger.value++
+        continueWatchingRefreshJob = viewModelScope.launch {
+            try {
+                watchProgressRepository.refreshContinueWatching()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                android.util.Log.w("HomeContinueWatching", "Tracker refresh failed; retaining saved playback")
+            }
+        }
+    }
+
     fun refreshHomeCatalogsIfStale() {
         if (addonsCache.isEmpty()) return
         val now = android.os.SystemClock.elapsedRealtime()

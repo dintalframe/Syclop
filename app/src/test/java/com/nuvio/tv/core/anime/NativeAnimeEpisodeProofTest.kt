@@ -196,6 +196,17 @@ class NativeAnimeEpisodeProofTest {
         assertNull(proof.withIdentity(other))
     }
 
+    @Test fun `mapping languages choose English Romaji Japanese independent of response field order`() {
+        val json = mutate {
+            add("titles", JsonParser.parseString("""{"de":"Franchise Untertitel","ja":"葬送のフリーレン 第2期","x-jat":"Sousou no Frieren S2","es":"Franquicia Subtitulo","en":"Frieren: Beyond Journey’s End (2026)"}"""))
+        }
+        val proof = requireNotNull(parse(json)?.episodes?.get(1))
+        assertEquals(listOf("Frieren: Beyond Journey’s End", "Sousou no Frieren", "葬送のフリーレン 第2期"),
+            proof.titleIdentity!!.queryTitles())
+        assertTrue(proof.matchesFile("Franchise Untertitel S02E01.mkv"))
+        for (alias in proof.titleIdentity!!.queryTitles()) assertTrue(alias, proof.matchesFile("$alias S02E01.mkv"))
+    }
+
     private fun parse(json: String = fixture()) = NativeAnimeMappingCodec.parse(json, 59978)
     private fun mutate(block: JsonObject.() -> Unit): String = JsonParser.parseString(fixture()).asJsonObject.apply(block).toString()
     private fun JsonObject.row() = getAsJsonObject("episodes").getAsJsonObject("1")

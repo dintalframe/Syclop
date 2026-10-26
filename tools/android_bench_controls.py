@@ -56,12 +56,28 @@ STARTUP_TESTS = {
 STARTUP_SCREENSHOTS = (
     "startup-gate-background-blocked.png", "startup-gate-actions.png",
     "startup-gate-resumed-home.png", "startup-gate-same-window.png")
+PROGRESSIVE_TESTS = {
+    "com.nuvio.tv.ui.screens.stream.ProgressiveSourcesTvTest": (
+        "laterBetterResultDoesNotStealTheSelectedSourceFocus",
+        "emptySearchDisplaysStructuredReasonsWithoutMediaOrAccountData")
+}
+PROGRESSIVE_SCREENSHOTS = (
+    "progressive-sources-stable-focus.png", "progressive-sources-empty-diagnostics.png")
+CONTINUE_WATCHING_TESTS = {
+    "com.nuvio.tv.ui.screens.home.ContinueWatchingPlaybackTvTest": (
+        "latestLocalEpisodeReplacesOlderPausedEpisode",
+        "completedLatestEpisodeAdvancesNextUp")
+}
+CONTINUE_WATCHING_SCREENSHOTS = (
+    "continue-watching-latest-episode.png", "continue-watching-next-up.png")
 SUITE_MIN_API = {"startup-initialization": 29}
 SUITES = {
     "playback-controls": (TESTS, SCREENSHOTS),
     "category-navigation": (CATEGORY_TESTS, CATEGORY_SCREENSHOTS),
     "episode-sources": (EPISODE_TESTS, EPISODE_SCREENSHOTS),
     "startup-initialization": (STARTUP_TESTS, STARTUP_SCREENSHOTS),
+    "progressive-sources": (PROGRESSIVE_TESTS, PROGRESSIVE_SCREENSHOTS),
+    "continue-watching": (CONTINUE_WATCHING_TESTS, CONTINUE_WATCHING_SCREENSHOTS),
 }
 
 

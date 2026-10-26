@@ -339,6 +339,12 @@ class Bench:
     def startup_initialization(self):
         self.fixed_fixtures("startup-initialization")
 
+    def progressive_sources(self):
+        self.fixed_fixtures("progressive-sources")
+
+    def continue_watching(self):
+        self.fixed_fixtures("continue-watching")
+
     def fixed_fixtures(self, suite):
         """Run only the fixed synthetic fixtures, preserving the emulator's app data."""
         if suite not in controls.SUITES:
@@ -647,6 +653,16 @@ def parser():
     startup.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     startup.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
     startup.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
+    progressive = commands.add_parser("progressive-sources", help="Run two fixed account-free incremental source fixtures")
+    progressive.set_defaults(command="progressive_sources")
+    progressive.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
+    progressive.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
+    progressive.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
+    watching = commands.add_parser("continue-watching", help="Run two fixed account-free episode progress fixtures")
+    watching.set_defaults(command="continue_watching")
+    watching.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
+    watching.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
+    watching.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
     commands.add_parser("stop")
     reset = commands.add_parser("reset", help="Explicit deletion, ownership marker required")
     reset.add_argument("--confirm-reset", action="store_true")
@@ -662,7 +678,7 @@ def main(argv=None):
     bench = None
     try:
         bench = Bench(options)
-        if options.command in ("status", "install", "smoke", "playback_controls", "category_navigation", "episode_sources", "startup_initialization"):
+        if options.command in ("status", "install", "smoke", "playback_controls", "category_navigation", "episode_sources", "startup_initialization", "progressive_sources", "continue_watching"):
             bench.begin_report()
         getattr(bench, options.command)()
         bench.save_report(True)

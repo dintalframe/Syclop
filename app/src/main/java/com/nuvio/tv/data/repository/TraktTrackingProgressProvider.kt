@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.map
 class TraktTrackingProgressProvider @Inject constructor(
     private val service: TraktProgressService,
     private val layoutPreferences: LayoutPreferenceDataStore,
-    authDataStore: TraktAuthDataStore
+    private val authDataStore: TraktAuthDataStore
 ) : TrackingProgressProvider {
     override val providerId = TrackingProviderId.TRAKT
     override val isAuthenticated = authDataStore.isEffectivelyAuthenticated
@@ -26,6 +26,19 @@ class TraktTrackingProgressProvider @Inject constructor(
     override val clearsLocalProgressOnSelection = true
     override val allProgress = service.observeAllProgress()
     override val remoteProgressLoaded = service.observeRemoteProgressLoaded()
+    override val confirmedProgress = service.observeConfirmedProgress()
+    override val localPlaybackScope = authDataStore.state.map(::traktLocalPlaybackScope)
+
+    override suspend fun captureLocalPlaybackScope(profileId: Int): String? {
+        val revision = authDataStore.grantRevision(profileId)
+        val selection = authDataStore.activeProfileSelectionRevision
+        if (revision < 0L || authDataStore.activeProfileId != profileId) return null
+        val state = authDataStore.getCurrentState(profileId)
+        if (authDataStore.activeProfileId != profileId ||
+            selection != authDataStore.activeProfileSelectionRevision ||
+            revision != authDataStore.grantRevision(profileId)) return null
+        return traktLocalPlaybackScope(state)
+    }
     override val watchedMovieIds = service.observeAllWatchedMovieIds()
     override val nextUpSeeds = combine(
         service.observeWatchedShowSeeds(),
@@ -62,7 +75,10 @@ class TraktTrackingProgressProvider @Inject constructor(
 
     override suspend fun showIdSiblings() = service.getShowIdSiblings()
 
-    override suspend fun refresh(intent: TrackingRefreshIntent) = service.refreshNow()
+    override suspend fun refresh(intent: TrackingRefreshIntent) {
+        if (intent == TrackingRefreshIntent.AUTOMATIC) service.requestAutomaticRefresh()
+        else service.refreshNow()
+    }
 
     override suspend fun removeProgress(contentId: String, season: Int?, episode: Int?) =
         service.removeProgress(contentId, season, episode)
@@ -175,4 +191,17 @@ private fun shouldReplaceTrackingSeed(
         (candidatePosition.second > existingPosition.second ||
             candidatePosition.second == existingPosition.second &&
             candidate.lastWatched >= existing.lastWatched)
+}
+
+/** Public identity only; tokens and mutable access-token lifetime never enter the persisted key. */
+internal fun traktLocalPlaybackScope(state: com.nuvio.tv.data.local.TraktAuthState): String? {
+    if (!state.isAuthenticated) return null
+    val slug = state.userSlug?.trim()?.lowercase(java.util.Locale.ROOT)
+        ?.takeIf { it.matches(Regex("[a-z0-9_-]{1,100}")) } ?: return null
+    val app = state.registrationClientId?.trim()
+        ?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,256}")) } ?: return null
+    val identity = "${state.profileId}\n$app\n$slug"
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(identity.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    return "trakt-local-v1:$digest"
 }

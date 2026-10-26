@@ -33,7 +33,9 @@ data class Stream(
     val pluginSourceName: String? = null,
     val nativeFileMetadata: StreamFileMetadata? = null,
     /** Catalog-confirmed movie runtime for explicitly unverified provider-size averages only. */
-    val reportedMovieRuntimeMillis: Long? = null
+    val reportedMovieRuntimeMillis: Long? = null,
+    /** Native, short-lived account observations. Add-on cache claims never populate this field. */
+    val nativeDebridAvailability: List<StreamDebridCacheStatus> = emptyList()
 ) {
     /**
      * Returns the primary stream source URL
@@ -198,8 +200,16 @@ data class StreamDebridCacheStatus(
     val providerName: String,
     val state: StreamDebridCacheState,
     val cachedName: String? = null,
-    val cachedSize: Long? = null
+    val cachedSize: Long? = null,
+    val nativeScope: StreamAvailabilityScope? = null,
+    val infoHash: String? = null,
+    val checkedAtMs: Long? = null,
+    val expiresAtMs: Long? = null
 )
+
+/** Observation provenance only; this never authorizes a playback URL. */
+@Immutable
+data class StreamAvailabilityScope(val profileId: Int, val selectionRevision: Long, val credentialRevision: Long)
 
 enum class StreamDebridCacheState {
     CHECKING,
@@ -314,7 +324,8 @@ data class ProxyHeaders(
 data class AddonStreams(
     val addonName: String,
     val addonLogo: String?,
-    val streams: List<Stream>
+    val streams: List<Stream>,
+    val searchDiagnostics: SourceSearchDiagnostics? = null
 )
 
 private fun String?.isMagnetLink(): Boolean =

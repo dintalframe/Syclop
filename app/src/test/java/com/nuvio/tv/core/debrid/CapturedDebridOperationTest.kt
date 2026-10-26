@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 import retrofit2.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 
 class CapturedDebridOperationTest {
     @Test fun `actual provider uses captured credential without reading a later active account`() = runTest {
@@ -26,7 +27,7 @@ class CapturedDebridOperationTest {
             throw IOException("Synthetic transport failure")
         }
         val result = resolver.resolve(stream(), 1, 2, CapturedDebridOperation(DebridProviders.REAL_DEBRID_ID, "account-A") { true })
-        assertEquals(DirectDebridResolveResult.Error, result)
+        assertEquals(DirectDebridResolveResult.Failure(DirectDebridFailure(DirectDebridFailureReason.NETWORK_FAILURE, "realdebrid")), result)
         coVerify(exactly = 1) { api.addMagnet("Bearer account-A", any()) }
         verify(exactly = 0) { settings.settings }
     }
@@ -79,6 +80,20 @@ class CapturedDebridOperationTest {
         assertFalse(published); assertEquals(1, requests)
         try { operation.request { requests++; "new-account-response" } } catch (_: CancellationException) { }
         assertEquals(1, requests)
+    }
+
+    @Test fun `captured HTTP rejection preserves status and retry delay without response text`() = runTest {
+        val operation = CapturedDebridOperation(DebridProviders.REAL_DEBRID_ID, "private-key") { true }
+        val response = okhttp3.Response.Builder().request(okhttp3.Request.Builder().url("https://service.example.test/").build())
+            .protocol(okhttp3.Protocol.HTTP_1_1).code(429).message("Rate limited").header("Retry-After", "120").build()
+        try {
+            operation.request { Response.error<String>("private-key".toResponseBody(), response) }
+            fail("Expected typed service rejection")
+        } catch (error: DirectDebridHttpException) {
+            assertEquals(429, error.status)
+            assertEquals(120L, error.retryAfterSeconds)
+            assertFalse(error.toString().contains("private-key"))
+        }
     }
     private fun stream() = Stream(name = "test", title = null, description = null, url = null, ytId = null,
         infoHash = "a".repeat(40), fileIdx = 0, externalUrl = null, behaviorHints = null, addonName = "test", addonLogo = null,
