@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus PreloadStatus(int, long, long) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus.STAGE_SOURCE_PREPARED, androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus.STAGE_TRACKS_SELECTED, androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus.STAGE_SPECIFIED_RANGE_LOADED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus stage">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus.STAGE_SOURCE_PREPARED, androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus.STAGE_TRACKS_SELECTED, androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus.STAGE_SPECIFIED_RANGE_LOADED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus.Stage">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus.STAGE_SOURCE_PREPARED, androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus.STAGE_TRACKS_SELECTED, androidx.media3.exoplayer.source.preload.DefaultPreloadManager.PreloadStatus.STAGE_SPECIFIED_RANGE_LOADED}" />
+    </annotation>
+  </item>
+</root>
+

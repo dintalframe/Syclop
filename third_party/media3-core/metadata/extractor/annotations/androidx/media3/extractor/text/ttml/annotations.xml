@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.text.ttml.TextEmphasis TextEmphasis(int, int, int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_NONE, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_CIRCLE, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_DOT, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_SESAME, androidx.media3.extractor.text.ttml.TextEmphasis.MARK_SHAPE_AUTO}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TextEmphasis markShape">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_NONE, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_CIRCLE, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_DOT, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_SESAME, androidx.media3.extractor.text.ttml.TextEmphasis.MARK_SHAPE_AUTO}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TextEmphasis position">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextAnnotation.POSITION_UNKNOWN, androidx.media3.common.text.TextAnnotation.POSITION_BEFORE, androidx.media3.common.text.TextAnnotation.POSITION_AFTER, androidx.media3.extractor.text.ttml.TextEmphasis.POSITION_OUTSIDE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TextEmphasis.Position">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextAnnotation.POSITION_UNKNOWN, androidx.media3.common.text.TextAnnotation.POSITION_BEFORE, androidx.media3.common.text.TextAnnotation.POSITION_AFTER, androidx.media3.extractor.text.ttml.TextEmphasis.POSITION_OUTSIDE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle androidx.media3.extractor.text.ttml.TtmlStyle setRubyType(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_CONTAINER, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_BASE, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_TEXT, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_DELIMITER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle bold">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.OFF, androidx.media3.extractor.text.ttml.TtmlStyle.ON}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle fontSizeUnit">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.FONT_SIZE_UNIT_PIXEL, androidx.media3.extractor.text.ttml.TtmlStyle.FONT_SIZE_UNIT_EM, androidx.media3.extractor.text.ttml.TtmlStyle.FONT_SIZE_UNIT_PERCENT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle italic">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.OFF, androidx.media3.extractor.text.ttml.TtmlStyle.ON}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle linethrough">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.OFF, androidx.media3.extractor.text.ttml.TtmlStyle.ON}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle rubyType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_CONTAINER, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_BASE, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_TEXT, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_DELIMITER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle textCombine">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.OFF, androidx.media3.extractor.text.ttml.TtmlStyle.ON}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle underline">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.OFF, androidx.media3.extractor.text.ttml.TtmlStyle.ON}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle.FontSizeUnit">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.FONT_SIZE_UNIT_PIXEL, androidx.media3.extractor.text.ttml.TtmlStyle.FONT_SIZE_UNIT_EM, androidx.media3.extractor.text.ttml.TtmlStyle.FONT_SIZE_UNIT_PERCENT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle.RubyType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_CONTAINER, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_BASE, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_TEXT, androidx.media3.extractor.text.ttml.TtmlStyle.RUBY_TYPE_DELIMITER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ttml.TtmlStyle.StyleFlags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.text.ttml.TtmlStyle.UNSPECIFIED, androidx.media3.extractor.text.ttml.TtmlStyle.STYLE_NORMAL, androidx.media3.extractor.text.ttml.TtmlStyle.STYLE_BOLD, androidx.media3.extractor.text.ttml.TtmlStyle.STYLE_ITALIC, androidx.media3.extractor.text.ttml.TtmlStyle.STYLE_BOLD_ITALIC}" />
+    </annotation>
+  </item>
+</root>
+

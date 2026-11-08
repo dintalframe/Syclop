@@ -11,7 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.LocalActivity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -23,10 +23,10 @@ import com.nuvio.tv.updater.UpdateViewModel
 @Composable
 internal fun UpdateChannelSettings(
     initialFocusRequester: FocusRequester?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showManualCheck: Boolean = true
 ) {
-    val context = LocalContext.current
-    val viewModel: UpdateViewModel = hiltViewModel(context as ComponentActivity)
+    val viewModel: UpdateViewModel = hiltViewModel(LocalActivity.current as ComponentActivity)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showChannelDialog by rememberSaveable { mutableStateOf(false) }
     val channelName = when (state.updateChannel) {
@@ -54,35 +54,7 @@ internal fun UpdateChannelSettings(
         }
     )
 
-    if (state.autoInstallSupported) {
-        SettingsToggleRow(
-            title = stringResource(R.string.about_update_auto_install_title),
-            subtitle = stringResource(R.string.about_update_auto_install_subtitle),
-            checked = state.autoInstallEnabled,
-            onToggle = {
-                viewModel.setAutoInstallEnabled(!state.autoInstallEnabled)
-            }
-        )
-        if (state.autoInstallEnabled) {
-            SettingsToggleRow(
-                title = stringResource(R.string.about_update_auto_install_notice_title),
-                subtitle = stringResource(R.string.about_update_auto_install_notice_subtitle),
-                checked = state.autoInstallNoticeEnabled,
-                onToggle = {
-                    viewModel.setAutoInstallNoticeEnabled(!state.autoInstallNoticeEnabled)
-                }
-            )
-        }
-    }
-
-    SettingsActionRow(
-        title = stringResource(R.string.about_check_updates),
-        subtitle = stringResource(R.string.about_check_updates_subtitle),
-        trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
-        onClick = {
-            viewModel.checkForUpdates(force = true, showNoUpdateFeedback = true)
-        }
-    )
+    if (showManualCheck) CheckForUpdatesSettingsAction(viewModel = viewModel)
 
     if (showChannelDialog) {
         SettingsSingleChoiceDialog(
@@ -110,4 +82,18 @@ internal fun UpdateChannelSettings(
             maxHeight = 320.dp
         )
     }
+}
+
+@Composable
+internal fun CheckForUpdatesSettingsAction(
+    modifier: Modifier = Modifier,
+    viewModel: UpdateViewModel = hiltViewModel(LocalActivity.current as ComponentActivity)
+) {
+    SettingsActionRow(
+        title = stringResource(R.string.about_check_updates),
+        subtitle = stringResource(R.string.about_check_updates_subtitle),
+        trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
+        onClick = { viewModel.checkForUpdates(force = true, showNoUpdateFeedback = true) },
+        modifier = modifier
+    )
 }

@@ -1,0 +1,23 @@
+this software is based in part on the work of the Independent JPEG Group
+
+MPV Android wrapper 0.1.12: 96c3507c5fc8eedbf5fff458101cad794392eca7.
+MPV 0.42.0: b0841e8c4d156b8403dc1876c4cbd9011eb583f3.
+FFmpeg maintenance base: a35157abb96167fd7308edc92b55408d5bb084b0.
+Container builds retain upstream fixes 969c7eb091989a664cb7bf66a1f02051cc46cb52,
+d1434518fbd03789e3e5dc0657a7a9f1123ce074 and 71403a21b02a92b925e26e609e9bd3e48df451cf.
+Mbed TLS 3.6.7; libxml2 2.15.4; libplacebo 7.387.0; dav1d; Lua 5.2.4.
+
+Subtitle wrapper: Nuvio b824ae66738e279d09b1994d9977978e7ffcc90a.
+Edde libass 0.18.4: 9c936772ffdaabdd9dc271ef8fc800e5b025a71b.
+FreeType 2.14.3 includes upstream fixes 5a280ecde6f324de0d226261036e736e0cb49a71
+and f3ca71c9900fe860849b3163a6e2c1e765b291d9.
+HarfBuzz 13.0.1; FriBidi 1.0.16; libunibreak 6.1; Fontconfig 2.18.3; Expat 2.8.4.
+
+NextLib retains its Java API with source-built FFmpeg 8 adaptation, typed JNI long
+boundaries and input/frame-loader ownership cleanup.
+Android Mbed TLS delegates entropy to the platform CSPRNG; MPV uses its existing
+fork/exec path on Android to keep subprocess state separate from ART/Bionic.
+The managed Media3 core is rebuilt from pinned AndroidX source and preferred
+maintained custom-source reconstruction; original upstream attribution is retained.
+The audio-only FFmpeg decoder retains the Media3/Kodi-derived wrapper and notices.
+Exact component licenses and copyright notices are retained unmodified.

@@ -63,6 +63,14 @@ class FirstUseInitialization(private val markers: InitializationMarkerStore, pri
                 continue
             }
             catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: InitializationReadException) {
+                if (failure.reason == InitializationFailure.ACCOUNT_CHANGED) throw failure
+                checkpoint()
+                stages[participant.provider] = InitializationStage(participant.provider, InitializationStageStatus.FAILED,
+                    failure = failure.reason)
+                publish(InitializationPhase.IMPORTING)
+                continue
+            }
             catch (_: Exception) {
                 stages[participant.provider] = InitializationStage(participant.provider, InitializationStageStatus.FAILED,
                     failure = InitializationFailure.UNAVAILABLE)

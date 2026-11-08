@@ -1,9 +1,8 @@
 package com.nuvio.tv.core.server
 
 import android.content.Context
-import com.nuvio.tv.R
+import com.google.gson.Gson
 import fi.iki.elonen.NanoHTTPD
-import java.nio.charset.StandardCharsets
 
 class CustomPosterConfigServer(
     private val currentPatternProvider: () -> String,
@@ -11,9 +10,13 @@ class CustomPosterConfigServer(
     private val context: Context? = null,
     port: Int = 8092
 ) : NanoHTTPD(port) {
+    private val pairing = LocalConfigSession()
+    private val gson = Gson()
 
-    override fun serve(session: IHTTPSession): Response {
-        return when {
+    fun pairingUrl(ipAddress: String): String = pairing.pairingUrl(ipAddress, listeningPort)
+
+    override fun serve(session: IHTTPSession): Response = pairing.respond(session) {
+        when {
             session.method == Method.GET && session.uri == "/" -> serveWebPage()
             session.method == Method.GET && session.uri == "/api/pattern" -> serveCurrentPattern()
             session.method == Method.POST && session.uri == "/api/pattern" -> handlePatternUpdate(session)
@@ -34,13 +37,13 @@ class CustomPosterConfigServer(
         return newFixedLengthResponse(
             Response.Status.OK,
             "application/json; charset=utf-8",
-            """{"pattern":"${pattern.replace("\"", "\\\"")}"}"""
+            gson.toJson(mapOf("pattern" to pattern))
         )
     }
 
     private fun handlePatternUpdate(session: IHTTPSession): Response {
-        val body = readUtf8Body(session)
-        val pattern = extractJsonString(body, "pattern")
+        val body = readConfigJsonBody(session)
+        val pattern = runCatching { gson.fromJson(body, PatternRequest::class.java)?.pattern }.getOrNull()
         if (pattern == null) {
             return newFixedLengthResponse(
                 Response.Status.BAD_REQUEST,
@@ -65,38 +68,7 @@ class CustomPosterConfigServer(
         )
     }
 
-    private fun extractJsonString(json: String, key: String): String? {
-        // Simple extraction without pulling in a JSON library
-        val keyPattern = "\"$key\""
-        val keyIndex = json.indexOf(keyPattern)
-        if (keyIndex < 0) return null
-        val colonIndex = json.indexOf(':', keyIndex + keyPattern.length)
-        if (colonIndex < 0) return null
-        val rest = json.substring(colonIndex + 1).trimStart()
-        if (rest.isEmpty()) return null
-        return if (rest.startsWith("\"")) {
-            val endQuote = rest.indexOf('"', 1)
-            if (endQuote < 0) null
-            else rest.substring(1, endQuote).replace("\\\"", "\"").replace("\\\\", "\\")
-        } else {
-            // unquoted value - take until comma or closing brace
-            val end = rest.indexOfFirst { it == ',' || it == '}' }
-            if (end < 0) rest.trim() else rest.substring(0, end).trim()
-        }
-    }
-
-    private fun readUtf8Body(session: IHTTPSession): String {
-        val length = session.headers["content-length"]?.toIntOrNull() ?: return ""
-        if (length <= 0) return ""
-        val buffer = ByteArray(length)
-        var offset = 0
-        while (offset < length) {
-            val read = session.inputStream.read(buffer, offset, length - offset)
-            if (read <= 0) break
-            offset += read
-        }
-        return String(buffer, 0, offset, StandardCharsets.UTF_8)
-    }
+    private data class PatternRequest(val pattern: String?)
 
     companion object {
         fun startOnAvailablePort(

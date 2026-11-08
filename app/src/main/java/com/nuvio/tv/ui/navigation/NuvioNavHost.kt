@@ -286,6 +286,9 @@ private fun PlaybackNavHost(
                 },
                 onNavigateToFolderDetail = { collectionId, folderId ->
                     navController.navigate(Screen.FolderDetail.createRoute(collectionId, folderId))
+                },
+                onSetupContentSources = {
+                    navController.navigate(Screen.AddonManager.route) { launchSingleTop = true }
                 }
             )
         }
@@ -361,6 +364,9 @@ private fun PlaybackNavHost(
                 heroBackdropUrl = heroBackdropUrl,
                 playOnLoad = playOnLoad,
                 playOnLoadManually = manualSelection,
+                onSetupPlayback = {
+                    navController.navigate(Screen.AddonManager.route) { launchSingleTop = true }
+                },
                 onReturnFocusConsumed = {
                     savedState["returnFocusSeason"] = null
                     savedState["returnFocusEpisode"] = null
@@ -916,6 +922,8 @@ private fun PlaybackNavHost(
                     val focusSeason = currentSeason ?: initialSeason
                     val focusEpisode = currentEpisode ?: initialEpisode
                     fun returnToDetail() {
+                        // Match the hidden detail entry before restoring caller-owned focus state.
+                        @Suppress("RestrictedApi")
                         val detailEntry = navController.currentBackStack.value
                             .lastOrNull {
                                 val itemId = it.arguments?.getString("itemId").orEmpty()
@@ -1033,6 +1041,8 @@ private fun PlaybackNavHost(
                         }
                     } else {
                         if (exitReason == PlayerExitReason.StillWatchingPrompt) {
+                            // Match the hidden detail entry before restoring caller-owned focus state.
+                            @Suppress("RestrictedApi")
                             val detailEntry = navController.currentBackStack.value
                                 .lastOrNull { it.destination.route?.startsWith("detail/") == true }
                             if (detailEntry != null) {
@@ -1074,6 +1084,8 @@ private fun PlaybackNavHost(
                             val focusSeason = args?.getString("season")?.toIntOrNull()
                             val focusEpisode = args?.getString("episode")?.toIntOrNull()
                             if (contentId.isNotBlank()) {
+                                // Match the hidden detail entry before restoring caller-owned focus state.
+                                @Suppress("RestrictedApi")
                                 val detailEntry = navController.currentBackStack.value
                                     .lastOrNull {
                                         val itemId = it.arguments?.getString("itemId").orEmpty()
@@ -1445,7 +1457,7 @@ private fun PlaybackNavHost(
 
             // When coming from search, get the SearchViewModel from the Search back stack entry
             // so we share the same data (existing results + pagination)
-            val searchBackStackEntry = androidx.compose.runtime.remember(fromSearch) {
+            val searchBackStackEntry = androidx.compose.runtime.remember(backStackEntry, fromSearch) {
                 if (fromSearch) {
                     try { navController.getBackStackEntry(Screen.Search.route) } catch (_: Exception) { null }
                 } else null
@@ -1454,7 +1466,7 @@ private fun PlaybackNavHost(
                 if (searchBackStackEntry != null) {
                     androidx.hilt.navigation.compose.hiltViewModel<com.nuvio.tv.ui.screens.search.SearchViewModel>(searchBackStackEntry)
                 } else null
-            val homeBackStackEntry = androidx.compose.runtime.remember {
+            val homeBackStackEntry = androidx.compose.runtime.remember(backStackEntry) {
                 try { navController.getBackStackEntry(Screen.Home.route) } catch (_: Exception) { null }
             }
             val homeViewModel: com.nuvio.tv.ui.screens.home.HomeViewModel =

@@ -22,10 +22,13 @@ import com.nuvio.tv.data.repository.PlaybackIssueReportInput
 import com.nuvio.tv.data.repository.SkipInterval
 import com.nuvio.tv.domain.model.WatchProgress
 import java.io.IOException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal const val AUDIO_AMPLIFICATION_MIN_DB = 0
 internal const val AUDIO_AMPLIFICATION_MAX_DB = 10
@@ -213,6 +216,9 @@ internal fun PlayerRuntimeController.skipInterval(interval: SkipInterval): Boole
     } else SeekParameters.NEXT_SYNC
     val requested = seekMs.coerceAtMost(duration)
     val target = if (isPartyControlLocked) ownSeekTarget(requested) ?: return false else requested
+    if (interval.type == "movie-credits" || interval.type in PlayerNextEpisodeRules.OUTRO_SEGMENT_TYPES) {
+        suppressPlaybackCleanup()
+    }
     seekPlaybackTo(target, seekParameters)
     scheduleProgressSyncAfterSeek()
     publishPartyPlayback(positionMs = target)
@@ -347,30 +353,30 @@ internal fun PlayerRuntimeController.startProgressUpdates() {
                     subtitleCueTracker.updateText(view.currentSubtitleText())
                     val cacheBuffering = view.isPausedForCacheNow() || view.isCoreIdleNow()
                     var firstFrameReady = hasRenderedFirstFrame
-                        if (!firstFrameReady) {
-                            firstFrameReady = view.isPositionFromRequestedMedia() &&
-                                (pos > 0L || (playingNow && !cacheBuffering && playerDuration > 0L))
-                            if (firstFrameReady) {
-                                hasRenderedFirstFrame = true
-                                resetMpvStartupWatchdog()
-                                scheduleMpvStableProgressReset()
-                                val clickToFirstFrameMs = launchStartedAtElapsedMs
-                                    ?.let { (android.os.SystemClock.elapsedRealtime() - it).coerceAtLeast(0L) }
-                                    ?: -1L
-                                val initToFirstFrameMs = (System.currentTimeMillis() - playerInitializationStartedAtMs)
-                                    .coerceAtLeast(0L)
-                                playbackAnalyticsDiagnostics.recordRawEventLine(
-                                    "PLAYBACK_STARTUP: clickToFirstFrameMs=$clickToFirstFrameMs " +
-                                        "initToFirstFrameMs=$initToFirstFrameMs playbackSpeed=${_uiState.value.playbackSpeed} " +
-                                        "currentPositionMs=$pos durationMs=$playerDuration engine=MPV " +
-                                        "host=${currentStreamUrl.safePlaybackEventsHost()}"
-                                )
-                                finishLoadingDiagnostics("mpv_first_frame_ready")
-                                if (_uiState.value.postPlayDismissedForCurrentEpisode) {
-                                    _uiState.update { it.copy(postPlayDismissedForCurrentEpisode = false) }
-                                }
+                    if (!firstFrameReady) {
+                        firstFrameReady = view.isPositionFromRequestedMedia() &&
+                            (pos > 0L || (playingNow && !cacheBuffering && playerDuration > 0L))
+                        if (firstFrameReady) {
+                            hasRenderedFirstFrame = true
+                            resetMpvStartupWatchdog()
+                            scheduleMpvStableProgressReset()
+                            val clickToFirstFrameMs = launchStartedAtElapsedMs
+                                ?.let { (android.os.SystemClock.elapsedRealtime() - it).coerceAtLeast(0L) }
+                                ?: -1L
+                            val initToFirstFrameMs = (System.currentTimeMillis() - playerInitializationStartedAtMs)
+                                .coerceAtLeast(0L)
+                            playbackAnalyticsDiagnostics.recordRawEventLine(
+                                "PLAYBACK_STARTUP: clickToFirstFrameMs=$clickToFirstFrameMs " +
+                                    "initToFirstFrameMs=$initToFirstFrameMs playbackSpeed=${_uiState.value.playbackSpeed} " +
+                                    "currentPositionMs=$pos durationMs=$playerDuration engine=MPV " +
+                                    "host=${currentStreamUrl.safePlaybackEventsHost()}"
+                            )
+                            finishLoadingDiagnostics("mpv_first_frame_ready")
+                            if (_uiState.value.postPlayDismissedForCurrentEpisode) {
+                                _uiState.update { it.copy(postPlayDismissedForCurrentEpisode = false) }
                             }
                         }
+                    }
                     maybeRunMpvStartupWatchdog(view)
                     if (playerDuration > lastKnownDuration) {
                         lastKnownDuration = playerDuration
@@ -394,7 +400,12 @@ internal fun PlayerRuntimeController.startProgressUpdates() {
                     val eofNow = view.isEofReached()
                     if (!eofNow) mpvEofSeenClear = true
                     val mpvEofReached = mpvEofSeenClear && eofNow
-                    val naturalEnded = !view.isLiveStreamNow() && (nearEnd || mpvEofReached) && shouldTreatAsNaturalPlaybackCompletion(
+                    val exactMpvEof = mpvEofReached && mpvActivePlaylistEntryId != null &&
+                        view.isRequestedMediaActive(currentStreamUrl)
+                    if (exactMpvEof) requestCleanupAfterRendererEof(pos, effectiveDuration)
+                    // keep-open retains the file at EOF. Let an advancing renderer reach it.
+                    val stoppedNearEnd = nearEnd && !playingNow && !cacheBuffering
+                    val naturalEnded = !view.isLiveStreamNow() && (stoppedNearEnd || mpvEofReached) && shouldTreatAsNaturalPlaybackCompletion(
                         hasRenderedFirstFrame = firstFrameReady,
                         hasFatalError = !_uiState.value.error.isNullOrBlank(),
                         durationMs = effectiveDuration
@@ -450,6 +461,7 @@ internal fun PlayerRuntimeController.startProgressUpdates() {
                     rebufferCount = rebufferCount,
                     rebufferTotalMs = rebufferTotalMs
                 )
+                maybeRecoverExoEndOfStream(player)
                 // Update torrent rebuffer progress from ExoPlayer's buffer state
                 if (isTorrentStream && _uiState.value.isBuffering && hasRenderedFirstFrame) {
                     val bufferedAheadMs = (player.bufferedPosition - pos).coerceAtLeast(0)
@@ -831,6 +843,51 @@ internal fun PlayerRuntimeController.handleNaturalPlaybackEnded() {
     resetPostPlayStateAfterPlaybackEnded()
 }
 
+private fun PlayerRuntimeController.playbackCleanupSource() = PlaybackCleanupSource(
+    url = currentStreamUrl,
+    videoId = currentVideoId,
+    cloudSessionToken = cloudSessionToken.takeIf { contentType.equals("cloud", ignoreCase = true) }
+)
+
+internal fun PlayerRuntimeController.suppressPlaybackCleanup() {
+    playbackCleanupGate.suppress(playbackCleanupSource())
+}
+
+internal fun PlayerRuntimeController.suppressPlaybackCleanupForSeek(positionMs: Long) {
+    val durationMs = currentPlaybackDurationMs()
+    if (positionMs > 0L && (durationMs <= 0L || durationMs - positionMs <= CLEANUP_EOF_TOLERANCE_MS)) {
+        suppressPlaybackCleanup()
+    }
+}
+
+internal fun PlayerRuntimeController.requestCleanupAfterRendererEof(positionMs: Long, durationMs: Long) {
+    val state = _uiState.value
+    val source = playbackCleanupSource()
+    if (contentType.equals("cloud", ignoreCase = true)) {
+        val cloud = cloudPlaybackContext ?: return
+        val file = cloud.currentFile ?: return
+        if (source.cloudSessionToken == null || source.videoId != cloud.videoId(file)) return
+    }
+    val validRendererEof = !isReleasingPlayer && !isInBackground && !userPausedManually &&
+        state.pendingExitReason == null && !_playbackTimeline.value.isLive &&
+        !pendingSeekFlush && !isScrubbingModeActive && pendingPreviewSeekPosition == null &&
+        shouldTreatAsNaturalPlaybackCompletion(hasRenderedFirstFrame, !state.error.isNullOrBlank(), durationMs)
+    if (source.url.isBlank() || !playbackCleanupGate.claim(source, validRendererEof, positionMs, durationMs)) return
+
+    // The player screen can leave immediately after a verified renderer EOF.
+    scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        withContext(NonCancellable) {
+            runCatching {
+                cloudLibraryRepository.deleteAfterCompletedPlayback(source.cloudSessionToken, source.url)
+            }.onSuccess { deleted ->
+                if (deleted) Log.i(PlayerRuntimeController.TAG, "Removed completed playback from the cloud library")
+            }.onFailure {
+                Log.w(PlayerRuntimeController.TAG, "Could not complete cloud library cleanup")
+            }
+        }
+    }
+}
+
 /**
  * Cancels any in-flight next-episode auto-play / still-watching prompt when a
  * fatal player error is shown. Callers should also clear [PlayerUiState.playbackEnded]
@@ -887,6 +944,7 @@ internal fun PlayerRuntimeController.saveWatchProgressInternal(position: Long, d
         .copy(progressPercent = fallbackPercent)
     val owner = PlayerProgressWriteOwner(profileId, progress.contentId, progress.contentType,
         progress.videoId, progress.season, progress.episode)
+    val origin = playbackOrigin
     val completedWhenCaptured = hasMarkedCurrentEpisodeCompleted
     val request = progressWriteCoordinator.capture(owner, completedWhenCaptured) ?: return
 
@@ -899,7 +957,7 @@ internal fun PlayerRuntimeController.saveWatchProgressInternal(position: Long, d
             )
             val normalizedProgress = progress.copy(
                 contentId = effectiveContentId,
-                localPlaybackScope = localPlaybackScope.await()
+                localPlaybackScope = origin.await().localPlaybackScope
             )
             progressWriteCoordinator.writeIfCurrent(request, normalizedProgress.isCompleted()) {
                 // An outgoing episode can still finish saving, but its completion latch belongs
@@ -910,10 +968,8 @@ internal fun PlayerRuntimeController.saveWatchProgressInternal(position: Long, d
                 if (normalizedProgress.isCompleted()) {
                     if (!alreadyCompleted) {
                         if (writesCurrentVideo) hasMarkedCurrentEpisodeCompleted = true
-                        watchProgressRepository.markAsCompleted(
-                            normalizedProgress,
-                            profileId = owner.profileId,
-                            broadcastTrackingHistory = false
+                        watchProgressRepository.savePlaybackProgress(
+                            normalizedProgress, owner.profileId, origin.await(), completed = true
                         )
                     }
                     if (owner == currentProgressWriteOwner() && progressWriteCoordinator.mayPublish(request)) {
@@ -922,10 +978,8 @@ internal fun PlayerRuntimeController.saveWatchProgressInternal(position: Long, d
                 } else if (!alreadyCompleted) {
                     // Never replace completion with a stale final low-progress reading. Explicit
                     // Start from beginning invalidates that pass and opens a new progress session.
-                    watchProgressRepository.saveProgress(
-                        normalizedProgress,
-                        profileId = owner.profileId,
-                        syncRemote = syncRemote
+                    watchProgressRepository.savePlaybackProgress(
+                        normalizedProgress, owner.profileId, origin.await(), syncRemote = syncRemote
                     )
                     if (owner == currentProgressWriteOwner() && progressWriteCoordinator.mayPublish(request)) {
                         runCatching { tvRecommendationManager.updateSingleWatchNextProgram(normalizedProgress) }
@@ -964,6 +1018,7 @@ internal fun PlayerRuntimeController.currentPlaybackProgressPercent(): Float {
 }
 
 internal fun PlayerRuntimeController.refreshScrobbleItem() {
+    preparePlaybackOriginForCurrentOwner()
     currentScrobbleItem = buildScrobbleItem()
     hasSentScrobbleStartForCurrentItem = false
     hasRequestedScrobbleStartForCurrentItem = false
@@ -1016,6 +1071,7 @@ internal fun PlayerRuntimeController.emitScrobbleStart() {
     }
 
     hasRequestedScrobbleStartForCurrentItem = true
+    val origin = playbackOrigin
     val requestGeneration = ++scrobbleStartRequestGeneration
     logScrobbleDiagnostic("start_queued", "requestGeneration=$requestGeneration")
     scope.launch {
@@ -1036,7 +1092,8 @@ internal fun PlayerRuntimeController.emitScrobbleStart() {
         logScrobbleDiagnostic("start_dispatching", "requestGeneration=$requestGeneration progress=$progressPercent")
         val failures = trackingScrobbleCoordinator.scrobble(
             action = TrackingScrobbleAction.START,
-            event = TrackingScrobbleEvent(item, progressPercent.toDouble())
+            event = TrackingScrobbleEvent(item, progressPercent.toDouble()),
+            origin = origin.await()
         )
         logScrobbleDiagnostic(
             "start_dispatched",
@@ -1070,12 +1127,14 @@ internal fun PlayerRuntimeController.emitScrobbleStop(progressPercent: Float? = 
     }
 
     val percent = provided ?: currentPlaybackProgressPercent()
+    val origin = playbackOrigin
     logScrobbleDiagnostic("stop_queued", "progress=$percent")
     scope.launch(kotlinx.coroutines.NonCancellable) {
         logScrobbleDiagnostic("stop_dispatching", "progress=$percent")
         val failures = trackingScrobbleCoordinator.scrobble(
             action = TrackingScrobbleAction.STOP,
-            event = TrackingScrobbleEvent(item, percent.toDouble())
+            event = TrackingScrobbleEvent(item, percent.toDouble()),
+            origin = origin.await()
         )
         logScrobbleDiagnostic("stop_dispatched", "progress=$percent failures=${failures.map { it.providerId.storageId }}")
     }
@@ -1105,12 +1164,14 @@ internal fun PlayerRuntimeController.emitScrobblePause(progressPercent: Float? =
         )
         return
     }
+    val origin = playbackOrigin
     logScrobbleDiagnostic("pause_queued", "progress=$percent")
     scope.launch(kotlinx.coroutines.NonCancellable) {
         logScrobbleDiagnostic("pause_dispatching", "progress=$percent")
         val failures = trackingScrobbleCoordinator.scrobble(
             action = TrackingScrobbleAction.PAUSE,
-            event = TrackingScrobbleEvent(item, percent.toDouble())
+            event = TrackingScrobbleEvent(item, percent.toDouble()),
+            origin = origin.await()
         )
         logScrobbleDiagnostic("pause_dispatched", "progress=$percent failures=${failures.map { it.providerId.storageId }}")
     }
@@ -1151,15 +1212,18 @@ internal fun PlayerRuntimeController.emitSeekScrobbleRestart(progressPercent: Fl
     if (isShortPlaceholderStream()) return
     val item = currentScrobbleItem ?: return
     if (!hasRequestedScrobbleStartForCurrentItem) return
+    val origin = playbackOrigin
     scope.launch {
         trackingScrobbleCoordinator.scrobbleSeek(
             action = TrackingScrobbleAction.STOP,
-            event = TrackingScrobbleEvent(item, progressPercent.toDouble())
+            event = TrackingScrobbleEvent(item, progressPercent.toDouble()),
+            origin = origin.await()
         )
-        if (isPlaybackCurrentlyPlaying()) {
+        if (origin === playbackOrigin && currentScrobbleItem == item && isPlaybackCurrentlyPlaying()) {
             trackingScrobbleCoordinator.scrobbleSeek(
                 action = TrackingScrobbleAction.START,
-                event = TrackingScrobbleEvent(item, currentPlaybackProgressPercent().toDouble())
+                event = TrackingScrobbleEvent(item, currentPlaybackProgressPercent().toDouble()),
+                origin = origin.await()
             )
         }
     }

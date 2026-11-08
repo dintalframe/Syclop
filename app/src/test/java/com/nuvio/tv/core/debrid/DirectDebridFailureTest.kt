@@ -5,6 +5,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DirectDebridFailureTest {
+    @Test fun `HTTP 451 remains an explicit source refusal distinct from account or network failure`() {
+        val failure = directDebridHttpFailure(451, "realdebrid").detail
+        assertEquals(DirectDebridFailureReason.SOURCE_REJECTED, failure.reason)
+        assertEquals("realdebrid", failure.providerId)
+        assertNull(failure.retryAfterSeconds)
+        assertEquals(com.nuvio.tv.R.string.syclop_resolver_source_rejected, failure.messageRes)
+        assertEquals(DirectDebridFailureReason.NETWORK_FAILURE, directDebridHttpFailure(503, "realdebrid").detail.reason)
+        assertEquals(DirectDebridFailureReason.UNAVAILABLE, directDebridHttpFailure(404, "realdebrid").detail.reason)
+    }
     @Test fun `HTTP and transport classifications never copy credential bearing messages`() {
         assertEquals(DirectDebridFailureReason.AUTH_EXPIRED, directDebridHttpFailure(401, "realdebrid").detail.reason)
         assertEquals(DirectDebridFailureReason.RATE_LIMITED, directDebridHttpFailure(429, "realdebrid", "120").detail.reason)

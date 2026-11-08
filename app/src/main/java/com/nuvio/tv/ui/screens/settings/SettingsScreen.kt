@@ -154,6 +154,12 @@ private sealed interface ExperienceModeLoadState {
 
 @Composable
 private fun settingsSectionSpec(category: SettingsCategory): SettingsSectionSpec = when (category) {
+    SettingsCategory.ACCOUNTS -> SettingsSectionSpec(category, stringResource(R.string.settings_menu_connected_services), Icons.Default.Link, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.APP -> SettingsSectionSpec(category, stringResource(R.string.settings_menu_app), Icons.Default.Settings, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.SOURCES -> SettingsSectionSpec(category, stringResource(R.string.settings_menu_sources), Icons.Default.Explore, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.APPEARANCE_GROUP -> SettingsSectionSpec(category, stringResource(R.string.settings_menu_appearance), Icons.Default.Palette, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.LIBRARY -> SettingsSectionSpec(category, stringResource(R.string.settings_menu_library), Icons.Default.Sync, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.ADVANCED_GROUP -> SettingsSectionSpec(category, stringResource(R.string.settings_advanced), Icons.Default.Build, destination = SettingsSectionDestination.Inline)
     SettingsCategory.ACCOUNT -> SettingsSectionSpec(category, stringResource(R.string.settings_account), Icons.Default.Person, destination = SettingsSectionDestination.Inline)
     SettingsCategory.PROFILES -> SettingsSectionSpec(category, stringResource(R.string.settings_profiles), Icons.Default.People, destination = SettingsSectionDestination.Inline)
     SettingsCategory.WATCH_PARTY -> SettingsSectionSpec(category, stringResource(R.string.party_title), Icons.Rounded.Groups, destination = SettingsSectionDestination.Inline)
@@ -162,6 +168,8 @@ private fun settingsSectionSpec(category: SettingsCategory): SettingsSectionSpec
     SettingsCategory.CONTENT_DISCOVERY -> SettingsSectionSpec(category, stringResource(R.string.settings_content_discovery), Icons.Default.Explore, destination = SettingsSectionDestination.Inline)
     SettingsCategory.PLAYBACK -> SettingsSectionSpec(category, stringResource(R.string.settings_playback), Icons.Rounded.PlayArrow, destination = SettingsSectionDestination.Inline)
     SettingsCategory.INTEGRATION -> SettingsSectionSpec(category, stringResource(R.string.settings_integration), Icons.Default.Link, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.STREAMING_SERVICES -> SettingsSectionSpec(category, stringResource(R.string.settings_menu_streaming_services), Icons.Default.CloudDownload, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.PLUGINS -> SettingsSectionSpec(category, stringResource(R.string.plugin_title), Icons.Default.Build, destination = SettingsSectionDestination.External)
     SettingsCategory.TRACKING -> SettingsSectionSpec(category, stringResource(R.string.settings_tracking_title), Icons.Default.Sync, destination = SettingsSectionDestination.Inline)
     SettingsCategory.ADVANCED -> SettingsSectionSpec(category, stringResource(R.string.settings_advanced), Icons.Default.Build, destination = SettingsSectionDestination.Inline)
     SettingsCategory.ABOUT -> SettingsSectionSpec(category, stringResource(R.string.about_title), Icons.Default.Info, destination = SettingsSectionDestination.Inline)
@@ -204,41 +212,28 @@ fun SettingsScreen(
 
     val isEssentialMode = loadedExperienceMode == ExperienceMode.ESSENTIAL
 
-    val visibleCategories = remember(isPrimaryProfileActive, isEssentialMode, isWatchPartyAvailable) {
-        visibleSettingsCategories(
-            isPrimaryProfile = isPrimaryProfileActive,
-            isEssentialMode = isEssentialMode,
-            isDebugBuild = BuildConfig.IS_DEBUG_BUILD,
-            isWatchPartyAvailable = isWatchPartyAvailable
-        )
-    }
+    val visibleCategories = remember { visibleSettingsCategories() }
     val visibleSections = visibleCategories.map { category -> settingsSectionSpec(category) }
+    val availableCategories = remember(isPrimaryProfileActive, isEssentialMode, isWatchPartyAvailable) {
+        availableSettingsCategories(isPrimaryProfileActive, isEssentialMode, BuildConfig.IS_DEBUG_BUILD, isWatchPartyAvailable,
+            AppFeaturePolicy.pluginsEnabled, BuildConfig.LOCAL_ONLY_BUILD)
+    }
 
     val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     val isHorizonStyle = NuvioTheme.settingsUiStyle == SettingsUiStyle.HORIZON
     var selectedCategory by rememberSaveable {
         mutableStateOf(
-            visibleSections.firstOrNull()?.category ?: SettingsCategory.APPEARANCE
+            visibleCategories.first()
         )
     }
+    val selectedRailCategory = settingsRailCategory(selectedCategory)
+    var menuReturnCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
+    val menuReturnCategory = SettingsCategory.entries.firstOrNull { it.name == menuReturnCategoryName }
     val railFocusRequesters = remember(visibleSections) {
         visibleSections.associate { it.category to FocusRequester() }
     }
     val contentFocusRequesters = remember {
-        mapOf(
-            SettingsCategory.APPEARANCE to FocusRequester(),
-            SettingsCategory.EXPERIENCE to FocusRequester(),
-            SettingsCategory.PROFILES to FocusRequester(),
-            SettingsCategory.WATCH_PARTY to FocusRequester(),
-            SettingsCategory.LAYOUT to FocusRequester(),
-            SettingsCategory.CONTENT_DISCOVERY to FocusRequester(),
-            SettingsCategory.INTEGRATION to FocusRequester(),
-            SettingsCategory.TRACKING to FocusRequester(),
-            SettingsCategory.PLAYBACK to FocusRequester(),
-            SettingsCategory.ADVANCED to FocusRequester(),
-            SettingsCategory.ABOUT to FocusRequester(),
-            SettingsCategory.ACCOUNT to FocusRequester()
-        )
+        SettingsCategory.entries.associateWith { FocusRequester() }
     }
     val railContainerFocusRequester = remember { FocusRequester() }
     val integrationHubFocusRequester = remember { FocusRequester() }
@@ -261,11 +256,12 @@ fun SettingsScreen(
     var railFocusCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
     val railFocusCategory = railFocusCategoryName
         ?.let { name -> SettingsCategory.entries.firstOrNull { it.name == name } }
+        ?.let(::settingsRailCategory)
         // The name surviving is not enough. Which categories the rail shows depends on the profile
         // and on essential mode, so the one that was left can be gone by the time it is returned
         // to. Restoring to it would spend the whole retry window on an item that is not there.
         ?.takeIf { category -> visibleSections.any { it.category == category } }
-        ?: selectedCategory
+        ?: selectedRailCategory
     val railListState = rememberLazyListState()
     val railScope = rememberCoroutineScope()
 
@@ -351,10 +347,35 @@ fun SettingsScreen(
         }
     }
 
-    // Back inside the options pane returns to the category rail before it leaves settings, the
+    val openSettingsCategory: (SettingsCategory) -> Unit = { category ->
+        if (category in availableCategories) {
+            railFocusCategoryName = settingsRailCategory(category).name
+            if (settingsBackTarget(category) != null) menuReturnCategoryName = category.name
+            if (category == SettingsCategory.PLUGINS) {
+                allowDetailAutofocus = true
+                selectedCategory = SettingsCategory.ADVANCED_GROUP
+                onNavigateToPlugins()
+            } else {
+                if (category == SettingsCategory.INTEGRATION && selectedCategory != category)
+                    integrationSection = IntegrationSettingsSection.Hub
+                allowDetailAutofocus = true
+                selectedCategory = category
+                pendingContentFocusCategory = category
+                pendingContentFocusRequestId += 1L
+            }
+        }
+    }
+
+    // Back inside the options pane returns to its menu before the rail and then Settings, the
     // way back inside a row returns to the start of that row. Anything the pane declares itself,
     // such as the integrations sub sections, composes later and so is asked first.
     BackHandler(enabled = detailHasFocus) {
+        val parent = settingsBackTarget(selectedCategory)
+        if (parent != null) {
+            menuReturnCategoryName = selectedCategory.name
+            openSettingsCategory(parent)
+            return@BackHandler
+        }
         // Cleared up front rather than after the request. The rail reports its own focus a frame
         // later, and until it does a second quick press would be consumed here again instead of
         // leaving settings. The result of the request is deliberately not read: either way this
@@ -365,9 +386,10 @@ fun SettingsScreen(
 
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(visibleSections) {
-        if (visibleSections.none { it.category == selectedCategory }) {
-            selectedCategory = visibleSections.firstOrNull()?.category ?: SettingsCategory.APPEARANCE
+    LaunchedEffect(availableCategories) {
+        if (selectedCategory !in availableCategories) {
+            selectedCategory = selectedRailCategory.takeIf { it in visibleCategories }
+                ?: visibleCategories.first()
         }
     }
 
@@ -433,25 +455,20 @@ fun SettingsScreen(
                         else -> Unit
                     }
                 } else {
-                    if (section.category == SettingsCategory.INTEGRATION) {
-                        integrationSection = IntegrationSettingsSection.Hub
-                    }
-                    allowDetailAutofocus = true
-                    selectedCategory = section.category
-                    pendingContentFocusCategory = section.category
-                    pendingContentFocusRequestId += 1L
+                    openSettingsCategory(section.category)
                 }
             }
 
             var focusedTabCategory by remember { mutableStateOf<SettingsCategory?>(null) }
             var lastRailFocusChangeMs by remember { mutableLongStateOf(0L) }
             val selectFocusedTab: (SettingsCategory) -> Unit = { category ->
-                if (selectedCategory != category) {
+                val destination = settingsCategoryOnRailFocus(selectedCategory, category)
+                if (selectedCategory != destination) {
                     if (category == SettingsCategory.INTEGRATION) {
                         integrationSection = IntegrationSettingsSection.Hub
                     }
                     allowDetailAutofocus = false
-                    selectedCategory = category
+                    selectedCategory = destination
                 }
             }
 
@@ -564,7 +581,7 @@ fun SettingsScreen(
                                         title = section.title,
                                         icon = section.icon,
                                         rawIconRes = section.rawIconRes,
-                                        isSelected = selectedCategory == section.category,
+                                        isSelected = selectedRailCategory == section.category,
                                         focusRequester = railFocusRequesters[section.category],
                                         onClick = { onSectionClick(section) },
                                         onFocused = {
@@ -618,7 +635,7 @@ fun SettingsScreen(
                                 .fillMaxWidth(),
                             transitionSpec = {
                                 val order = visibleSections.map { it.category }
-                                val forward = order.indexOf(targetState) >= order.indexOf(initialState)
+                                val forward = order.indexOf(settingsRailCategory(targetState)) >= order.indexOf(settingsRailCategory(initialState))
                                 val toStart = forward != isRtl
                                 (slideInHorizontally(
                                     animationSpec = tween(SETTINGS_DETAIL_ANIM_IN_DURATION_MS, easing = FastOutSlowInEasing)
@@ -635,9 +652,10 @@ fun SettingsScreen(
                         ) { animatedCategory ->
                             SettingsDetailPane(
                                 selectedCategory = animatedCategory,
-                                onOpenSettingsCategory = { category ->
-                                    visibleSections.firstOrNull { it.category == category }?.let(onSectionClick)
-                                },
+                                onOpenSettingsCategory = openSettingsCategory,
+                                isPrimaryProfile = isPrimaryProfileActive,
+                                isWatchPartyAvailable = isWatchPartyAvailable,
+                                menuReturnCategory = menuReturnCategory,
                                 isEssentialMode = isEssentialMode,
                                 allowDetailAutofocus = allowDetailAutofocus,
                                 contentFocusRequesters = contentFocusRequesters,
@@ -667,7 +685,7 @@ fun SettingsScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .width(220.dp)
+                        .width(244.dp)
                         .fillMaxHeight()
                 ) {
                     LazyColumn(
@@ -709,11 +727,11 @@ fun SettingsScreen(
                                 }
                                 val toDetailKey = if (isRtl) Key.DirectionLeft else Key.DirectionRight
                                 if (event.type == KeyEventType.KeyDown && event.key == toDetailKey) {
-                                    val pendingSection = focusedTabCategory
-                                        ?.takeIf { it != selectedCategory || !allowDetailAutofocus }
-                                        ?.let { category -> visibleSections.firstOrNull { it.category == category } }
-                                    if (pendingSection != null) {
-                                        onSectionClick(pendingSection)
+                                    val target = focusedTabCategory?.let {
+                                        settingsCategoryOnRailFocus(selectedCategory, it)
+                                    }
+                                    if (target != null) {
+                                        openSettingsCategory(target)
                                         true
                                     } else {
                                         allowDetailAutofocus = true
@@ -753,7 +771,7 @@ fun SettingsScreen(
                                     title = section.title,
                                     icon = section.icon,
                                     rawIconRes = section.rawIconRes,
-                                    isSelected = selectedCategory == section.category,
+                                    isSelected = selectedRailCategory == section.category,
                                     focusRequester = railFocusRequesters[section.category],
                                     onClick = { onSectionClick(section) },
                                     suppressSelectedVisual = railHadFocus
@@ -792,9 +810,10 @@ fun SettingsScreen(
                 ) {
                     SettingsDetailPane(
                         selectedCategory = selectedCategory,
-                        onOpenSettingsCategory = { category ->
-                            visibleSections.firstOrNull { it.category == category }?.let(onSectionClick)
-                        },
+                        onOpenSettingsCategory = openSettingsCategory,
+                        isPrimaryProfile = isPrimaryProfileActive,
+                        isWatchPartyAvailable = isWatchPartyAvailable,
+                        menuReturnCategory = menuReturnCategory,
                         isEssentialMode = isEssentialMode,
                         allowDetailAutofocus = allowDetailAutofocus,
                         contentFocusRequesters = contentFocusRequesters,
@@ -825,6 +844,9 @@ fun SettingsScreen(
 private fun SettingsDetailPane(
     selectedCategory: SettingsCategory,
     onOpenSettingsCategory: (SettingsCategory) -> Unit,
+    isPrimaryProfile: Boolean,
+    isWatchPartyAvailable: Boolean,
+    menuReturnCategory: SettingsCategory?,
     isEssentialMode: Boolean,
     allowDetailAutofocus: Boolean,
     contentFocusRequesters: Map<SettingsCategory, FocusRequester>,
@@ -844,15 +866,26 @@ private fun SettingsDetailPane(
     onNavigateToLicensesAttributions: () -> Unit,
     onNavigateToWatchParty: () -> Unit
 ) {
+    if (selectedCategory !in availableSettingsCategories(isPrimaryProfile, isEssentialMode,
+            BuildConfig.IS_DEBUG_BUILD, isWatchPartyAvailable, AppFeaturePolicy.pluginsEnabled, BuildConfig.LOCAL_ONLY_BUILD)) return
     when (selectedCategory) {
-        SettingsCategory.EXPERIENCE -> EssentialAdvancedSettingsContent(
-            experienceModeViewModel = experienceModeViewModel,
-            initialFocusRequester = if (allowDetailAutofocus) {
-                contentFocusRequesters[SettingsCategory.EXPERIENCE]
-            } else {
-                null
-            }
+        SettingsCategory.ACCOUNTS, SettingsCategory.APP, SettingsCategory.ADVANCED_GROUP -> SettingsMenuContent(
+            category = selectedCategory,
+            entries = settingsSubcategories(selectedCategory, isPrimaryProfile, isEssentialMode,
+                BuildConfig.IS_DEBUG_BUILD, isWatchPartyAvailable, AppFeaturePolicy.pluginsEnabled, BuildConfig.LOCAL_ONLY_BUILD),
+            preferredFocusCategory = menuReturnCategory,
+            initialFocusRequester = contentFocusRequesters[selectedCategory].takeIf { allowDetailAutofocus },
+            onOpen = onOpenSettingsCategory
         )
+        SettingsCategory.LIBRARY -> TrackingSettingsContent(
+            initialFocusRequester = contentFocusRequesters[SettingsCategory.LIBRARY].takeIf { allowDetailAutofocus }
+        )
+        SettingsCategory.STREAMING_SERVICES -> DebridSettingsContent(
+            initialFocusRequester = contentFocusRequesters[SettingsCategory.STREAMING_SERVICES].takeIf { allowDetailAutofocus },
+            showAdvancedOptions = false
+        )
+        SettingsCategory.PLUGINS, SettingsCategory.SOURCES, SettingsCategory.APPEARANCE_GROUP,
+        SettingsCategory.EXPERIENCE -> Unit
         SettingsCategory.PROFILES -> ProfileSettingsContent(
             onManageProfiles = onNavigateToManageProfiles,
             initialFocusRequester = if (allowDetailAutofocus) {
@@ -881,45 +914,16 @@ private fun SettingsDetailPane(
                 contentFocusRequesters[SettingsCategory.LAYOUT]
             } else {
                 null
-            },
-            essentialMode = isEssentialMode
+            }
         )
-        SettingsCategory.PLAYBACK -> if (isEssentialMode) {
-            EssentialPlaybackSettingsContent(
-                initialFocusRequester = if (allowDetailAutofocus) {
-                    contentFocusRequesters[SettingsCategory.PLAYBACK]
-                } else {
-                    null
-                }
-            )
-        } else {
-            PlaybackSettingsContent(
-                initialFocusRequester = if (allowDetailAutofocus) {
-                    contentFocusRequesters[SettingsCategory.PLAYBACK]
-                } else {
-                    null
-                }
-            )
-        }
-        SettingsCategory.ADVANCED -> if (isEssentialMode) {
-            EssentialAdvancedSettingsContent(
-                experienceModeViewModel = experienceModeViewModel,
-                initialFocusRequester = if (allowDetailAutofocus) {
-                    contentFocusRequesters[SettingsCategory.ADVANCED]
-                } else {
-                    null
-                }
-            )
-        } else {
-            AdvancedSettingsContent(
-                initialFocusRequester = if (allowDetailAutofocus) {
-                    contentFocusRequesters[SettingsCategory.ADVANCED]
-                } else {
-                    null
-                },
-                experienceModeViewModel = experienceModeViewModel
-            )
-        }
+        SettingsCategory.PLAYBACK -> PlaybackSettingsContent(
+            initialFocusRequester = contentFocusRequesters[SettingsCategory.PLAYBACK].takeIf { allowDetailAutofocus }
+        )
+        SettingsCategory.ADVANCED -> AdvancedSettingsContent(
+            initialFocusRequester = contentFocusRequesters[SettingsCategory.ADVANCED].takeIf { allowDetailAutofocus },
+            experienceModeViewModel = experienceModeViewModel,
+            isEssentialMode = isEssentialMode
+        )
         SettingsCategory.INTEGRATION -> IntegrationSettingsContent(
             selectedSection = integrationSection,
             onSelectSection = onSelectIntegrationSection,
@@ -938,6 +942,7 @@ private fun SettingsDetailPane(
         SettingsCategory.ABOUT -> AboutSettingsContent(
             onNavigateToSupportersContributors = onNavigateToSupportersContributors,
             onNavigateToLicensesAttributions = onNavigateToLicensesAttributions,
+            showAppControls = false,
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.ABOUT]
             } else {
@@ -947,7 +952,7 @@ private fun SettingsDetailPane(
         SettingsCategory.CONTENT_DISCOVERY -> ContentDiscoverySettingsContent(
             onNavigateToAddons = onNavigateToAddons,
             onNavigateToPlugins = onNavigateToPlugins,
-            showPlugins = AppFeaturePolicy.pluginsEnabled && !isEssentialMode,
+            showPlugins = false,
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.CONTENT_DISCOVERY]
             } else {
@@ -966,6 +971,7 @@ private fun SettingsDetailPane(
             }
         )
         SettingsCategory.TRACKING -> TrackingSettingsContent(
+            showAdvancedOptions = false,
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.TRACKING]
             } else {
@@ -973,45 +979,6 @@ private fun SettingsDetailPane(
             }
         )
         SettingsCategory.DEBUG -> DebugSettingsContent()
-    }
-}
-
-@Composable
-private fun EssentialAdvancedSettingsContent(
-    experienceModeViewModel: ExperienceModeSettingsViewModel,
-    initialFocusRequester: FocusRequester?
-) {
-    var showConfirmation by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md)
-    ) {
-        SettingsDetailHeader(
-            title = stringResource(R.string.settings_advanced),
-            subtitle = stringResource(R.string.experience_mode_switch_to_advanced_header_subtitle)
-        )
-        SettingsGroupCard(modifier = Modifier.fillMaxWidth()) {
-            SettingsActionRow(
-                title = stringResource(R.string.experience_mode_switch_to_advanced),
-                subtitle = stringResource(R.string.experience_mode_switch_to_advanced_subtitle),
-                value = stringResource(R.string.experience_mode_essential),
-                onClick = { showConfirmation = true },
-                modifier = if (initialFocusRequester != null) {
-                    Modifier.focusRequester(initialFocusRequester)
-                } else {
-                    Modifier
-                }
-            )
-        }
-    }
-
-    if (showConfirmation) {
-        ExperienceModeConfirmationDialog(
-            targetMode = ExperienceMode.ADVANCED,
-            onConfirm = { experienceModeViewModel.setMode(ExperienceMode.ADVANCED) },
-            onDismiss = { showConfirmation = false }
-        )
     }
 }
 
@@ -1108,7 +1075,7 @@ private fun IntegrationSettingsContent(
                         ) {
                             item(key = "integration_hub_debrid") {
                                 SettingsActionRow(
-                                    title = stringResource(R.string.debrid_title),
+                                    title = stringResource(R.string.settings_menu_debrid_preferences),
                                     subtitle = stringResource(R.string.settings_debrid_subtitle),
                                     leadingIcon = Icons.Default.CloudDownload,
                                     onClick = { onSelectSection(IntegrationSettingsSection.Debrid) },

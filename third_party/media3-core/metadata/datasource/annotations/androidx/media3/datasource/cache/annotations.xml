@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.datasource.cache.CacheDataSource CacheDataSource(androidx.media3.datasource.cache.Cache, androidx.media3.datasource.DataSource, androidx.media3.datasource.DataSource, androidx.media3.datasource.DataSink, androidx.media3.datasource.cache.CacheKeyFactory, int, androidx.media3.common.PriorityTaskManager, int, androidx.media3.datasource.cache.CacheDataSource.EventListener) 5">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.FLAG_BLOCK_ON_CACHE, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.datasource.cache.CacheDataSource CacheDataSource(androidx.media3.datasource.cache.Cache, androidx.media3.datasource.DataSource, androidx.media3.datasource.DataSource, androidx.media3.datasource.DataSink, int, androidx.media3.datasource.cache.CacheDataSource.EventListener) 4">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.FLAG_BLOCK_ON_CACHE, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.datasource.cache.CacheDataSource CacheDataSource(androidx.media3.datasource.cache.Cache, androidx.media3.datasource.DataSource, androidx.media3.datasource.DataSource, androidx.media3.datasource.DataSink, int, androidx.media3.datasource.cache.CacheDataSource.EventListener, androidx.media3.datasource.cache.CacheKeyFactory) 4">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.FLAG_BLOCK_ON_CACHE, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.datasource.cache.CacheDataSource CacheDataSource(androidx.media3.datasource.cache.Cache, androidx.media3.datasource.DataSource, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.FLAG_BLOCK_ON_CACHE, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.datasource.cache.CacheDataSource void notifyCacheIgnored(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.CACHE_IGNORED_REASON_ERROR, androidx.media3.datasource.cache.CacheDataSource.CACHE_IGNORED_REASON_UNSET_LENGTH}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.datasource.cache.CacheDataSource.CacheIgnoredReason">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.CACHE_IGNORED_REASON_ERROR, androidx.media3.datasource.cache.CacheDataSource.CACHE_IGNORED_REASON_UNSET_LENGTH}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.datasource.cache.CacheDataSource.EventListener void onCacheIgnored(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.CACHE_IGNORED_REASON_ERROR, androidx.media3.datasource.cache.CacheDataSource.CACHE_IGNORED_REASON_UNSET_LENGTH}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.datasource.cache.CacheDataSource.Factory androidx.media3.datasource.cache.CacheDataSource createDataSourceInternal(androidx.media3.datasource.DataSource, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.FLAG_BLOCK_ON_CACHE, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.datasource.cache.CacheDataSource.Factory androidx.media3.datasource.cache.CacheDataSource.Factory setFlags(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.FLAG_BLOCK_ON_CACHE, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.datasource.cache.CacheDataSource.Factory flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.FLAG_BLOCK_ON_CACHE, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.datasource.cache.CacheDataSource.Flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.datasource.cache.CacheDataSource.FLAG_BLOCK_ON_CACHE, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR, androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_FOR_UNSET_LENGTH_REQUESTS}" />
+    </annotation>
+  </item>
+</root>
+

@@ -17,8 +17,12 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -74,6 +78,58 @@ class HomeEnrichmentRetryTest {
         created.forEach { it.viewModelScope.cancel() }
         created.clear()
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `effective source switch clears visible progress and awaits snapshot reset before restoring cache`() = runBlocking {
+        val source = MutableStateFlow(com.nuvio.tv.data.local.WatchProgressSource.TRAKT)
+        val events = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val releaseClear = CompletableDeferred<Unit>()
+        val cache = mockk<com.nuvio.tv.data.local.ContinueWatchingEnrichmentCache>(relaxed = true) {
+            every { cacheCleared } returns MutableStateFlow(0)
+            coEvery { saveNextUpSnapshot(emptyList(), force = true) } coAnswers {
+                events += "clear next"
+                releaseClear.await()
+            }
+            coEvery { saveInProgressSnapshot(emptyList(), force = true) } coAnswers { events += "clear progress" }
+            coEvery { getInProgressSnapshot() } coAnswers { events += "restore progress"; emptyList() }
+            coEvery { getNextUpSnapshot() } coAnswers { events += "restore next"; emptyList() }
+        }
+        val progressRepository = mockk<com.nuvio.tv.domain.repository.WatchProgressRepository>(relaxed = true) {
+            every { effectiveProgressSource } returns source
+            every { allProgress } returns emptyFlow()
+            every { watchedItems } returns emptyFlow()
+            every { observeNextUpSeeds() } returns emptyFlow()
+            every { observeRemoteProgressLoaded() } returns emptyFlow()
+        }
+        val viewModel = newViewModel(mockk(relaxed = true),
+            progressRepository = progressRepository, enrichmentCache = cache)
+        val prior = ContinueWatchingItem.InProgress(com.nuvio.tv.domain.model.WatchProgress(
+            "tt123", "movie", "Old account", null, null, null, "tt123", null, null, null, 20, 100, 50))
+        viewModel._uiState.value = viewModel._uiState.value.copy(
+            continueWatchingItems = listOf(prior), upcomingItems = listOf(prior))
+        val oldPipeline = viewModel.viewModelScope.launch {
+            try { awaitCancellation() } finally { events += "cancel pipeline" }
+        }
+        viewModel.cwPipelineJob = oldPipeline
+        viewModel.observeProgressSourceChanges()
+        // Let combine establish the initial owner before sending the connection change.
+        delay(25)
+        source.value = com.nuvio.tv.data.local.WatchProgressSource.SIMKL
+        withTimeout(3_000L) { while ("clear next" !in events) delay(5) }
+
+        assertTrue(oldPipeline.isCancelled)
+        assertTrue(viewModel._uiState.value.continueWatchingItems.isEmpty())
+        assertTrue(viewModel._uiState.value.upcomingItems.isEmpty())
+        assertEquals(listOf("cancel pipeline", "clear next"), synchronized(events) { events.toList() })
+        coVerify(exactly = 0) { cache.getInProgressSnapshot() }
+        coVerify(exactly = 0) { cache.getNextUpSnapshot() }
+
+        releaseClear.complete(Unit)
+        withTimeout(3_000L) { while ("restore next" !in events) delay(5) }
+        assertEquals(listOf("cancel pipeline", "clear next", "clear progress", "restore progress", "restore next"),
+            synchronized(events) { events.toList() })
+        coVerify(exactly = 0) { progressRepository.clearAll() }
     }
 
     @Test
@@ -421,7 +477,9 @@ class HomeEnrichmentRetryTest {
     private fun newViewModel(
         metaRepository: MetaRepository,
         tmdbService: TmdbService = mockk(relaxed = true),
-        tmdbMetadataService: TmdbMetadataService = mockk(relaxed = true)
+        tmdbMetadataService: TmdbMetadataService = mockk(relaxed = true),
+        progressRepository: com.nuvio.tv.domain.repository.WatchProgressRepository? = null,
+        enrichmentCache: com.nuvio.tv.data.local.ContinueWatchingEnrichmentCache? = null
     ): HomeViewModel {
         // Relaxed mocks hand back flows that complete without emitting, and the pipeline calls
         // first {} on several of them from launches that do not catch. Those throw
@@ -447,7 +505,7 @@ class HomeEnrichmentRetryTest {
             addonRepository = mockk(relaxed = true),
             startupSyncService = mockk(relaxed = true),
             catalogRepository = mockk(relaxed = true),
-            watchProgressRepository = watchProgressRepository,
+            watchProgressRepository = progressRepository ?: watchProgressRepository,
             libraryRepository = mockk(relaxed = true),
             metaRepository = metaRepository,
             collectionsDataStore = mockk(relaxed = true),
@@ -463,7 +521,7 @@ class HomeEnrichmentRetryTest {
             imdbEpisodeRatingsRepository = mockk(relaxed = true),
             trailerService = mockk(relaxed = true),
             watchedSeriesStateHolder = mockk(relaxed = true),
-            cwEnrichmentCache = cwEnrichmentCache,
+            cwEnrichmentCache = enrichmentCache ?: cwEnrichmentCache,
             profileManager = profileManager,
             tvRecommendationManager = mockk(relaxed = true),
             serverCatalog = mockk(relaxed = true)

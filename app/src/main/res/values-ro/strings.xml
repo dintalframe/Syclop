@@ -431,7 +431,7 @@
     <string name="trakt_stat_watched_hours">Ore vizionate</string>
     <string name="trakt_disconnect">Deconectare</string>
     <string name="trakt_disconnect_title">Deconectare Trakt?</string>
-    <string name="trakt_disconnect_subtitle">Aceasta va deconecta contul tău Trakt de Nuvio.</string>
+    <string name="trakt_disconnect_subtitle">Aceasta va deconecta contul tău Trakt de Syclop.</string>
     <string name="trakt_login">Autentificare</string>
     <string name="trakt_retry">Reîncercare</string>
     <string name="trakt_back">Înapoi</string>
@@ -553,7 +553,7 @@
     <string name="sources_playing">Redare</string>
     <string name="sources_no_streams">Nu s-au găsit fluxuri</string>
 
-    !-- EpisodesSidePanel -->
+    <!-- EpisodesSidePanel -->
     <string name="episodes_panel_close">Închide</string>
     <string name="episodes_panel_back">Înapoi</string>
     <string name="episodes_panel_reload">Reîncarcă</string>
@@ -635,7 +635,7 @@
     <string name="search_start_subtitle">Introdu cel puțin 2 caractere</string>
     <string name="search_start_subtitle_no_discover">Descoperirea este dezactivată. Introdu cel puțin 2 caractere</string>
 
-    !-- LibraryScreen -->
+    <!-- LibraryScreen -->
     <string name="library_syncing">Se sincronizează biblioteca Trakt\u2026</string>
     <string name="library_title">Bibliotecă</string>
     <string name="library_filter_list">Listă</string>
@@ -757,7 +757,7 @@
     <string name="catalog_see_all_empty_subtitle">Încearcă un catalog diferit sau revino mai târziu</string>
 
     <!-- LayoutSelectionScreen -->
-    <string name="layout_selection_welcome">Bine ai venit la Nuvio</string>
+    <string name="layout_selection_welcome">Bine ai venit la Syclop</string>
     <string name="layout_selection_subtitle">Alege aspectul ecranului de pornire</string>
     <string name="layout_selection_continue">Continuă</string>
 

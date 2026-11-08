@@ -37,6 +37,9 @@ data class CollectionManagementUiState(
     val error: String? = null
 )
 
+internal const val COLLECTIONS_EXPORT_FILENAME = "syclop-collections.json"
+private val COLLECTIONS_IMPORT_FILENAMES = listOf(COLLECTIONS_EXPORT_FILENAME, "nuvio-collections.json")
+
 @HiltViewModel
 class CollectionManagementViewModel @Inject constructor(
     private val collectionsDataStore: CollectionsDataStore,
@@ -309,13 +312,13 @@ class CollectionManagementViewModel @Inject constructor(
         val uri = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
         val projection = arrayOf(android.provider.MediaStore.Downloads._ID)
         val selection = "${android.provider.MediaStore.Downloads.DISPLAY_NAME} = ?"
-        val selectionArgs = arrayOf("nuvio-collections.json")
-        return resolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
+        return COLLECTIONS_IMPORT_FILENAMES.firstNotNullOfOrNull { filename ->
+            resolver.query(uri, projection, selection, arrayOf(filename), null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
                 val id = cursor.getLong(cursor.getColumnIndexOrThrow(android.provider.MediaStore.Downloads._ID))
                 val fileUri = android.content.ContentUris.withAppendedId(uri, id)
-                resolver.openInputStream(fileUri)?.bufferedReader()?.readText()
-            } else null
+                resolver.openInputStream(fileUri)?.bufferedReader()?.use { it.readText() }
+            }
         }
     }
 
@@ -323,7 +326,9 @@ class CollectionManagementViewModel @Inject constructor(
         val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(
             android.os.Environment.DIRECTORY_DOWNLOADS
         )
-        val file = java.io.File(downloadsDir, "nuvio-collections.json")
-        return if (file.exists()) file.readText() else null
+        return COLLECTIONS_IMPORT_FILENAMES.asSequence()
+            .map { java.io.File(downloadsDir, it) }
+            .firstOrNull { it.isFile }
+            ?.readText()
     }
 }

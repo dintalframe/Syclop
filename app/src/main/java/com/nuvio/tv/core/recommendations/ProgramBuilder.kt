@@ -5,7 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.tvprovider.media.tv.TvContractCompat
 import androidx.tvprovider.media.tv.WatchNextProgram
-import com.nuvio.tv.MainActivity
+import com.nuvio.tv.core.sync.androidtv.TvCardLaunchAuthenticator
 import com.nuvio.tv.domain.model.WatchProgress
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -13,7 +13,8 @@ import javax.inject.Singleton
 
 @Singleton
 class ProgramBuilder @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val cardLaunches: TvCardLaunchAuthenticator
 ) {
 
     fun watchNextId(progress: WatchProgress): String =
@@ -22,6 +23,8 @@ class ProgramBuilder @Inject constructor(
         else
             "wn_${progress.contentId}"
 
+    // tvprovider 1.0 exposes these documented public APIs through restricted base classes.
+    @android.annotation.SuppressLint("RestrictedApi")
     fun buildWatchNextProgram(progress: WatchProgress): WatchNextProgram {
         val isMovie = progress.contentType == "movie"
         val programType = if (isMovie) {
@@ -97,6 +100,8 @@ class ProgramBuilder @Inject constructor(
         }
     }
 
+    // tvprovider 1.0 exposes these documented public APIs through restricted base classes.
+    @android.annotation.SuppressLint("RestrictedApi")
     fun removeWatchNextByContentId(contentId: String) {
         try {
             val cursor = context.contentResolver.query(
@@ -128,6 +133,8 @@ class ProgramBuilder @Inject constructor(
         }
     }
 
+    // tvprovider 1.0 exposes these documented public APIs through restricted base classes.
+    @android.annotation.SuppressLint("RestrictedApi")
     fun getAllWatchNextInternalIds(): Set<String> {
         val result = mutableSetOf<String>()
         try {
@@ -152,6 +159,8 @@ class ProgramBuilder @Inject constructor(
         return result
     }
 
+    // tvprovider 1.0 exposes these documented public APIs through restricted base classes.
+    @android.annotation.SuppressLint("RestrictedApi")
     fun clearAllWatchNextPrograms() {
         var cursor: android.database.Cursor? = null
         try {
@@ -186,6 +195,8 @@ class ProgramBuilder @Inject constructor(
         }
     }
 
+    // tvprovider 1.0 exposes these documented public APIs through restricted base classes.
+    @android.annotation.SuppressLint("RestrictedApi")
     private fun findWatchNextByInternalId(internalId: String): Long? {
         return try {
             val cursor = context.contentResolver.query(
@@ -224,21 +235,7 @@ class ProgramBuilder @Inject constructor(
 
     private fun buildPlayUri(progress: WatchProgress): Uri =
         Uri.parse(
-            Intent(context, MainActivity::class.java).apply {
-                action = Intent.ACTION_VIEW
-                putExtra("contentId", progress.contentId)
-                putExtra("contentType", progress.contentType)
-                putExtra("videoId", progress.videoId)
-                putExtra("name", progress.name)
-                putExtra("poster", progress.poster)
-                putExtra("backdrop", progress.backdrop)
-                putExtra("logo", progress.logo)
-                progress.season?.let { putExtra("season", it) }
-                progress.episode?.let { putExtra("episode", it) }
-                progress.episodeTitle?.let { putExtra("episodeTitle", it) }
-                putExtra("launchMode", "stream")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            }.toUri(Intent.URI_INTENT_SCHEME)
+            cardLaunches.createIntent(context, progress).toUri(Intent.URI_INTENT_SCHEME)
         )
 }
 

@@ -158,6 +158,115 @@ class NativeAnimeEpisodeMappingsHttpTest {
         }
     }
 
+    @Test fun `verified mapped IMDb fetches bounded public parent episode without account headers and caches it`() = runBlocking {
+        Harness().use { h ->
+            h.server.enqueue(json(NativeAnimeParentFixtures.MAPPING))
+            h.server.enqueue(json(NativeAnimeParentFixtures.PARENT))
+            val proof = withTimeout(3_000) { h.repo.proof("mal:61990:1") }!!
+            assertEquals("tt12590266", proof.verifiedParentImdbId)
+            assertTrue(proof.matchesFile(NativeAnimeParentFixtures.RELEASE))
+            assertEquals(2, h.original.size)
+            val parent = h.original.last()
+            assertEquals("https", parent.url.scheme)
+            assertEquals("v3-cinemeta.strem.io", parent.url.host)
+            assertEquals("/meta/series/tt12590266.json", parent.url.encodedPath)
+            assertTrue(parent.url.queryParameterNames.isEmpty())
+            repeat(2) {
+                val wire = h.server.takeRequest(3, TimeUnit.SECONDS)!!
+                assertEquals("GET", wire.method)
+                assertEquals(0L, wire.bodySize)
+                for (header in listOf("Authorization", "Proxy-Authorization", "Cookie")) assertNull(wire.getHeader(header))
+            }
+            assertSame(proof, h.repo.cachedProof("mal:61990:1"))
+            assertSame(proof, h.repo.proof("mal:61990:1"))
+            assertEquals(2, h.server.requestCount)
+            assertEquals(0, h.authenticationCalls.get())
+        }
+    }
+
+    @Test fun `unavailable malformed redirected or mismatched parent metadata never expands validated mapping`() = runBlocking {
+        for (mode in listOf("unavailable", "malformed", "identity", "redirect")) {
+            Harness().use { h ->
+                h.server.enqueue(json(NativeAnimeParentFixtures.MAPPING))
+                h.server.enqueue(when (mode) {
+                    "unavailable" -> MockResponse().setResponseCode(503)
+                    "malformed" -> json("{")
+                    "identity" -> json(NativeAnimeParentFixtures.PARENT.replace("tt12590266", "tt99999999"))
+                    else -> MockResponse().setResponseCode(302).setHeader("Location", h.server.url("/must-not-follow"))
+                })
+                val proof = withTimeout(3_000) { h.repo.proof("mal:61990:1") }!!
+                assertEquals(61990L, proof.malId)
+                assertEquals(1, proof.malEpisode)
+                assertNull(mode, proof.verifiedParentImdbId)
+                assertFalse(mode, proof.matchesFile(NativeAnimeParentFixtures.RELEASE))
+                assertTrue(mode, proof.matchesFile("Cyberpunk Edgerunners 2 S02E01.mkv"))
+                assertEquals(mode, 2, h.server.requestCount)
+            }
+        }
+    }
+
+    @Test fun `optional parent timeout preserves mapping and cancels its bounded HTTP call`() = runBlocking {
+        Harness(timeoutMillis = 200L).use { h ->
+            h.server.enqueue(json(NativeAnimeParentFixtures.MAPPING))
+            h.server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val proof = withTimeout(3_000) { h.repo.proof("mal:61990:1") }!!
+            assertEquals(11, proof.absoluteEpisode)
+            assertNull(proof.verifiedParentImdbId)
+            assertEquals(2, h.server.requestCount)
+            assertFalse(proof.matchesFile(NativeAnimeParentFixtures.RELEASE))
+            assertSame(proof, h.repo.cachedProof("mal:61990:1"))
+        }
+    }
+
+    @Test fun `profile cancellation during parent metadata cannot publish even the preceding base mapping`() = runBlocking {
+        Harness().use { h ->
+            h.server.enqueue(json(NativeAnimeParentFixtures.MAPPING))
+            h.server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val lookup = launch(Dispatchers.Default) { h.repo.proof("mal:61990:1") }
+            withContext(Dispatchers.IO) {
+                repeat(2) { assertNotNull(h.server.takeRequest(3, TimeUnit.SECONDS)) }
+            }
+            h.origin.set(2 to 11L)
+            h.changes.value += 1
+            withTimeout(3_000) { lookup.join() }
+            assertTrue(lookup.isCancelled)
+            assertTrue(requireNotNull(h.call.get()).isCanceled())
+            assertNull(h.repo.cachedProof("mal:61990:1"))
+            assertEquals(2, h.server.requestCount)
+        }
+    }
+
+    @Test fun `temporary parent failure keeps base mapping then retries after five minutes and caches verified recovery`() = runBlocking {
+        Harness().use { h ->
+            h.server.enqueue(json(NativeAnimeParentFixtures.MAPPING))
+            h.server.enqueue(MockResponse().setResponseCode(503))
+            val base = withTimeout(3_000) { h.repo.proof("mal:61990:1") }!!
+            assertEquals(11, base.absoluteEpisode)
+            assertTrue(base.matchesFile("Cyberpunk Edgerunners 2 S02E01.mkv"))
+            assertFalse(base.matchesFile(NativeAnimeParentFixtures.RELEASE))
+            assertNull(base.verifiedParentImdbId)
+            assertEquals(2, h.server.requestCount)
+
+            h.server.enqueue(json(NativeAnimeParentFixtures.MAPPING))
+            h.server.enqueue(json(NativeAnimeParentFixtures.PARENT))
+            h.clock.addAndGet(5L * 60L * 1_000L - 1L)
+            assertSame(base, h.repo.proof("mal:61990:1"))
+            assertEquals(2, h.server.requestCount)
+            h.clock.addAndGet(2L)
+            assertNull(h.repo.cachedProof("mal:61990:1"))
+            val recovered = withTimeout(3_000) { h.repo.proof("mal:61990:1") }!!
+            assertEquals("tt12590266", recovered.verifiedParentImdbId)
+            assertTrue(recovered.matchesFile(NativeAnimeParentFixtures.RELEASE))
+            assertEquals(4, h.server.requestCount)
+
+            h.clock.addAndGet(5L * 60L * 1_000L + 1L)
+            assertSame(recovered, h.repo.proof("mal:61990:1"))
+            assertEquals(4, h.server.requestCount)
+            h.clock.addAndGet(24L * 60L * 60L * 1_000L)
+            assertNull(h.repo.cachedProof("mal:61990:1"))
+        }
+    }
+
     private class Harness(timeoutMillis: Long = 8_000L) : Closeable {
         val server = MockWebServer().apply { start() }
         val clock = AtomicLong(1_000L)

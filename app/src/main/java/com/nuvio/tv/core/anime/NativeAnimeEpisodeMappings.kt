@@ -56,7 +56,7 @@ class NativeAnimeEpisodeMappings internal constructor(
         return synchronized(cache) { cache[id.first]?.takeIf { it.expires > clock() }?.value?.episodes?.get(id.second) }
     }
 
-    /** At most one bounded request per uncached record. Caller and profile cancellation cancel the HTTP call. */
+    /** One mapping and optional exact-ID parent metadata GET; both share the existing ten-second bound. */
     internal suspend fun proof(nativeVideoId: String, isCurrent: () -> Boolean = { true }): NativeAnimeEpisodeProof? {
         val id = identity(nativeVideoId) ?: return null
         val selected = origin()
@@ -67,9 +67,22 @@ class NativeAnimeEpisodeMappings internal constructor(
                 requests.withLock {
                     if (!current()) throw CancellationException("The selected viewer changed.")
                     synchronized(cache) { cache[id.first]?.takeIf { it.expires > clock() } }?.let { return@withLock it.value?.episodes?.get(id.second) }
-                    val record = withTimeoutOrNull(10_000L) { fetch(id.first, ::current) }
+                    var mapped: NativeAnimeMappingRecord? = null
+                    val record = withTimeoutOrNull(10_000L) {
+                        val base = fetch(id.first, ::current)?.also { mapped = it } ?: return@withTimeoutOrNull null
+                        val imdb = base.mappedParentImdbId ?: return@withTimeoutOrNull base
+                        val parent = withTimeoutOrNull(2_000L) {
+                            fetchDocument("https://v3-cinemeta.strem.io/meta/series/$imdb.json", ::current)
+                        }
+                        parent?.let(base::withVerifiedParentMetadata) ?: base
+                    } ?: mapped // Optional parent metadata cannot remove an already validated mapping.
                     if (!current()) throw CancellationException("The selected viewer changed.")
-                    val ttl = if (record == null) NEGATIVE_TTL else POSITIVE_TTL
+                    val ttl = when {
+                        record == null -> NEGATIVE_TTL
+                        record.mappedParentImdbId != null && record.episodes.values.any { it.verifiedParentImdbId == null } ->
+                            PARENT_RETRY_TTL
+                        else -> POSITIVE_TTL
+                    }
                     synchronized(cache) { cache[id.first] = Cached(record, deadline(clock(), ttl)) }
                     record?.episodes?.get(id.second)
                 }
@@ -87,8 +100,13 @@ class NativeAnimeEpisodeMappings internal constructor(
         }
     }
 
-    private suspend fun fetch(malId: Long, isCurrent: () -> Boolean): NativeAnimeMappingRecord? = suspendCancellableCoroutine { continuation ->
-        val request = Request.Builder().url("https://api.ani.zip/mappings?mal_id=$malId")
+    private suspend fun fetch(malId: Long, isCurrent: () -> Boolean): NativeAnimeMappingRecord? =
+        fetchDocument("https://api.ani.zip/mappings?mal_id=$malId", isCurrent)?.let {
+            NativeAnimeMappingCodec.parse(it, malId)
+        }
+
+    private suspend fun fetchDocument(url: String, isCurrent: () -> Boolean): String? = suspendCancellableCoroutine { continuation ->
+        val request = Request.Builder().url(url)
             .header("Accept", "application/json").header("Accept-Encoding", "identity").get().build()
         val call = transport.newCall(request)
         continuation.invokeOnCancellation { call.cancel() }
@@ -109,7 +127,7 @@ class NativeAnimeEpisodeMappings internal constructor(
                         val bytes = source.buffer.readByteArray()
                         val text = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                             .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()
-                        NativeAnimeMappingCodec.parse(text, malId)
+                        text
                     }
                 } catch (_: Exception) { null } // Never surface response text, URLs or arbitrary exception messages.
                 if (continuation.isActive) continuation.resume(record)
@@ -121,6 +139,7 @@ class NativeAnimeEpisodeMappings internal constructor(
         private const val MAX_BODY = 2L * 1024L * 1024L
         private const val POSITIVE_TTL = 24L * 60L * 60L * 1000L
         private const val NEGATIVE_TTL = 5L * 60L * 1000L
+        private const val PARENT_RETRY_TTL = 5L * 60L * 1000L
         private val ID = Regex("^mal:([1-9][0-9]{0,9}):([1-9][0-9]{0,3})$")
         internal fun identity(value: String): Pair<Long, Int>? {
             val match = ID.matchEntire(value) ?: return null

@@ -258,12 +258,28 @@ class ProfileSelectionViewModel @Inject constructor(
         }
     }
 
-    fun deleteProfile(id: Int) {
+    private var isDeletingProfile = false
+
+    fun deleteProfile(id: Int, onComplete: (Boolean) -> Unit = {}) {
+        if (isDeletingProfile) return
+        isDeletingProfile = true
         viewModelScope.launch {
-            profileManager.deleteProfile(id)
-            profileSyncService.deleteProfileData(id)
-            profileSyncService.pushToRemote()
-            refreshProfilePinStates()
+            val deleted = try {
+                if (profileManager.deleteProfile(id)) {
+                    profileSyncService.deleteProfileData(id)
+                    profileSyncService.pushToRemote()
+                    refreshProfilePinStates()
+                    true
+                } else false
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.e("ProfileSelectionVM", "Profile deletion failed (${error.javaClass.simpleName})")
+                false
+            } finally {
+                isDeletingProfile = false
+            }
+            onComplete(deleted)
         }
     }
 

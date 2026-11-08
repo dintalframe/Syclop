@@ -123,6 +123,7 @@ import com.nuvio.tv.ui.components.LocalCardDepthStyle
 import com.nuvio.tv.ui.components.MonochromePosterPlaceholder
 import com.nuvio.tv.ui.components.TrailerPlayer
 import com.nuvio.tv.ui.components.WatchedMarker
+import com.nuvio.tv.ui.components.WatchedEpisodeBadge
 import com.nuvio.tv.ui.components.placeholderCardShimmer
 import com.nuvio.tv.ui.components.nuvioCardDepth
 import com.nuvio.tv.ui.components.LightweightCard
@@ -940,7 +941,7 @@ internal fun ModernRowSection(
                         }
                     }
                 ) { index, item ->
-                    val requester = itemFocusRequesters.getOrPut(index) { FocusRequester() }
+                    val requester = itemFocusRequesters.getOrPut(index) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                     val isContinueWatchingRow = row.key == MODERN_CONTINUE_WATCHING_ROW_KEY || row.key == MODERN_UPCOMING_ROW_KEY
                     val onFocused = remember(row.key, index, isContinueWatchingRow) {
                         {
@@ -1024,7 +1025,7 @@ internal fun ModernRowSection(
                                 isTargetItem = isTargetItem,
                                 useLandscapePosters = useLandscapePosters,
                                 alwaysShowLandscapeClearlogo = alwaysShowLandscapeClearlogo,
-                                showLabels = showLabels,
+                                showLabels = showLabels || row.addonId == WATCHED_HISTORY_ADDON_ID,
                                 placeholderShimmerOffsetState = placeholderShimmerOffsetState,
                                 posterCardCornerRadius = posterCardCornerRadius,
                                 focusedPosterBackdropTrailerMuted = focusedPosterBackdropTrailerMuted,
@@ -1508,6 +1509,10 @@ private fun ModernCarouselCard(
                             .fillMaxWidth(0.62f)
                             .padding(start = 10.dp, end = 10.dp, bottom = NuvioTheme.spacing.md)
                     )
+                }
+
+                item.metaPreview?.watchedEpisodeLabel?.let { label ->
+                    WatchedEpisodeBadge(label, Modifier.align(Alignment.TopStart).zIndex(2f))
                 }
 
                 if (isWatched) {

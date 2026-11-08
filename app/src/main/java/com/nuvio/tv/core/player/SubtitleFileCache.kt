@@ -9,7 +9,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.ResponseBody
+import okio.Buffer
 import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -21,9 +24,7 @@ import javax.inject.Singleton
 @Singleton
 class SubtitleFileCache @Inject constructor(
     @ApplicationContext private val context: Context,
-    // Callers pass addon-provided subtitle URLs, so use the permissive addon client.
-    // Keep it that way: anything routed through here inherits permissive TLS.
-    @param:Named("addonPermissive") private val okHttpClient: OkHttpClient
+    @param:Named("addons") private val okHttpClient: OkHttpClient
 ) {
     private val cacheDir: File
         get() = File(context.cacheDir, SUBTITLE_CACHE_DIR).also { it.mkdirs() }
@@ -78,7 +79,7 @@ class SubtitleFileCache @Inject constructor(
                     return@withContext null
                 }
 
-                val bodyBytes = response.body?.bytes() ?: return@withContext null
+                val bodyBytes = response.body?.readSubtitleBytes() ?: return@withContext null
                 val normalizedText = SubtitleCharsetDetector.decode(bodyBytes, languageHint = input.lang)
                 val sanitizedText = com.nuvio.tv.ui.screens.player.SubtitleMojibakeSanitizer.sanitize(normalizedText).toString()
                 file.writeText(sanitizedText, Charsets.UTF_8)
@@ -128,5 +129,18 @@ class SubtitleFileCache @Inject constructor(
     companion object {
         private const val TAG = "SubtitleFileCache"
         private const val SUBTITLE_CACHE_DIR = "subtitles"
+    }
+}
+
+internal const val MAX_EXTERNAL_SUBTITLE_BYTES = 4 * 1024 * 1024
+
+internal fun ResponseBody.readSubtitleBytes(): ByteArray {
+    if (contentLength() > MAX_EXTERNAL_SUBTITLE_BYTES) throw IOException("Subtitle exceeds size limit")
+    val source = source()
+    val buffer = Buffer()
+    while (true) {
+        val remaining = MAX_EXTERNAL_SUBTITLE_BYTES.toLong() - buffer.size + 1L
+        if (source.read(buffer, minOf(8_192L, remaining)) == -1L) return buffer.readByteArray()
+        if (buffer.size > MAX_EXTERNAL_SUBTITLE_BYTES) throw IOException("Subtitle exceeds size limit")
     }
 }

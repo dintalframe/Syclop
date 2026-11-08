@@ -513,6 +513,7 @@ class PlayerViewModel @Inject constructor(
         val headers = controller.getCurrentHeaders().toMap()
         val selectionRevision = profileManager.activeProfileSelectionRevision
         val cloudSessionToken = controller.cloudSessionToken
+        controller.suppressPlaybackCleanup()
         // Capture already-loaded addon subtitles before handing off. Preparation stays in the
         // ViewModel scope because the player screen remains alive until the intent is sent.
         val subtitleInputs = if (controller.uiState.value.subtitleStyle.preferredLanguage.trim().lowercase() != "none") {
@@ -586,6 +587,7 @@ class PlayerViewModel @Inject constructor(
                     releaseInternal = {
                         // The external Activity has accepted the intent. Failed/cancelled
                         // preparation or rejected launch never tears down internal playback.
+                        controller.progressWriteCoordinator.suspendForExternalHandoff()
                         try { controller.stopAndRelease() }
                         catch (_: Exception) { Log.w("PlayerHandoff", "Internal cleanup failed after accepted external handoff") }
                     }

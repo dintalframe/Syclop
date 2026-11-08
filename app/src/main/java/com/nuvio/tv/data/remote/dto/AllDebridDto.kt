@@ -27,6 +27,11 @@ data class AllDebridUserDto(
 
 data class AllDebridMagnetsDataDto(val magnets: List<AllDebridMagnetDto> = emptyList())
 
+data class AllDebridMagnetInventoryDto(
+    val fullsync: Boolean? = null,
+    val magnets: List<AllDebridMagnetDto>? = null
+)
+
 @JsonClass(generateAdapter = true)
 data class AllDebridMagnetDto(
     val id: Long? = null,

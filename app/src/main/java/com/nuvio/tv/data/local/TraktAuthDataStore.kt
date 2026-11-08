@@ -18,6 +18,9 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -70,6 +73,8 @@ class TraktAuthDataStore @Inject constructor(
 
     private val grantRevisions = ConcurrentHashMap<Int, AtomicLong>()
     private val grantMutations = ConcurrentHashMap<Int, AtomicInteger>()
+    private data class PlaybackGrant(val id: String, val revision: Long, val selection: Long)
+    private val playbackGrants = ConcurrentHashMap<Int, PlaybackGrant>()
     fun grantRevision(profileId: Int): Long = if ((grantMutations[profileId]?.get() ?: 0) > 0) -1L
         else grantRevisions[profileId]?.get() ?: 0L
     private suspend fun changeGrant(profileId: Int, block: suspend () -> Unit) {
@@ -79,6 +84,7 @@ class TraktAuthDataStore @Inject constructor(
         try { block() } finally { mutations.decrementAndGet() }
     }
     private fun invalidateGrant(profileId: Int) {
+        playbackGrants.remove(profileId)
         grantRevisions.computeIfAbsent(profileId) { AtomicLong() }.incrementAndGet()
     }
 
@@ -97,6 +103,7 @@ class TraktAuthDataStore @Inject constructor(
     private val expiresAtKey = longPreferencesKey("expires_at")
     private val pollIntervalKey = intPreferencesKey("poll_interval")
     private val registrationClientIdKey = stringPreferencesKey("registration_client_id")
+    private val playbackGrantIdKey = stringPreferencesKey("playback_grant_id")
 
     private fun store(profileId: Int = profileManager.activeProfileId.value) =
         factory.get(profileId, FEATURE)
@@ -126,6 +133,42 @@ class TraktAuthDataStore @Inject constructor(
     val isAuthenticated: Flow<Boolean> = state.map { it.isAuthenticated }
 
     val isEffectivelyAuthenticated: Flow<Boolean> = isAuthenticated
+
+    /** Capture the native owner before IO; never bind a replacement grant after suspension. */
+    suspend fun capturePlaybackGrantId(profileId: Int): String? {
+        if (profileId !in 1..6) return null
+        val selection = activeProfileSelectionRevision
+        val revision = grantRevision(profileId)
+        fun current() = profileManager.activeProfileReady.value && activeProfileId == profileId && activeProfileSelectionRevision == selection &&
+            revision >= 0L && grantRevision(profileId) == revision
+        if (!current()) return null
+        var captured: PlaybackGrant? = null
+        try {
+            withContext(Dispatchers.IO) {
+                store(profileId).edit { preferences ->
+                    currentCoroutineContext().ensureActive()
+                    if (!current() || readSecret(preferences, accessTokenKey, profileId).isNullOrBlank() ||
+                        readSecret(preferences, refreshTokenKey, profileId).isNullOrBlank()) return@edit
+                    val id = preferences[playbackGrantIdKey]?.takeIf(::validPlaybackGrantId)
+                        ?: UUID.randomUUID().toString().also { preferences[playbackGrantIdKey] = it }
+                    captured = PlaybackGrant(id, revision, selection)
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { return null }
+        val result = captured ?: return null
+        if (!current()) return null
+        playbackGrants[profileId] = result
+        if (!current()) { playbackGrants.remove(profileId, result); return null }
+        return result.id
+    }
+
+    /** Memory/native revision checks only; never reads storage or credentials. */
+    fun isPlaybackGrantCurrent(profileId: Int, grantId: String): Boolean {
+        val captured = playbackGrants[profileId] ?: return false
+        return profileId in 1..6 && profileManager.activeProfileReady.value && validPlaybackGrantId(grantId) && captured.id == grantId && activeProfileId == profileId &&
+            captured.selection == activeProfileSelectionRevision && captured.revision == grantRevision(profileId)
+    }
 
     suspend fun getCurrentState(): TraktAuthState {
         return getCurrentState(profileManager.activeProfileId.value)
@@ -157,6 +200,7 @@ class TraktAuthDataStore @Inject constructor(
             preferences[accessTokenKey] = credentialCipher.encrypt(token.accessToken, profileId, "trakt_access_token")
             preferences[refreshTokenKey] = credentialCipher.encrypt(token.refreshToken, profileId, "trakt_refresh_token")
             preferences[registrationClientIdKey] = clientId
+            preferences[playbackGrantIdKey] = UUID.randomUUID().toString()
             // This is a new grant, not token rotation. Do not bind its imports to the prior login's identity.
             preferences.remove(usernameKey)
             preferences.remove(userSlugKey)
@@ -200,6 +244,7 @@ class TraktAuthDataStore @Inject constructor(
                     readSecret(preferences, refreshTokenKey, expected.profileId) != expected.refreshToken) return@edit
                 invalidateGrant(expected.profileId)
                 preferences.remove(registrationClientIdKey)
+                preferences.remove(playbackGrantIdKey)
                 preferences.remove(accessTokenKey)
                 preferences.remove(refreshTokenKey)
                 preferences.remove(tokenTypeKey)
@@ -252,6 +297,7 @@ class TraktAuthDataStore @Inject constructor(
         store(profileId).edit { preferences ->
             preferences[deviceCodeKey] = credentialCipher.encrypt(data.deviceCode, profileId, "trakt_device_code")
             preferences[registrationClientIdKey] = clientId
+            preferences[playbackGrantIdKey] = UUID.randomUUID().toString()
             preferences[userCodeKey] = data.userCode
             preferences[verificationUrlKey] = data.verificationUrl
             preferences[expiresAtKey] = now + (data.expiresIn * 1000L)
@@ -282,6 +328,7 @@ class TraktAuthDataStore @Inject constructor(
     suspend fun clearAuthForProfile(profileId: Int) = changeGrant(profileId) {
         store(profileId).edit { preferences ->
             preferences.remove(registrationClientIdKey)
+            preferences.remove(playbackGrantIdKey)
             preferences.remove(accessTokenKey)
             preferences.remove(refreshTokenKey)
             preferences.remove(tokenTypeKey)
@@ -298,6 +345,9 @@ class TraktAuthDataStore @Inject constructor(
     }
 
     private val secretKeys get() = listOf(accessTokenKey, refreshTokenKey, deviceCodeKey)
+
+    private fun validPlaybackGrantId(value: String): Boolean =
+        value.matches(Regex("[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"))
 
     private fun readSecret(preferences: Preferences, key: Preferences.Key<String>, profileId: Int): String? =
         preferences[key]?.let { credentialCipher.decrypt(it, profileId, "trakt_${key.name}") }?.takeIf(String::isNotBlank)

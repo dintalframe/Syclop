@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -22,6 +23,10 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.*
@@ -54,18 +59,26 @@ internal fun HomeBrowseScaffold(section: HomeBrowseSection, onSelect: (HomeBrows
     val entry = remember(section) { HomeBrowseEntry().apply { enter = { runCatching { bodyEntry.requestFocus() }; Unit } } }
     val saved = rememberSaveableStateHolder()
     Column(Modifier.fillMaxSize().background(Color.Black)) {
-        Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 24.dp),
+        Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 24.dp)
+            .selectableGroup()
+            .focusProperties { onEnter = { tabs.getValue(section).requestFocus() } }
+            .focusGroup(),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             HomeBrowseSection.entries.forEachIndexed { index, tab ->
+                val isSelected = section == tab
                 Button(onClick = { onSelect(tab) }, modifier = Modifier
+                    .semantics {
+                        role = Role.Tab
+                        selected = isSelected
+                    }
                     .focusRequester(tabs.getValue(tab))
                     .onFocusChanged {
                         if (it.isFocused) {
                             headerOwnsFocus.value = true
-                            if (section != tab) onSelect(tab)
+                            if (HomeBrowseFocusTransfer.selectsTabOnFocus(section, tab)) onSelect(tab)
                         }
                     }
-                    .then(if (section == tab && sidebarEntry != FocusRequester.Default) Modifier.focusRequester(sidebarEntry) else Modifier)
+                    .then(if (isSelected && sidebarEntry != FocusRequester.Default) Modifier.focusRequester(sidebarEntry) else Modifier)
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) false else when (event.key) {
                             Key.DirectionUp -> true
@@ -81,8 +94,11 @@ internal fun HomeBrowseScaffold(section: HomeBrowseSection, onSelect: (HomeBrows
                             else -> false
                         }
                     }, colors = ButtonDefaults.colors(
-                    containerColor = if (section == tab) Color(0xFF303033) else Color(0xFF101012),
-                    contentColor = Color.White, focusedContainerColor = Color.White, focusedContentColor = Color.Black)) {
+                    containerColor = if (isSelected) Color(0xFF303033) else Color.Transparent,
+                    contentColor = if (isSelected) Color.White else Color.White.copy(alpha = 0.74f),
+                    focusedContainerColor = Color.White,
+                    focusedContentColor = Color.Black
+                )) {
                     Text(tab.label, style = MaterialTheme.typography.titleMedium)
                 }
             }
@@ -123,7 +139,7 @@ internal fun HomeBrowseContent(section: HomeBrowseSection, viewModel: HomeBrowse
     var activeAction by remember { mutableStateOf<String?>(null) }
     val rows = state?.rows.orEmpty().filter { row -> row.failed || row.data?.let { it.items.isNotEmpty() || it.hasMore } == true }
     rows.forEach { row ->
-        rowEntries.getOrPut(row.key) { FocusRequester() }
+        rowEntries.getOrPut(row.key) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
         horizontalStates.getOrPut(row.key) { LazyListState() }
     }
     val latestRows by rememberUpdatedState(rows)

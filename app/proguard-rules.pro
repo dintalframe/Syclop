@@ -60,11 +60,7 @@
 -keep class com.nuvio.engine.** { *; }
 -keep interface com.nuvio.engine.** { *; }
 
-#── QuickJS ────────────────────────────────────────────────────────────────────
-# Keep quickjs-kt library classes for proper type conversion
--keep class com.dokar.quickjs.** { *; }
--keepclassmembers class com.dokar.quickjs.** { *; }
-# Keep PluginRuntime and related classes for JS bindings
+# Keep plugin compatibility classes
 -keep class com.nuvio.tv.core.plugin.** { *; }
 -keepclassmembers class com.nuvio.tv.core.plugin.** { *; }
 

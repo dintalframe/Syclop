@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.wav.WavExtractor state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.wav.WavExtractor.STATE_READING_FILE_TYPE, androidx.media3.extractor.wav.WavExtractor.STATE_READING_RF64_SAMPLE_DATA_SIZE, androidx.media3.extractor.wav.WavExtractor.STATE_READING_FORMAT, androidx.media3.extractor.wav.WavExtractor.STATE_SKIPPING_TO_SAMPLE_DATA, androidx.media3.extractor.wav.WavExtractor.STATE_READING_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+</root>
+

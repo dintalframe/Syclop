@@ -121,6 +121,7 @@ class ProfileManager @Inject constructor(
     suspend fun deleteProfile(id: Int): Boolean {
         if (id == 1) return false
         if (profiles.value.none { it.id == id }) return false
+        com.nuvio.tv.core.sync.androidtv.TvCardLaunchAuthenticator.revokeIssuedCards()
         removeLocalProfileData(id)
         profileDataStore.deleteProfile(id)
         return true
@@ -133,8 +134,9 @@ class ProfileManager @Inject constructor(
      */
     suspend fun replaceAllProfiles(remoteProfiles: List<UserProfile>) {
         val previousIds = profileDataStore.profilesList.first().map { it.id }.toSet()
-        profileDataStore.replaceAllProfiles(remoteProfiles)
         val remoteIds = remoteProfiles.map { it.id }.toSet()
+        if ((previousIds - remoteIds).isNotEmpty()) com.nuvio.tv.core.sync.androidtv.TvCardLaunchAuthenticator.revokeIssuedCards()
+        profileDataStore.replaceAllProfiles(remoteProfiles)
         (previousIds - remoteIds).forEach { id -> removeLocalProfileData(id) }
         (remoteIds - previousIds).forEach { id -> factory.markProfileCreated(id) }
     }

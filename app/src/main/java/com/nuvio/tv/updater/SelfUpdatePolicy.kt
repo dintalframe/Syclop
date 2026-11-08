@@ -9,11 +9,9 @@ object SelfUpdatePolicy {
     val enabled: Boolean = BuildConfig.FEATURE_IN_APP_UPDATES_ENABLED
     internal val jobIds = setOf(10_020, 10_021, 10_022)
 
-    /** Also retires persisted jobs left by an older APK. Never cancels unrelated background work. */
-    fun cancelIfDisabled(context: Context): Boolean {
-        if (enabled) return false
+    /** Retires persisted background updater jobs without touching provider or channel work. */
+    fun cancelLegacyJobs(context: Context) {
         val scheduler = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as? JobScheduler
         jobIds.forEach { scheduler?.cancel(it) }
-        return true
     }
 }

@@ -4,6 +4,7 @@ package com.nuvio.tv.ui.screens.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -12,20 +13,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.R
 import com.nuvio.tv.data.mediaserver.ServerConnection
 import com.nuvio.tv.data.mediaserver.ServerFailure
 import com.nuvio.tv.data.mediaserver.ServerProvider
+import com.nuvio.tv.data.mediaserver.ServerTransportPolicy
 import com.nuvio.tv.ui.components.NuvioDialog
 import com.nuvio.tv.ui.screens.account.InputField
+import com.nuvio.tv.ui.screens.detail.requestFocusAfterFrames
 import com.nuvio.tv.ui.theme.NuvioTheme
 
 internal data class ServerSignInRequest(
@@ -45,13 +51,18 @@ internal fun ServerSignInDialog(
     var address by remember { mutableStateOf(request.address) }
     var username by remember { mutableStateOf(request.username) }
     var password by remember { mutableStateOf("") }
+    var confirmLocalHttp by remember(address, username, password) { mutableStateOf(false) }
     val provider = request.provider
     val canConnect = !state.connecting && address.isNotBlank() && username.isNotBlank()
     val connect = {
         if (canConnect) {
-            viewModel.connect(provider, address, username, password) { connection ->
-                password = ""
-                onConnected(connection)
+            if (ServerTransportPolicy.localHttpHost(address) != null) {
+                confirmLocalHttp = true
+            } else {
+                viewModel.connect(provider, address, username, password) { connection ->
+                    password = ""
+                    onConnected(connection)
+                }
             }
         }
     }
@@ -116,6 +127,39 @@ internal fun ServerSignInDialog(
             )
         }
     }
+    if (confirmLocalHttp) {
+        ServerLocalHttpConfirmationDialog(
+            host = ServerTransportPolicy.localHttpHost(address).orEmpty(),
+            onCancel = { confirmLocalHttp = false },
+            onAllow = {
+                confirmLocalHttp = false
+                viewModel.connect(provider, address, username, password, localHttpApproved = true) { connection ->
+                    password = ""
+                    onConnected(connection)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+internal fun ServerLocalHttpConfirmationDialog(host: String, onCancel: () -> Unit, onAllow: () -> Unit) {
+    val cancelFocus = remember { FocusRequester() }
+    NuvioDialog(
+        onDismiss = onCancel,
+        title = stringResource(R.string.servers_local_http_title),
+        subtitle = stringResource(R.string.servers_local_http_description, host)
+    ) {
+        LaunchedEffect(Unit) { cancelFocus.requestFocusAfterFrames() }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = onCancel, modifier = Modifier.focusRequester(cancelFocus)) {
+                Text(stringResource(R.string.action_cancel))
+            }
+            Button(onClick = onAllow) {
+                Text(stringResource(R.string.servers_local_http_allow))
+            }
+        }
+    }
 }
 
 @Composable
@@ -140,6 +184,7 @@ private fun ServerFailure.signInMessage(provider: ServerProvider): String = when
     ServerFailure.UNREACHABLE -> stringResource(R.string.servers_error_unreachable)
     ServerFailure.UNSUPPORTED -> stringResource(R.string.servers_error_unsupported, provider.displayName, provider.minimumVersion)
     ServerFailure.FORBIDDEN -> stringResource(R.string.servers_error_forbidden)
+    ServerFailure.INSECURE_CONNECTION -> stringResource(R.string.servers_error_insecure_connection)
     ServerFailure.INCOMPLETE,
     ServerFailure.FAILED -> stringResource(R.string.servers_error_failed)
 }

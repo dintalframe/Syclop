@@ -1,0 +1,200 @@
+[
+  {
+    "preferred": "src/common/main/java/androidx/media3/common/ByteBufferDataReader.java",
+    "upstreamPath": "libraries/common/src/main/java/androidx/media3/common/ByteBufferDataReader.java",
+    "hasPublicBase": false,
+    "preferredSha256": "36a3335a75ed134d7c570f28fbae7dfd4c9b4bd744d17bb6417fc9df5fc0d27c"
+  },
+  {
+    "preferred": "src/common/main/java/androidx/media3/common/NuvioEngineConfig.java",
+    "upstreamPath": "libraries/common/src/main/java/androidx/media3/common/NuvioEngineConfig.java",
+    "hasPublicBase": false,
+    "preferredSha256": "1a19d766b8b50c178e30fad6a87ab3fd2e368a85f1925a131df71d6f66c4036f"
+  },
+  {
+    "preferred": "src/datasource-okhttp/main/java/androidx/media3/datasource/okhttp/OkHttpDataSource.java",
+    "upstreamPath": "libraries/datasource_okhttp/src/main/java/androidx/media3/datasource/okhttp/OkHttpDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "4afb476926107abfe011fd3140d38ca2644ac335d3e7c0e8450734853e631a95"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/AesCipherDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/AesCipherDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "dd1454dc03468f3a655dd8a526a5392e3341d9a9ac0408c961304d15bc15e515"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/ByteArrayDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/ByteArrayDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "ed6cddb947b85227e2bedff2ba873823fb5b2802a70a86e217f796008361f70e"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/ContentDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/ContentDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "b4959af70c2690fe9a01b62e58a5be09264fb80e8f76548d48c316508d58aaee"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/DataSchemeDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/DataSchemeDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "caae4039890a66e2729c578511378a151673a531326b4cd8de5cfdb4a647568c"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/DefaultDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/DefaultDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "59f5c59d38f900dcc5391f6634ca842ec12bbdcbae671b4e0eaf145cbc0a1398"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/DefaultHttpDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/DefaultHttpDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "f9e86c5f854a0b17f8f716e9520eb17878126e0d78e93b1f70843d928d398115"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/FileDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/FileDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "a70b9ddeffe92730193e01a41d5d0f0aaebfb20b5fec17be90098775acadb86a"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/FileDescriptorDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/FileDescriptorDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "9c1ba686beb6b1871b693e5da519d642d44c8cb5a422d93d25a909f08d95b169"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/HttpEngineDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/HttpEngineDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "5e4edb454e27a95f31db09c39605643b5af9448090d1798d3ea167febe8faa81"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/LocalhostZeroCopyDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/LocalhostZeroCopyDataSource.java",
+    "hasPublicBase": false,
+    "preferredSha256": "c18638ca4e06bb4167a05ce46cd10131dc23c44d9a8647171b3f9a08483eb1db"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/PriorityDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/PriorityDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "b778700091c35bc3debc16c64ed869e183f6a8ab5f636820bed776e265cef9fa"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/RawResourceDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/RawResourceDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "c7f15ce270ca56990a8d30b8e3e1beb7518f428d67a09d853c6678fa2ce2b9d3"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/ResolvingDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/ResolvingDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "8229bde93b655ad1111dc370b9dbf19445b2bdc96f7a63787e766359c651fe5b"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/StatsDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/StatsDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "319728a9d88d6aec424381c0a9bca7a34ebe5a4272bcffe4185530684204cab2"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/TeeDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/TeeDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "b32534457e957055ba9ae76ef3dd43268ef1e35a3d77c5d2d7e4a00a0795b88b"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/UdpDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/UdpDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "cd7dc8fa09cb0e191931caf5da6405f7f2d1574a276b1aa364871c18a5289fa4"
+  },
+  {
+    "preferred": "src/datasource/main/java/androidx/media3/datasource/cache/CacheDataSource.java",
+    "upstreamPath": "libraries/datasource/src/main/java/androidx/media3/datasource/cache/CacheDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "8d12335865c7d4958a636faaec75b73b7f7266f170cf7ac8fac0b4a812e82dff"
+  },
+  {
+    "preferred": "src/exoplayer-hls/main/java/androidx/media3/exoplayer/hls/Aes128DataSource.java",
+    "upstreamPath": "libraries/exoplayer_hls/src/main/java/androidx/media3/exoplayer/hls/Aes128DataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "8f74ed5fb5540f8549fb1c07a4a1fe79520b076d8eb0a6f0886b58892e2d07ea"
+  },
+  {
+    "preferred": "src/exoplayer/main/java/androidx/media3/exoplayer/DefaultRenderersFactory.java",
+    "upstreamPath": "libraries/exoplayer/src/main/java/androidx/media3/exoplayer/DefaultRenderersFactory.java",
+    "hasPublicBase": true,
+    "preferredSha256": "a3e48838fc366e423e217e1ec7ebf3dcfe9f334abd324fba8ccedff67d48c10f"
+  },
+  {
+    "preferred": "src/exoplayer/main/java/androidx/media3/exoplayer/mediacodec/MediaCodecUtil.java",
+    "upstreamPath": "libraries/exoplayer/src/main/java/androidx/media3/exoplayer/mediacodec/MediaCodecUtil.java",
+    "hasPublicBase": true,
+    "preferredSha256": "f62cbb37cd67e699d5c43b5d90d21a1755360e051c37251896af1b14f791c1d1"
+  },
+  {
+    "preferred": "src/exoplayer/main/java/androidx/media3/exoplayer/source/IcyDataSource.java",
+    "upstreamPath": "libraries/exoplayer/src/main/java/androidx/media3/exoplayer/source/IcyDataSource.java",
+    "hasPublicBase": true,
+    "preferredSha256": "dc6e1f4e009b98f0d2f0b1180cb94492057baf797f7eae6342ef96abe8611841"
+  },
+  {
+    "preferred": "src/exoplayer/main/java/androidx/media3/exoplayer/source/SampleDataQueue.java",
+    "upstreamPath": "libraries/exoplayer/src/main/java/androidx/media3/exoplayer/source/SampleDataQueue.java",
+    "hasPublicBase": true,
+    "preferredSha256": "afcd5b0809d50ca06d9305554698ea93d6af04bf7907fe6fd2da0e5b1b0474a0"
+  },
+  {
+    "preferred": "src/exoplayer/main/java/androidx/media3/exoplayer/source/SampleDataQueueNative.java",
+    "upstreamPath": "libraries/exoplayer/src/main/java/androidx/media3/exoplayer/source/SampleDataQueueNative.java",
+    "hasPublicBase": false,
+    "preferredSha256": "f2ec6dd81fee16421e8de2623089d12a803a093b3877f52d8787f3f04a05e183"
+  },
+  {
+    "preferred": "src/exoplayer/main/java/androidx/media3/exoplayer/upstream/Allocation.java",
+    "upstreamPath": "libraries/exoplayer/src/main/java/androidx/media3/exoplayer/upstream/Allocation.java",
+    "hasPublicBase": true,
+    "preferredSha256": "695075d7a84487b005f15672f105fb4caf0baa602179a9565750d0b556c38b9f"
+  },
+  {
+    "preferred": "src/exoplayer/main/java/androidx/media3/exoplayer/upstream/DefaultAllocator.java",
+    "upstreamPath": "libraries/exoplayer/src/main/java/androidx/media3/exoplayer/upstream/DefaultAllocator.java",
+    "hasPublicBase": true,
+    "preferredSha256": "8eae6c959b07b0e27b65c5eac221f931a74a26b3eb4ec3e7d18d2084b5be390d"
+  },
+  {
+    "preferred": "src/exoplayer/main/java/androidx/media3/exoplayer/upstream/DefaultAllocatorNative.java",
+    "upstreamPath": "libraries/exoplayer/src/main/java/androidx/media3/exoplayer/upstream/DefaultAllocatorNative.java",
+    "hasPublicBase": false,
+    "preferredSha256": "9f619c48fc0b6dac93cfd34a1f5897f8948a906b542a819fd6b77c404a65055c"
+  },
+  {
+    "preferred": "src/exoplayer/main/java/androidx/media3/exoplayer/video/MediaCodecVideoRenderer.java",
+    "upstreamPath": "libraries/exoplayer/src/main/java/androidx/media3/exoplayer/video/MediaCodecVideoRenderer.java",
+    "hasPublicBase": true,
+    "preferredSha256": "3de0df71d47b74d93deb43576b5f59609849a7153596b02aed9b6cd12a7ee0e8"
+  },
+  {
+    "preferred": "src/extractor/main/java/androidx/media3/extractor/DefaultExtractorInput.java",
+    "upstreamPath": "libraries/extractor/src/main/java/androidx/media3/extractor/DefaultExtractorInput.java",
+    "hasPublicBase": true,
+    "preferredSha256": "8bc6273d6140d915a785c157e0d8a0ba48a4f4c9a0e7931758659bb45b2b13cf"
+  },
+  {
+    "preferred": "src/extractor/main/java/androidx/media3/extractor/ForwardingExtractorInput.java",
+    "upstreamPath": "libraries/extractor/src/main/java/androidx/media3/extractor/ForwardingExtractorInput.java",
+    "hasPublicBase": true,
+    "preferredSha256": "aa1558e654052bce1bf76bd7a51fdc28b77537c694de05f208e011d6697cdb85"
+  },
+  {
+    "preferred": "src/extractor/main/java/androidx/media3/extractor/mp4/Mp4Extractor.java",
+    "upstreamPath": "libraries/extractor/src/main/java/androidx/media3/extractor/mp4/Mp4Extractor.java",
+    "hasPublicBase": true,
+    "preferredSha256": "9897614b7fb709a242b2ee7d2d98bdec4d38fc6f21484f85119462d4d878d6ca"
+  }
+]

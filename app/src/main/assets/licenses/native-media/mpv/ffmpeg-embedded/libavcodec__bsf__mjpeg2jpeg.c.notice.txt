@@ -1,0 +1,4 @@
+/*
+ * Adapted from mjpeg2jpeg.c, with original copyright:
+ * Paris 2010 Adrian Daerr, public domain
+ */

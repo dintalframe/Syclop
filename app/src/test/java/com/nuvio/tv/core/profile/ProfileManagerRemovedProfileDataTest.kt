@@ -4,10 +4,13 @@ import android.content.Context
 import com.nuvio.tv.data.local.ProfileDataStore
 import com.nuvio.tv.data.local.ProfileDataStoreFactory
 import com.nuvio.tv.domain.model.UserProfile
+import com.nuvio.tv.core.sync.androidtv.TvCardLaunchAuthenticator
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -31,6 +34,8 @@ class ProfileManagerRemovedProfileDataTest {
 
     @Before
     fun setUp() {
+        mockkObject(TvCardLaunchAuthenticator.Companion)
+        every { TvCardLaunchAuthenticator.revokeIssuedCards() } returns Unit
         tempDir = Files.createTempDirectory("profile_manager_test").toFile()
         val context = mockk<Context>(relaxed = true) {
             every { filesDir } returns tempDir
@@ -54,6 +59,7 @@ class ProfileManagerRemovedProfileDataTest {
 
     @After
     fun tearDown() {
+        unmockkObject(TvCardLaunchAuthenticator.Companion)
         tempDir.deleteRecursively()
     }
 
@@ -69,6 +75,7 @@ class ProfileManagerRemovedProfileDataTest {
         verify(exactly = 1) { credentialStore.removeProfile(2) }
         verify(exactly = 0) { credentialStore.removeProfile(3) }
         coVerify(exactly = 1) { factory.clearProfile(2) }
+        verify(exactly = 1) { TvCardLaunchAuthenticator.revokeIssuedCards() }
     }
 
     @Test
@@ -78,6 +85,7 @@ class ProfileManagerRemovedProfileDataTest {
         verify(exactly = 1) { factory.markProfileCreated(4) }
         verify(exactly = 0) { credentialStore.removeProfile(any()) }
         coVerify(exactly = 0) { factory.clearProfile(any()) }
+        verify(exactly = 0) { TvCardLaunchAuthenticator.revokeIssuedCards() }
     }
 
     @Test
@@ -91,6 +99,16 @@ class ProfileManagerRemovedProfileDataTest {
         removed.forEach { assertFalse("${it.path} should be deleted", it.exists()) }
         kept.forEach { assertTrue("${it.path} should be kept", it.exists()) }
         verify(exactly = 1) { credentialStore.removeProfile(2) }
+        verify(exactly = 1) { TvCardLaunchAuthenticator.revokeIssuedCards() }
+    }
+
+    @Test
+    fun `failed card revocation prevents reusing a deleted profile identity`() = runTest {
+        every { TvCardLaunchAuthenticator.revokeIssuedCards() } throws java.io.IOException("Fixture unavailable")
+        val result = runCatching { manager.replaceAllProfiles(listOf(profile(1), profile(3))) }
+        assertTrue(result.isFailure)
+        assertTrue(storedProfiles.value.any { it.id == 2 })
+        verify(exactly = 0) { credentialStore.removeProfile(any()) }
     }
 
     private fun profileFiles(id: Int) = listOf(

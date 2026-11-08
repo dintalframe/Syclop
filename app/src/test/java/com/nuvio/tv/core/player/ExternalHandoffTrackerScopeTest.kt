@@ -3,6 +3,10 @@ package com.nuvio.tv.core.player
 import android.content.Context
 import com.nuvio.tv.data.local.PlayerSettings
 import com.nuvio.tv.data.local.PlayerSettingsDataStore
+import io.mockk.coEvery
+import com.nuvio.tv.core.tracking.TrackingScrobbleCoordinator
+import com.nuvio.tv.core.tracking.TrackingPlaybackOriginCapture
+import com.nuvio.tv.domain.repository.WatchProgressRepository
 import io.mockk.Called
 import io.mockk.every
 import io.mockk.mockk
@@ -18,8 +22,12 @@ class ExternalHandoffTrackerScopeTest {
     private val settings = mockk<PlayerSettingsDataStore>()
     private val metadata = ExternalPlaybackMetadata("tt42", "movie", "Fixture", null, null, null,
         "tt42", null, null, null, null, 1)
-    private fun tracker() = ExternalPlaybackTracker(context, mockk(), mockk(), mockk(), mockk(), settings,
-        mockk(), mockk(), mockk(), mockk(), mockk())
+    private fun tracker() = ExternalPlaybackTracker(context,
+        mockk<WatchProgressRepository> { coEvery { captureLocalPlaybackScope(any()) } returns null },
+        mockk<TrackingScrobbleCoordinator> {
+            every { preparePlaybackOrigin(any()) } answers { TrackingPlaybackOriginCapture(firstArg(), emptyList()) }
+        }, mockk(), mockk(), settings,
+        mockk(), mockk(), mockk(), mockk(), mockk(), com.nuvio.tv.ui.screens.player.PlayerProgressWriteAuthority())
 
     @Test fun `stale source guard rejects before settings tracking or Android handoff`() = runTest {
         val tracker = tracker()

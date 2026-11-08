@@ -19,6 +19,7 @@
     <string name="web_no_catalogs">No home catalogs available</string>
     <string name="web_btn_save">Save Changes</string>
     <string name="web_connection_lost">Connection to TV lost</string>
+    <string name="web_addon_pairing_required">Scan the QR code on your TV again to connect.</string>
     <string name="web_btn_remove">Remove</string>
     <string name="web_badge_new">New</string>
     <string name="web_badge_disabled">Disabled</string>
@@ -98,7 +99,7 @@
 
     <string name="home_no_addons">No addons installed. Add one to get started.</string>
     <string name="home_no_catalog_addons">No catalog addons installed. Install a catalog addon to see content.</string>
-    <string name="auth_notice_nuvio_logged_out">You have been signed out of Nuvio. Please sign in again.</string>
+    <string name="auth_notice_nuvio_logged_out">You have been signed out of Syclop. Please sign in again.</string>
     <string name="auth_notice_trakt_logged_out">You have been signed out of Trakt. Please reconnect.</string>
     <string name="error_generic">An error occurred</string>
 
@@ -220,6 +221,7 @@
     <string name="detail_marked_previous_watched">Previous episodes marked as watched: %1$d</string>
 
     <string name="playback_unavailable">Playback unavailable</string>
+    <string name="hero_set_up_playback">Set up playback</string>
     <string name="playback_unavailable_message">Playback isn’t available for this title with your current setup.</string>
     <string name="detail_btn_play">Play</string>
     <string name="detail_btn_resume">Resume</string>
@@ -411,8 +413,8 @@
     <string name="about_subtitle">App information, updates, and legal links</string>
     <string name="about_made_with_love">Made with ❤️ by Tapframe and friends</string>
     <string name="about_version">Version %1$s</string>
-    <string name="about_update_banner_title">Automatic update banner</string>
-    <string name="about_update_banner_subtitle">Show a banner when a new version is available</string>
+    <string name="about_update_banner_title">Update reminders</string>
+    <string name="about_update_banner_subtitle">Show a prompt when a new Syclop version is available</string>
     <string name="about_update_auto_install_title">Install updates automatically</string>
     <string name="about_update_auto_install_subtitle">Download new versions in the background and install them while the device is idle</string>
     <string name="about_update_auto_install_notice_title">Notify after automatic updates</string>
@@ -428,13 +430,13 @@
     <string name="update_channel_beta_description">Early updates that may contain bugs, break features, or behave unexpectedly.</string>
     <string name="about_privacy_policy">Privacy Policy</string>
     <string name="about_privacy_policy_subtitle">View our privacy policy</string>
-    <string name="support_nuvio_name">Support Nuvio</string>
-    <string name="about_supporters_contributors">Support Nuvio</string>
+    <string name="support_nuvio_name">Support Syclop</string>
+    <string name="about_supporters_contributors">Support Syclop</string>
     <string name="about_supporters_contributors_subtitle">Support the project and view community credits</string>
     <string name="about_licenses_attributions">Licenses &amp; Attribution</string>
     <string name="about_licenses_attributions_subtitle">Data sources, acknowledgements, and Android licenses</string>
     <string name="licenses_attributions_title">Licenses &amp; Attribution</string>
-    <string name="licenses_attributions_subtitle">Data providers, service credits, and Android playback licenses used by Nuvio TV.</string>
+    <string name="licenses_attributions_subtitle">Data providers, service credits, and Android playback licenses used by Syclop.</string>
     <string name="licenses_attributions_section_app">APP LICENSE</string>
     <string name="licenses_attributions_section_data">DATA &amp; SERVICES</string>
     <string name="licenses_attributions_section_playback">ANDROID PLAYBACK LICENSES</string>
@@ -444,25 +446,25 @@
     <string name="licenses_attributions_nuvio_title">Nuvio TV</string>
     <string name="licenses_attributions_nuvio_body">Source code and license terms are available in the project repository. Licensed under the GNU General Public License v3.0.</string>
     <string name="licenses_attributions_tmdb_title">The Movie Database (TMDB)</string>
-    <string name="licenses_attributions_tmdb_body">Nuvio uses the TMDB API for movie and TV metadata, artwork, trailers, cast, production details, collections, and recommendations. This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
+    <string name="licenses_attributions_tmdb_body">Syclop uses the TMDB API for movie and TV metadata, artwork, trailers, cast, production details, collections, and recommendations. This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
     <string name="licenses_attributions_trakt_title">Trakt</string>
-    <string name="licenses_attributions_trakt_body">Nuvio connects to Trakt for account authentication, watched history, progress sync, library data, ratings, lists, and comments. Nuvio is not affiliated with or endorsed by Trakt.</string>
+    <string name="licenses_attributions_trakt_body">Syclop connects to Trakt for account authentication, watched history, progress sync, library data, ratings, lists, and comments. Syclop is not affiliated with or endorsed by Trakt.</string>
     <string name="licenses_attributions_simkl_title">Simkl</string>
-    <string name="licenses_attributions_simkl_body">Nuvio connects to Simkl for account authentication, watchlists, watched history, playback progress, and scrobbling. Movie, TV, and anime tracking data is provided by Simkl. Nuvio is not affiliated with or endorsed by Simkl.</string>
+    <string name="licenses_attributions_simkl_body">Syclop connects to Simkl for account authentication, watchlists, watched history, playback progress, and scrobbling. Movie, TV, and anime tracking data is provided by Simkl. Syclop is not affiliated with or endorsed by Simkl.</string>
     <string name="licenses_attributions_premiumize_title">Premiumize</string>
-    <string name="licenses_attributions_premiumize_body">Nuvio connects to Premiumize for account authentication, cloud library access, cache checks, and cloud playback features. Nuvio is not affiliated with or endorsed by Premiumize.</string>
+    <string name="licenses_attributions_premiumize_body">Syclop connects to Premiumize for account authentication, cloud library access, cache checks, and cloud playback features. Syclop is not affiliated with or endorsed by Premiumize.</string>
     <string name="licenses_attributions_torbox_title">TorBox</string>
-    <string name="licenses_attributions_torbox_body">Nuvio connects to TorBox for account authentication, cloud library access, cache checks, and cloud playback features. Nuvio is not affiliated with or endorsed by TorBox.</string>
+    <string name="licenses_attributions_torbox_body">Syclop connects to TorBox for account authentication, cloud library access, cache checks, and cloud playback features. Syclop is not affiliated with or endorsed by TorBox.</string>
     <string name="licenses_attributions_mdblist_title">MDBList</string>
-    <string name="licenses_attributions_mdblist_body">Nuvio uses MDBList for ratings, watched history and playback tracking. Nuvio is not affiliated with or endorsed by MDBList.</string>
+    <string name="licenses_attributions_mdblist_body">Syclop uses MDBList for ratings, watched history and playback tracking. Syclop is not affiliated with or endorsed by MDBList.</string>
     <string name="licenses_attributions_introdb_title">IntroDB</string>
-    <string name="licenses_attributions_introdb_body">Nuvio uses the IntroDB API for community-provided intro, recap, credits, and preview timestamps used by skip controls. Nuvio is not affiliated with or endorsed by IntroDB.</string>
+    <string name="licenses_attributions_introdb_body">Syclop uses the IntroDB API for community-provided intro, recap, credits, and preview timestamps used by skip controls. Syclop is not affiliated with or endorsed by IntroDB.</string>
     <string name="licenses_attributions_imdb_title">IMDb Non-Commercial Datasets</string>
-    <string name="licenses_attributions_imdb_body">Nuvio uses IMDb Non-Commercial Datasets, including title.ratings.tsv.gz, for IMDb ratings and vote counts. Information courtesy of IMDb (https://www.imdb.com). Used with permission. IMDb data is for personal and non-commercial use under IMDb terms.</string>
+    <string name="licenses_attributions_imdb_body">Syclop uses IMDb Non-Commercial Datasets, including title.ratings.tsv.gz, for IMDb ratings and vote counts. Information courtesy of IMDb (https://www.imdb.com). Used with permission. IMDb data is for personal and non-commercial use under IMDb terms.</string>
     <string name="licenses_attributions_exoplayer_title">AndroidX Media3 ExoPlayer 1.8.0</string>
     <string name="licenses_attributions_exoplayer_body">Used as an Android playback engine. Licensed under the Apache License, Version 2.0.</string>
     <string name="licenses_attributions_libmpv_title">libmpv / libmpv-android</string>
-    <string name="licenses_attributions_libmpv_body">Used as an Android playback engine. The libmpv-android wrapper is licensed under the MIT license; mpv/libmpv and bundled native components retain their upstream license terms.</string>
+    <string name="licenses_attributions_libmpv_body">Android playback engine. View the source release for the version bundled with Syclop.</string>
 
     <!-- SettingsScreen categories -->
     <string name="settings_experience">Experience</string>
@@ -516,7 +518,7 @@
     <string name="experience_mode_essential_card_subtitle">Focused setup, add-ons, playback basics, Trakt, and account settings.</string>
     <string name="experience_mode_advanced_card_subtitle">Full settings, layout controls, catalog order, collections, plug-ins, and diagnostics.</string>
     <string name="experience_mode_group_title">Experience mode</string>
-    <string name="essential_addon_continue_for_now">Continue for now</string>
+    <string name="essential_addon_continue_for_now">Set up later</string>
     <string name="essential_playback_basics">Playback basics</string>
     <string name="essential_subtitles_and_audio">Subtitles and audio</string>
     <string name="essential_stream_selection">Stream selection</string>
@@ -568,7 +570,7 @@
     <string name="experience_mode_switch_to_essential">Switch to Essential</string>
     <string name="experience_mode_switch_to_essential_subtitle">Hide advanced setup surfaces without changing your saved values.</string>
     <string name="experience_mode_switch_to_advanced">Switch to Advanced</string>
-    <string name="experience_mode_switch_to_advanced_header_subtitle">Switch to Advanced for the full settings surface.</string>
+    <string name="experience_mode_switch_to_advanced_header_subtitle">Switch to Advanced for more settings.</string>
     <string name="experience_mode_switch_to_advanced_subtitle">Show full layout, plug-in, integration, catalog, collection, and tuning settings.</string>
     <string name="experience_mode_confirm_essential_title">Switch to Essential?</string>
     <string name="experience_mode_confirm_advanced_title">Switch to Advanced?</string>
@@ -621,8 +623,8 @@
     <string name="buffer_safe_status">Safe: Within recommended limit for your device.</string>
     <string name="buffer_unsafe_warning">Warning: Exceeds the recommended safe limit (%1$d MB) for your %2$s device. May cause app crashes.</string>
     <string name="buffer_auto_limit_active">Auto-scaled Safe Limit: %d MB</string>
-    <string name="advanced_nuvio_focus_scroll">Nuvio Focus Scrolling</string>
-    <string name="advanced_nuvio_focus_scroll_subtitle">Use Nuvio\'s custom global focus scroll animation and positioning.</string>
+    <string name="advanced_nuvio_focus_scroll">Syclop Focus Scrolling</string>
+    <string name="advanced_nuvio_focus_scroll_subtitle">Use Syclop\'s custom global focus scroll animation and positioning.</string>
     <string name="advanced_rgb565">RGB565 image decoding</string>
     <string name="advanced_rgb565_subtitle">Use lower-memory 16-bit color for eligible opaque images. Changing this restarts the app.</string>
     <string name="advanced_memory_only_vertical_scroll">Memory-only Vertical Scrolling</string>
@@ -664,21 +666,21 @@
     <string name="action_back">Back</string>
     <string name="action_close">Close</string>
 
-    <string name="supporters_contributors_title">Support Nuvio</string>
-    <string name="supporters_contributors_subtitle">The people backing Nuvio and the contributors building it across TV and mobile.</string>
+    <string name="supporters_contributors_title">Support Syclop</string>
+    <string name="supporters_contributors_subtitle">The people backing Syclop and the contributors building it across TV and mobile.</string>
     <string name="supporters_contributors_supporters_copy">Supporters and donators help keep the project moving, fund infrastructure, and make room for ambitious features.</string>
-    <string name="supporters_contributors_donate_copy">Nuvio will stay free and open source. If you want to support the project, you can help cover the time and infrastructure behind it.</string>
+    <string name="supporters_contributors_donate_copy">Syclop will stay free and open source. If you want to support the project, you can help cover the time and infrastructure behind it.</string>
     <string name="supporters_contributors_donation_progress_title">This month’s server &amp; maintenance</string>
     <string name="supporters_contributors_donation_progress_complete">Covered. Additional support now goes to development.</string>
-    <string name="supporters_contributors_donation_progress_remaining">After 100%, additional support goes to development.</string>
+    <string name="supporters_contributors_donation_progress_remaining" formatted="false">After 100%, additional support goes to development.</string>
     <string name="supporters_contributors_loading_donation_progress">Loading funding progress...</string>
-    <string name="supporters_contributors_donate_button">Support Nuvio</string>
+    <string name="supporters_contributors_donate_button">Support Syclop</string>
     <string name="supporters_contributors_qr_title">Scan to support</string>
-    <string name="supporters_contributors_qr_subtitle">Open the link on your phone to support Nuvio.</string>
+    <string name="supporters_contributors_qr_subtitle">Open the link on your phone to support Syclop.</string>
     <string name="supporters_contributors_qr_hint">Point your camera at the QR code or use the button below.</string>
     <string name="supporters_contributors_back_button">Back to details</string>
-    <string name="supporter_membership_title">Nuvio Supporter Membership</string>
-    <string name="supporter_membership_description">Supporting Nuvio helps cover infrastructure and ongoing development while keeping the core experience free for everyone.</string>
+    <string name="supporter_membership_title">Syclop Supporter Membership</string>
+    <string name="supporter_membership_description">Supporting Syclop helps cover infrastructure and ongoing development while keeping the core experience free for everyone.</string>
     <string name="supporter_membership_view">View Membership</string>
     <string name="supporter_membership_manage">Manage membership</string>
     <string name="supporter_membership_refresh">Refresh</string>
@@ -691,7 +693,7 @@
     <string name="supporter_membership_tier_supporter">Supporter</string>
     <string name="supporter_membership_tier_supporter_plus">Supporter Plus</string>
     <string name="supporter_membership_connected_title">Patreon is connected</string>
-    <string name="supporter_membership_connected_description">No active Nuvio tier was found on this Patreon account. View the available options or refresh after changing your Patreon membership.</string>
+    <string name="supporter_membership_connected_description">No active Syclop tier was found on this Patreon account. View the available options or refresh after changing your Patreon membership.</string>
     <string name="supporter_membership_scan_support">Scan to view membership</string>
     <string name="supporter_membership_scan_support_description">Open the Supporter Membership page on your phone.</string>
     <string name="supporter_membership_scan_manage">Scan to manage membership</string>
@@ -706,13 +708,13 @@
     <string name="supporters_no_message">No message shared.</string>
     <string name="supporters_level_supporter">Supporter</string>
     <string name="supporters_level_supporter_plus">Supporter+</string>
-    <string name="supporters_since">Supporting Nuvio since %1$s</string>
-    <string name="supporters_since_unknown">Proudly supporting Nuvio</string>
+    <string name="supporters_since">Supporting Syclop since %1$s</string>
+    <string name="supporters_since_unknown">Proudly supporting Syclop</string>
     <string name="supporters_open_donations">Open support page</string>
     <string name="sponsors_loading">Loading sponsors…</string>
     <string name="sponsors_empty">No sponsors found yet.</string>
     <string name="sponsors_error_title">Couldn’t load sponsors</string>
-    <string name="sponsors_detail_copy">Sponsors help move Nuvio forward through support across the different parts of development.</string>
+    <string name="sponsors_detail_copy">Sponsors help move Syclop forward through support across the different parts of development.</string>
     <string name="sponsors_channel_unavailable">Sponsor channel unavailable.</string>
     <string name="sponsors_open_channel">Open sponsor channel</string>
     <string name="contributors_loading">Loading GitHub contributors…</string>
@@ -803,7 +805,7 @@
     <string name="playback_player_auto">Auto (Best for Content)</string>
     <string name="playback_player_auto_desc">ExoPlayer for Movies &amp; TV Shows · MPV for Anime</string>
     <string name="playback_engine_exoplayer_desc">Recommended built-in player for Syclop.</string>
-    <string name="playback_engine_mvplayer_desc">Uses libmpv with Nuvio OSD controls. Experimental.</string>
+    <string name="playback_engine_mvplayer_desc">Uses libmpv with Syclop OSD controls. Experimental.</string>
 
     <string name="video_section">Video</string>
     <string name="playback_true_black_letterbox">True black bars</string>
@@ -1273,8 +1275,10 @@
     <string name="debrid_experimental_notice">These integrations are experimental and may be kept, changed, or removed later.</string>
     <string name="debrid_cloud_library">Cloud library</string>
     <string name="debrid_cloud_library_description">Browse and play files already in your connected accounts.</string>
+    <string name="debrid_cloud_delete_after_playback">Delete finished cloud downloads</string>
+    <string name="debrid_cloud_delete_after_playback_description">Permanently deletes eligible single-file downloads after playback finishes naturally. Includes files opened from Cloud and new downloads Syclop creates on Real-Debrid or AllDebrid for that playback.</string>
     <string name="debrid_enable_title">Resolve playable links</string>
-    <string name="debrid_enable_subtitle">Ask a connected service for playable links when a result needs it. This may add the item to that service.</string>
+    <string name="debrid_enable_subtitle">Link resolving is always on for connected services, whichever source provider you use. Resolving a source may add it to your service.</string>
     <string name="debrid_resolve_with">Resolve with</string>
     <string name="debrid_resolve_with_description">Choose which connected account handles playable links.</string>
     <string name="debrid_add_key_first">Connect an account first.</string>
@@ -1402,10 +1406,10 @@
     <string name="settings_stream_badges_section">Fusion Style</string>
     <string name="settings_stream_size_badges_title">Size badges</string>
     <string name="settings_stream_size_badges_description">Show file size badges in stream results and player source panels.</string>
-    <string name="settings_stream_badges_in_player_title">Show in player</string>
-    <string name="settings_stream_badges_in_player_description">Show badges for the video and audio that is playing under the player title. Needs a badge pack that matches plain text, like 2160p or Atmos.</string>
-    <string name="settings_stream_player_badges_title">Player badges</string>
-    <string name="settings_stream_player_badges_description">Choose the badge pack the player uses.</string>
+    <string name="settings_stream_badges_in_player_title">Use custom player badges</string>
+    <string name="settings_stream_badges_in_player_description">Replace standard playback badges with a matching imported badge pack.</string>
+    <string name="settings_stream_player_badges_title">Custom player badge pack</string>
+    <string name="settings_stream_player_badges_description">Choose an optional imported pack for playback badges.</string>
     <string name="settings_stream_player_badges_same">Same as stream badges</string>
     <string name="settings_stream_addon_logo_title">Addon logo</string>
     <string name="settings_stream_addon_logo_description">Show addon logo and name next to stream sources.</string>
@@ -1625,11 +1629,11 @@
     <string name="profile_addons">addons</string>
     <string name="profile_plugins">plugins</string>
     <string name="profile_choose_avatar">Choose Avatar</string>
-    <string name="profile_custom_avatar_web_panel_note">Custom avatar URLs can be configured from the Nuvio web panel.</string>
+    <string name="profile_custom_avatar_web_panel_note">Custom avatar URLs can be configured from the web panel.</string>
     <string name="profile_editor_tab_avatar">Avatar</string>
     <string name="profile_editor_tab_background">Background</string>
     <string name="profile_choose_background">Choose Profile Background</string>
-    <string name="profile_background_member_note">Custom background URLs can be configured from the Nuvio web panel.</string>
+    <string name="profile_background_member_note">Custom background URLs can be configured from the web panel.</string>
     <string name="profile_background_normal">Normal</string>
     <string name="profile_background_custom">Custom</string>
     <string name="profile_avatar_none_selected">No avatar selected</string>
@@ -1697,14 +1701,15 @@
     <string name="profile_pin_overlay_set_support">This PIN will be required before opening this profile.</string>
     <string name="profile_pin_overlay_confirm_support">Re-enter the same 4 digits to finish setup.</string>
     <string name="profile_pin_overlay_mismatch">PINs did not match. Enter a new PIN again.</string>
-    <string name="profile_pin_overlay_forgot_hint">Forgot PIN? Reset it from your Nuvio account on nuvio website.</string>
     <string name="profile_pin_overlay_back_hint">Press back to cancel</string>
 
 
     <!-- Essential addon setup wizard -->
     <string name="essential_addon_setup_title">Set up add-ons</string>
-    <string name="essential_addon_setup_subtitle">Install one add-on to start streaming. You can add more later from Addons.</string>
-    <string name="essential_addon_show_qr">Show QR</string>
+    <string name="essential_addon_setup_subtitle">Add a source to play movies and shows. You can set this up later in Add-ons.</string>
+    <string name="essential_addon_show_qr">Set up on phone</string>
+    <string name="essential_addon_enter_link_on_tv">Enter a link on TV</string>
+    <string name="essential_addon_link_title">Enter your add-on link</string>
     <!-- Collection editor fallbacks -->
     <string name="collection_editor_no_trakt_lists_found">No Trakt lists found</string>
     <string name="collection_editor_untitled_folder">Untitled</string>
@@ -1780,7 +1785,7 @@
     <string name="stream_type_torrent">Torrent</string>
     <string name="stream_type_youtube">YouTube</string>
     <string name="p2p_consent_title">P2P Streaming</string>
-    <string name="p2p_consent_body">This stream uses peer-to-peer (P2P) technology. By enabling P2P, you acknowledge and agree that:\n\n\u2022 Your IP address will be visible to other peers in the network\n\u2022 You are solely responsible for the content you access\n\u2022 You confirm you have the legal right to stream this content in your jurisdiction\n\u2022 Nuvio does not host, distribute, or control any P2P content\n\u2022 Nuvio bears no liability for any legal consequences arising from your use of P2P streaming\n\nYou use this feature entirely at your own risk. P2P can be disabled anytime in Settings.</string>
+    <string name="p2p_consent_body">This stream uses peer-to-peer (P2P) technology. By enabling P2P, you acknowledge and agree that:\n\n\u2022 Your IP address will be visible to other peers in the network\n\u2022 You are solely responsible for the content you access\n\u2022 You confirm you have the legal right to stream this content in your jurisdiction\n\u2022 Syclop does not host, distribute, or control any P2P content\n\u2022 Syclop bears no liability for any legal consequences arising from your use of P2P streaming\n\nYou use this feature entirely at your own risk. P2P can be disabled anytime in Settings.</string>
     <string name="p2p_consent_enable">Enable P2P</string>
     <string name="p2p_consent_cancel">Cancel</string>
     <string name="settings_p2p_title">P2P Streaming</string>
@@ -2248,8 +2253,8 @@
     <string name="official_server_description">You will be signed out of the custom server and the app will restart with the official service.</string>
     <string name="official_server_action">Use official server</string>
     <string name="custom_server_error_invalid_url">Enter a valid HTTP or HTTPS Backend URL.</string>
-    <string name="custom_server_error_official_active">api.nuvio.tv is the official server and is already selected.</string>
-    <string name="custom_server_error_official_available">api.nuvio.tv is the official server. Close this dialog and choose Use official server to switch back.</string>
+    <string name="custom_server_error_official_active">The default server is already selected.</string>
+    <string name="custom_server_error_official_available">Close this dialog and choose Use official server to switch back to the default server.</string>
     <string name="custom_server_error_connection">Could not reach the discovery endpoint. Check the URL and server availability.</string>
     <string name="custom_server_error_http">The discovery endpoint returned HTTP %1$d.</string>
     <string name="custom_server_error_response_too_large">The discovery document is larger than allowed.</string>
@@ -2377,6 +2382,9 @@
 
     <string name="update_title">App Update</string>
     <string name="update_available">Update available</string>
+    <string name="update_version_available">Syclop %1$s is ready to download.</string>
+    <string name="update_now">Update now</string>
+    <string name="update_later">Later</string>
     <string name="update_downloading">Downloading update</string>
     <string name="update_download">Download</string>
     <string name="update_downloading_ellipsis">Downloading…</string>
@@ -2388,7 +2396,7 @@
     <string name="update_unknown_sources">Allow installs from unknown sources to continue.</string>
     <!-- AccountScreen -->
     <string name="account_title">Account</string>
-    <string name="account_sign_in_description">Sign in to sync your library, watch progress, addons, and plugins across devices. Library sync uses Nuvio Sync when Trakt is not connected, and watch progress can use either Trakt or Nuvio Sync.</string>
+    <string name="account_sign_in_description">Sign in to sync your library, watch progress, addons, and plugins across devices.</string>
     <string name="account_sync_code_title">Sync Code</string>
     <string name="account_sync_code_description">Sync across devices without creating an account.</string>
     <string name="account_linked_devices">Linked Devices (%1$d)</string>
@@ -2453,6 +2461,8 @@
     <!-- Update flow errors -->
     <string name="update_error_check_failed">Update check failed</string>
     <string name="update_error_download_failed">Download failed</string>
+    <string name="update_error_install_failed">Could not open the Android installer.</string>
+    <string name="update_no_compatible_release">No compatible Syclop update is available.</string>
     <string name="update_error_apk_missing">Downloaded file is missing</string>
 
     <!-- Profile PIN errors -->
@@ -2560,7 +2570,7 @@
     <string name="cd_preview">Preview</string>
     <string name="cd_test">Test</string>
     <string name="cd_unlink">Unlink</string>
-    <string name="cd_nuvio_logo">NuvioTV</string>
+    <string name="cd_nuvio_logo">Syclop</string>
     <string name="cd_trakt_logo">Trakt Logo</string>
     <string name="cd_trakt_qr">Trakt activation QR</string>
     <string name="cd_imdb">IMDb</string>
@@ -2572,7 +2582,7 @@
     <string name="cd_expand">Expand %1$s</string>
     <string name="cd_collapse">Collapse %1$s</string>
     <string name="cd_qr_login">QR login code</string>
-    <string name="cd_nuvio">Nuvio</string>
+    <string name="cd_nuvio">Syclop</string>
 
     <string name="debug_signin_success">Signed in successfully</string>
     <string name="debug_generate_description">Debug-generated %1$s item #%2$d</string>
@@ -2607,7 +2617,7 @@
     <string name="collections_paste_clipboard">Paste from Clipboard</string>
     <string name="collections_validate">Validate</string>
     <string name="collections_paste_hint">Paste collections JSON here…</string>
-    <string name="collections_file_description">Reads nuvio-collections.json from the Downloads folder.</string>
+    <string name="collections_file_description">Reads syclop-collections.json from the Downloads folder.</string>
     <string name="collections_load_file">Load File</string>
     <string name="collections_file_loaded">File loaded (%1$d characters)</string>
     <string name="collections_fetch_url">Fetch URL</string>
@@ -2715,7 +2725,7 @@
     <string name="collections_editor_tmdb_list_helper">Example: https://www.themoviedb.org/list/8504994 or 8504994.</string>
     <string name="collections_editor_tmdb_person_id">Person ID</string>
     <string name="collections_editor_tmdb_person_helper">Example: https://www.themoviedb.org/person/31-tom-hanks or 31.</string>
-    <string name="collections_editor_tmdb_title_helper">Shown as the row/tab name. If blank, Nuvio creates one from the source.</string>
+    <string name="collections_editor_tmdb_title_helper">Shown as the row/tab name. If blank, Syclop creates one from the source.</string>
     <string name="collections_editor_tmdb_quick_genres">Quick genres</string>
     <string name="collections_editor_tmdb_quick_languages">Quick languages</string>
     <string name="collections_editor_tmdb_quick_countries">Quick countries</string>
@@ -3002,9 +3012,9 @@
     <string name="simkl_visit">Visit Simkl</string>
     <string name="simkl_sync_info_action">How syncing works</string>
     <string name="simkl_sync_info_title">How Simkl syncing works</string>
-    <string name="simkl_sync_info_description">Nuvio automatically checks Simkl at most once every %1$d minutes. Changes made through another app or the Simkl website may take that long to appear.</string>
+    <string name="simkl_sync_info_description">Syclop automatically checks Simkl at most once every %1$d minutes. Changes made through another app or the Simkl website may take that long to appear.</string>
     <string name="simkl_sync_info_activity">Each refresh first checks whether Simkl reports any changes and downloads only the updates. This follows Simkl’s API rules, reduces unnecessary data use, and helps keep the service stable.</string>
-    <string name="simkl_sync_info_manual">Changes made in Nuvio are sent to Simkl immediately. Use Sync now whenever you want Nuvio to check for remote changes sooner.</string>
+    <string name="simkl_sync_info_manual">Changes made in Syclop are sent to Simkl immediately. Use Sync now whenever you want Syclop to check for remote changes sooner.</string>
     <string name="simkl_sync_info_library_statuses">Shows placed in Simkl’s On Hold or Dropped lists are hidden from Continue Watching. They remain hidden for as long as they stay in either list.</string>
     <string name="simkl_sync_info_docs">Read the Simkl sync guide</string>
     <string name="error_open_browser_failed">Failed to open browser</string>
@@ -3217,6 +3227,7 @@
     <string name="web_status_could_not_save">Could not save</string>
 
     <!-- Web config page: stream badge import status -->
+    <string name="web_stream_badge_editor_instructions">Paste a compatible player badge pack URL below. Then select it under %1$s on your TV.</string>
     <string name="web_stream_badge_importing">Importing…</string>
     <string name="web_stream_badge_imported">Imported badge URL.</string>
     <string name="web_stream_badge_import_error">Badge import failed.</string>
@@ -3266,7 +3277,7 @@
     <string name="playback_cache_vod_size">VOD Cache Size</string>
     <string name="playback_cache_vod_size_sub">Maximum disk usage for progressive VOD cache (LRU-evicted).</string>
     <string name="playback_cache_info_range">Range: %1$d-%2$d MB.</string>
-    <string name="playback_cache_info_auto">Auto mode targets about 10% of free space.</string>
+    <string name="playback_cache_info_auto" formatted="false">Auto mode targets about 10% of free space.</string>
     <string name="playback_cache_info_manual_headroom">Manual mode keeps about %1$dMB headroom.</string>
     <string name="playback_cache_info_free_disk">Free disk available: %1$s.</string>
     <string name="playback_cache_info_restart">New cache cap applies after app restart when changing between modes/sizes.</string>
@@ -3458,4 +3469,6 @@
     <string name="provider_update_valid">Configuration valid.</string>
     <string name="provider_update_not_checked">Not checked yet.</string>
     <string name="provider_update_times">Last attempt: %1$s · Last success: %2$s</string>
+    <string name="tracking_source_automatic">Automatic</string>
+    <string name="tracking_source_automatic_current">Automatic · %1$s</string>
 </resources>

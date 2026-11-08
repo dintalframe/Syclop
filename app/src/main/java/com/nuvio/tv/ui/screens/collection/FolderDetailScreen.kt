@@ -495,7 +495,7 @@ private fun TabbedGridContent(
                     key = { index, item -> "${item.id}_$index" }
                 ) { index, item ->
                     val itemKey = "${item.id}_$index"
-                    val focusReq = itemFocusRequesters.getOrPut(itemKey) { FocusRequester() }
+                    val focusReq = itemFocusRequesters.getOrPut(itemKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                     GridContentCard(
                         item = item,
                         posterCardStyle = posterCardStyle,
@@ -830,7 +830,7 @@ private fun RowsContent(
                                 firstVisibleItemIndex = focusState.catalogRowScrollStates[rowKey] ?: 0
                             )
                         }
-                        val rowFocusRequester = rowFocusRequesters.getOrPut(rowKey) { FocusRequester() }
+                        val rowFocusRequester = rowFocusRequesters.getOrPut(rowKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                         CatalogRowSection(
                             catalogRow = catalogRow,
                             onItemClick = onNavigateToDetail,
@@ -858,7 +858,7 @@ private fun RowsContent(
                             onItemFocus = onItemFocus,
                             listState = listState,
                             rowFocusRequester = rowFocusRequester,
-                            entryFocusRequester = rowEntryFocusRequesters.getOrPut(rowKey) { FocusRequester() },
+                            entryFocusRequester = rowEntryFocusRequesters.getOrPut(rowKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() },
                             enableRowFocusRestorer = true,
                             focusedItemIndex = when {
                                 focusState.hasSavedFocus && focusState.focusedRowKey == rowKey ->

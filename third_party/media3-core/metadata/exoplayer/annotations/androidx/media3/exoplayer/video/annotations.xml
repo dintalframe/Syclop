@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.video.DecoderVideoRenderer decoderReinitializationState">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.DecoderVideoRenderer.REINITIALIZATION_STATE_NONE, androidx.media3.exoplayer.video.DecoderVideoRenderer.REINITIALIZATION_STATE_SIGNAL_END_OF_STREAM, androidx.media3.exoplayer.video.DecoderVideoRenderer.REINITIALIZATION_STATE_WAIT_END_OF_STREAM}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.DecoderVideoRenderer void handleMessage(int, java.lang.Object) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.DefaultVideoSink void onInputStreamChanged(int, androidx.media3.common.Format, long, int, java.util.List&lt;androidx.media3.common.Effect&gt;) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_SURFACE, androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_BITMAP}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.DefaultVideoSink void onInputStreamChanged(int, androidx.media3.common.Format, long, int, java.util.List&lt;androidx.media3.common.Effect&gt;) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.MediaCodecVideoRenderer nextVideoSinkFirstFrameReleaseInstruction">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.MediaCodecVideoRenderer void changeVideoSinkInputStream(androidx.media3.exoplayer.video.VideoSink, int, androidx.media3.common.Format, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_SURFACE, androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_BITMAP}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.MediaCodecVideoRenderer void changeVideoSinkInputStream(androidx.media3.exoplayer.video.VideoSink, int, androidx.media3.common.Format, int) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.MediaCodecVideoRenderer void handleMessage(int, java.lang.Object) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper outputStreamFirstFrameReleaseInstruction">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper.STATE_CREATED, androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper.STATE_INITIALIZED, androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper.STATE_RELEASED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper.InputVideoSink inputType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_SURFACE, androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_BITMAP}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper.InputVideoSink void onInputStreamChanged(int, androidx.media3.common.Format, long, int, java.util.List&lt;androidx.media3.common.Effect&gt;) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_SURFACE, androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_BITMAP}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper.InputVideoSink void onInputStreamChanged(int, androidx.media3.common.Format, long, int, java.util.List&lt;androidx.media3.common.Effect&gt;) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper.StreamChangeInfo StreamChangeInfo(long, int, long) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper.StreamChangeInfo firstFrameReleaseInstruction">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.VideoFrameReleaseControl void onStreamChanged(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.VideoFrameReleaseControl.FrameReleaseAction">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoFrameReleaseControl.FRAME_RELEASE_IMMEDIATELY, androidx.media3.exoplayer.video.VideoFrameReleaseControl.FRAME_RELEASE_SCHEDULED, androidx.media3.exoplayer.video.VideoFrameReleaseControl.FRAME_RELEASE_DROP, androidx.media3.exoplayer.video.VideoFrameReleaseControl.FRAME_RELEASE_SKIP, androidx.media3.exoplayer.video.VideoFrameReleaseControl.FRAME_RELEASE_IGNORE, androidx.media3.exoplayer.video.VideoFrameReleaseControl.FRAME_RELEASE_TRY_AGAIN_LATER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.VideoFrameRenderControl void onStreamChanged(int, long) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.VideoSink void onInputStreamChanged(int, androidx.media3.common.Format, long, int, java.util.List&lt;androidx.media3.common.Effect&gt;) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_SURFACE, androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_BITMAP}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.VideoSink void onInputStreamChanged(int, androidx.media3.common.Format, long, int, java.util.List&lt;androidx.media3.common.Effect&gt;) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.VideoSink.FirstFrameReleaseInstruction">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_IMMEDIATELY, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_STARTED, androidx.media3.exoplayer.video.VideoSink.RELEASE_FIRST_FRAME_WHEN_PREVIOUS_STREAM_PROCESSED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.video.VideoSink.InputType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_SURFACE, androidx.media3.exoplayer.video.VideoSink.INPUT_TYPE_BITMAP}" />
+    </annotation>
+  </item>
+</root>
+

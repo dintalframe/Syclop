@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_opening">Loading saved settings…</string>
+    <string name="startup_loading_profile">Loading your profile and sources…</string>
+    <string name="startup_preparing_home">Preparing Home…</string>
+
+    <string name="startup_accounts_checking">Checking connected accounts</string>
+    <string name="startup_accounts_checking_description">Looking for connected services for this profile.</string>
+    <string name="startup_accounts_importing">Preparing connected accounts</string>
+    <string name="startup_accounts_importing_description">Loading watch history and lists for this profile.</string>
+    <string name="startup_accounts_attention">Some accounts need attention</string>
+    <string name="startup_accounts_attention_description">Some account data could not be loaded.</string>
+    <string name="startup_accounts_continue_hint">Continue opens Home with any saved data.</string>
+    <string name="startup_action_continue">Continue with saved data</string>
+    <string name="startup_action_retry">Retry failed imports</string>
+
+    <string name="startup_stage_provider_detail">%1$s · %2$s</string>
+    <string name="startup_stage_waiting">Waiting</string>
+    <string name="startup_stage_preparing_import">Preparing import</string>
+    <string name="startup_stage_checking_account">Checking account</string>
+    <string name="startup_stage_reading_history">Reading watch history and resume positions</string>
+    <string name="startup_stage_reading_library">Reading lists and library</string>
+    <string name="startup_stage_previously_initialized">Previously initialized</string>
+    <string name="startup_stage_partial">%1$s · Partial history or list</string>
+    <string name="startup_stage_timed_out">Timed out</string>
+    <string name="startup_stage_incomplete">Import incomplete</string>
+    <string name="startup_stage_unavailable">Account data unavailable</string>
+    <string name="startup_stage_failed">Could not finish</string>
+    <plurals name="startup_stage_entries_read">
+        <item quantity="one">%1$d entry read</item>
+        <item quantity="other">%1$d entries read</item>
+    </plurals>
+</resources>

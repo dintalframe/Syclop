@@ -10,4 +10,3 @@ class StartupLoadingState {
 }
 
 val LocalStartupLoadingState = compositionLocalOf<StartupLoadingState?> { null }
-val LocalStartupSplashEnabled = compositionLocalOf { false }

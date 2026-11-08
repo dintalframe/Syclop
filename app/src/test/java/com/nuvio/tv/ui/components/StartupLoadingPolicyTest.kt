@@ -13,20 +13,19 @@ class StartupLoadingPolicyTest {
         assertTrue(show(StartupDestination.Loading))
         assertFalse(show(startupDestinationForRoute(Screen.ExperienceModeSelection.route)))
         assertFalse(show(startupDestinationForRoute(Screen.LayoutSelection.route)))
-        assertTrue(show(startupDestinationForRoute(Screen.Home.route)))
+        assertFalse(show(startupDestinationForRoute(Screen.Home.route)))
         assertFalse(show(StartupDestination.Home, complete = true))
     }
 
     @Test
     fun `auth and essential addon setup remain visible before home is ready`() {
         assertFalse(show(StartupDestination.Setup))
-        assertTrue(show(StartupDestination.Home))
+        assertFalse(show(StartupDestination.Home))
     }
 
     @Test
     fun `single and remembered profiles show loading without requiring a click`() {
         assertTrue(show(StartupDestination.Loading))
-        assertTrue(show(StartupDestination.Home))
     }
 
     @Test
@@ -50,21 +49,16 @@ class StartupLoadingPolicyTest {
     }
 
     @Test
-    fun `disabled splash leaves home responsible for its spinner`() {
+    fun `disabled splash never covers startup destinations`() {
         StartupDestination.entries.forEach { destination ->
             assertFalse(shouldShowStartupSplash(false, false, destination))
         }
-        assertTrue(shouldShowHomeStartupLoader(true, false, false))
-        assertFalse(shouldShowHomeStartupLoader(false, false, false))
     }
 
     @Test
-    fun `startup uses exactly one loader then releases ownership`() {
-        assertTrue(show(StartupDestination.Home))
-        assertFalse(shouldShowHomeStartupLoader(true, true, false))
+    fun `home navigation remains visible while the shelves load`() {
+        assertFalse(show(StartupDestination.Home))
         assertFalse(show(StartupDestination.Home, complete = true))
-        assertFalse(shouldShowHomeStartupLoader(false, true, true))
-        assertTrue(shouldShowHomeStartupLoader(true, true, true))
     }
 
     @Test

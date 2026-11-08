@@ -28,7 +28,8 @@ import kotlinx.coroutines.withTimeout
 
 enum class RatedKidsTopic { FAMILY, SCIENCE, NATURE, EDUCATION, DOCUMENTARY }
 data class RatedKidsDescriptor(val id: String, val label: String, val type: ContentType,
-    val genres: String, val subgenres: String? = null, val topic: RatedKidsTopic = RatedKidsTopic.FAMILY) {
+    val genres: String, val subgenres: String? = null, val topic: RatedKidsTopic = RatedKidsTopic.FAMILY,
+    val requiredGenres: Set<String> = emptySet()) {
     val certificates: String get() = if (type == ContentType.MOVIE) "g" else "tv-y,tv-y7,tv-y7-fv,tv-g"
 }
 data class RatedKidsPage(val items: List<MetaPreview>, val hasMore: Boolean)
@@ -132,12 +133,22 @@ class RatedKidsCatalog internal constructor(
         fun isNativeAddon(url: String) = url.trimEnd('/').equals(BASE_URL, ignoreCase = true)
         fun isNativeItemId(id: String) = id.matches(Regex("tt[0-9]{5,12}"))
         internal val DESCRIPTORS = listOf(
-            RatedKidsDescriptor("family-movies", "Trakt · Family movies", ContentType.MOVIE, "family"),
-            RatedKidsDescriptor("family-shows", "Trakt · Family shows", ContentType.SERIES, "children,family"),
+            RatedKidsDescriptor("family-movies", "Trakt · Popular family movies", ContentType.MOVIE, "family"),
+            RatedKidsDescriptor("family-shows", "Trakt · Popular family shows", ContentType.SERIES, "children,family"),
             RatedKidsDescriptor("education-shows", "Trakt · Education", ContentType.SERIES, "children,family,special-interest", "education,educational", RatedKidsTopic.EDUCATION),
             RatedKidsDescriptor("science-shows", "Trakt · Science", ContentType.SERIES, "documentary", "engineering,technology,science", RatedKidsTopic.SCIENCE),
             RatedKidsDescriptor("nature-shows", "Trakt · Nature", ContentType.SERIES, "documentary", "nature,nature-documentary,natural-history,animals,wildlife", RatedKidsTopic.NATURE),
-            RatedKidsDescriptor("documentary-shows", "Trakt · Documentaries", ContentType.SERIES, "documentary", topic = RatedKidsTopic.DOCUMENTARY)
-        )
+            RatedKidsDescriptor("documentary-shows", "Trakt · Documentaries", ContentType.SERIES, "documentary", topic = RatedKidsTopic.DOCUMENTARY),
+            RatedKidsDescriptor("documentary-movies", "Trakt · Documentary movies", ContentType.MOVIE, "documentary", topic = RatedKidsTopic.DOCUMENTARY)
+        ) + buildList {
+            for (type in listOf(ContentType.MOVIE, ContentType.SERIES)) {
+                val label = if (type == ContentType.MOVIE) "movies" else "shows"
+                for ((genre, title) in listOf("animation" to "Animation", "adventure" to "Adventure",
+                    "comedy" to "Comedy", "fantasy" to "Fantasy")) {
+                    add(RatedKidsDescriptor("family-$genre-$label", "Trakt · Popular $title $label", type,
+                        genre, requiredGenres = setOf(genre)))
+                }
+            }
+        }
     }
 }

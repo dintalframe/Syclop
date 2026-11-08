@@ -1,0 +1,11 @@
+{
+  "url": "https://codeload.github.com/androidx/media/tar.gz/b7bbc6e2bc3e45ff3ed99884c114c50f03bba5c9",
+  "commit": "b7bbc6e2bc3e45ff3ed99884c114c50f03bba5c9",
+  "archive": "androidx-media-b7bbc6e2bc3e45ff3ed99884c114c50f03bba5c9.tar.gz",
+  "bytes": 444051447,
+  "sha256": "1bf58e03674e294fba321f1338c80f89443486652b402f605c04b5fa60be3fb6",
+  "entries": 7481,
+  "mainSourceUnits": 1521,
+  "safePathInventoryChecked": true,
+  "patchSourcePinsCheckedSeparately": true
+}

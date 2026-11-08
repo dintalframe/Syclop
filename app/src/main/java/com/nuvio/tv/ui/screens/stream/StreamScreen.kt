@@ -300,7 +300,7 @@ fun StreamScreen(
             viewModel.onEvent(StreamScreenEvent.OnAutoPlayConsumed)
             return@LaunchedEffect
         }
-        val playbackInfo = viewModel.resolveStreamForPlayback(stream)
+        val playbackInfo = viewModel.resolveAutomaticStreamForPlayback(stream)
         if (playbackInfo == null) {
             viewModel.onEvent(StreamScreenEvent.OnAutoPlayConsumed)
             return@LaunchedEffect
@@ -464,6 +464,9 @@ fun StreamScreen(
                     searchDiagnostics = uiState.addonStreams.filter {
                         uiState.selectedAddonFilter == null || it.addonName == uiState.selectedAddonFilter
                     }.mapNotNull { it.searchDiagnostics },
+                    hiddenByPreferencesCount = uiState.addonStreams.filter {
+                        uiState.selectedAddonFilter == null || it.addonName == uiState.selectedAddonFilter
+                    }.sumOf { it.hiddenByPreferencesCount },
                     streams = uiState.filteredStreams,
                     availableAddons = uiState.availableAddons,
                     sourceChips = uiState.sourceChips,
@@ -782,6 +785,7 @@ internal fun RightStreamSection(
     onRetry: () -> Unit,
     onExpandStreams: () -> Unit = {},
     hazeState: HazeState?,
+    hiddenByPreferencesCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
@@ -791,10 +795,15 @@ internal fun RightStreamSection(
     var firstResultFocusAssigned by remember { mutableStateOf(shouldRestoreFocusedStream) }
     val scope = rememberCoroutineScope()
     var focusJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    val orderedAddonNames = remember(availableAddons, sourceChips) {
+    var showSearchDetails by rememberSaveable { mutableStateOf(false) }
+    val displayAddons = remember(availableAddons) { availableAddons.filter {
+        com.nuvio.tv.core.debrid.NativeDebridSourceCards.visibleAddonName(it) } }
+    val displaySourceChips = remember(sourceChips) { sourceChips.filter {
+        com.nuvio.tv.core.debrid.NativeDebridSourceCards.visibleAddonName(it.name) } }
+    val orderedAddonNames = remember(displayAddons, displaySourceChips) {
         buildList {
-            addAll(availableAddons)
-            sourceChips.forEach { if (it.name !in this) add(it.name) }
+            addAll(displayAddons)
+            displaySourceChips.forEach { if (it.name !in this) add(it.name) }
         }
     }
     val firstStreamKey = streams.firstOrNull()?.stableKey(0)
@@ -916,14 +925,14 @@ internal fun RightStreamSection(
                 // Addon filter chips
                 Box(modifier = Modifier.height(NuvioTheme.spacing.huge)) {
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = sourceChips.isNotEmpty() || (!isLoading && availableAddons.isNotEmpty()),
+                        visible = displaySourceChips.isNotEmpty() || (!isLoading && displayAddons.isNotEmpty()),
                         enter = fadeIn(animationSpec = tween(300)),
                         exit = fadeOut(animationSpec = tween(300))
                     ) {
                         AddonFilterChips(
-                            addons = availableAddons,
-                            sourceChips = sourceChips,
-                            selectedAddon = selectedAddonFilter,
+                            addons = displayAddons,
+                            sourceChips = displaySourceChips,
+                            selectedAddon = selectedAddonFilter?.takeIf { it in orderedAddonNames },
                             isStillFetching = sourceChips.any { it.status == SourceChipStatus.LOADING },
                             onRefresh = {
                                 userMovedFromFirstResult = false
@@ -938,22 +947,34 @@ internal fun RightStreamSection(
                     }
                 }
 
-                Text(text = stringResource(R.string.syclop_debrid_playback_path),
-                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm))
-
-                Text(text = "Bitrate confidence: native file estimate → reported estimate → unknown",
-                    style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary,
-                    modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm))
-
-                if (streams.isEmpty() && searchDiagnostics.isNotEmpty()) {
-                    Text(
-                        text = (if (searchDiagnostics.any { !it.complete }) "Searching sources: " else "Why no sources? ") +
-                            searchDiagnosticSummary.summary(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = NuvioTheme.extendedColors.textSecondary,
-                        modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm, vertical = NuvioTheme.spacing.xs)
-                    )
+                androidx.tv.material3.Button(
+                    onClick = { showSearchDetails = !showSearchDetails },
+                    modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm, vertical = NuvioTheme.spacing.xs),
+                    colors = androidx.tv.material3.ButtonDefaults.colors(
+                        containerColor = Color(0xFF245C9C), contentColor = Color.White,
+                        focusedContainerColor = Color.White, focusedContentColor = Color(0xFF153653))
+                ) {
+                    Text(stringResource(if (showSearchDetails) R.string.source_hide_search_details else R.string.source_search_details),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
+                }
+                if (streams.isEmpty() && !isLoading &&
+                    (searchDiagnosticSummary.counts[com.nuvio.tv.domain.model.SourceSearchReason.MISSING_MAPPING] ?: 0) > 0) {
+                    Text(text = stringResource(R.string.source_anime_mapping_missing),
+                        style = MaterialTheme.typography.bodyMedium, color = Color.White,
+                        modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm, vertical = NuvioTheme.spacing.xs))
+                }
+                if (showSearchDetails) {
+                    Text(text = stringResource(R.string.syclop_debrid_playback_path),
+                        style = MaterialTheme.typography.labelMedium, color = Color.White,
+                        modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm))
+                    Text(text = stringResource(R.string.source_bitrate_confidence),
+                        style = MaterialTheme.typography.labelMedium, color = Color.White,
+                        modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm))
+                    if (searchDiagnostics.isNotEmpty()) {
+                        Text(text = searchDiagnosticSummary.summary(), style = MaterialTheme.typography.labelMedium,
+                            color = Color.White, modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm,
+                                vertical = NuvioTheme.spacing.xs))
+                    }
                 }
 
                 // Streams / loading / error / empty
@@ -974,11 +995,12 @@ internal fun RightStreamSection(
                             )
                         }
                         sharedStream == null && streams.isEmpty() -> {
-                            EmptyState()
+                            EmptyState(hiddenByPreferencesCount)
                         }
                         else -> {
                             StreamsList(
                                 streams = streams,
+                                showTechnicalDetails = showSearchDetails,
                                 sharedStream = sharedStream,
                                 partySource = partySource,
                                 onSharedStreamSelected = onSharedStreamSelected,
@@ -1082,14 +1104,14 @@ private fun ErrorState(
 }
 
 @Composable
-private fun EmptyState() {
+private fun EmptyState(hiddenByPreferencesCount: Int = 0) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
         modifier = Modifier.padding(NuvioTheme.spacing.xxl)
     ) {
         Text(
-            text = stringResource(R.string.stream_no_streams),
+            text = stringResource(if (hiddenByPreferencesCount > 0) R.string.stream_hidden_by_filters else R.string.stream_no_streams),
             style = MaterialTheme.typography.bodyLarge,
             color = NuvioTheme.extendedColors.textSecondary,
             textAlign = TextAlign.Center
@@ -1098,7 +1120,10 @@ private fun EmptyState() {
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
 
         Text(
-            text = stringResource(R.string.stream_no_streams_hint),
+            text = if (hiddenByPreferencesCount > 0) {
+                androidx.compose.ui.res.pluralStringResource(R.plurals.stream_hidden_by_filters_hint,
+                    hiddenByPreferencesCount, hiddenByPreferencesCount)
+            } else stringResource(R.string.stream_no_streams_hint),
             style = MaterialTheme.typography.bodyMedium,
             color = NuvioTheme.extendedColors.textSecondary,
             textAlign = TextAlign.Center
@@ -1118,6 +1143,7 @@ private fun StreamsList(
     shouldRestoreFocusedStream: Boolean = false,
     onRestoreFocusedStreamHandled: () -> Unit = {},
     firstStreamFocusRequestId: Int = 0,
+    showTechnicalDetails: Boolean = false,
     availableAddons: List<String> = emptyList(),
     selectedAddonFilter: String? = null,
     showFileSizeBadges: Boolean = true,
@@ -1294,6 +1320,7 @@ private fun StreamsList(
                         modifier = Modifier.padding(start = NuvioTheme.spacing.xs)
                     )
                     StreamCard(
+                        showTechnicalDetails = showTechnicalDetails,
                         stream = shared.stream,
                         showFileSizeBadges = showFileSizeBadges,
                         showAddonLogo = showAddonLogo,
@@ -1317,6 +1344,7 @@ private fun StreamsList(
             Box(modifier = Modifier.padding(vertical = NuvioTheme.spacing.xs)) {
                 val isPartySource = partySource?.matches(stream) == true
                 StreamCard(
+                    showTechnicalDetails = showTechnicalDetails,
                     stream = stream,
                     showFileSizeBadges = showFileSizeBadges,
                     showAddonLogo = showAddonLogo,
@@ -1326,7 +1354,7 @@ private fun StreamsList(
                     onClick = { onStreamSelected(stream) },
                     focusRequester = when {
                         shouldRestoreFocusedStream && index == focusedStreamIndex.coerceIn(0, (streams.lastIndex).coerceAtLeast(0)) -> restoreFocusRequester
-                        else -> streamFocusRequesters.getOrPut(streamKeys[index]) { FocusRequester() }
+                        else -> streamFocusRequesters.getOrPut(streamKeys[index]) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                     },
                     onFocusChanged = { focused ->
                         if (focused) {
@@ -1352,6 +1380,7 @@ private fun StreamsList(
 @Composable
 internal fun StreamCard(
     stream: Stream,
+    showTechnicalDetails: Boolean = false,
     showFileSizeBadges: Boolean,
     showAddonLogo: Boolean,
     badgePlacement: StreamBadgePlacement,
@@ -1366,11 +1395,19 @@ internal fun StreamCard(
     val context = LocalContext.current
     val density = LocalDensity.current
     val unknownStreamLabel = stringResource(R.string.stream_unknown)
-    val streamName = remember(stream, unknownStreamLabel) {
-        com.nuvio.tv.core.debrid.NativeDebridSourceCards.displayText(stream.getDisplayNameOrNull()) ?: unknownStreamLabel
+    val compactDisplay = remember(stream, showFileSizeBadges) {
+        com.nuvio.tv.core.debrid.NativeDebridSourceCards.compactDisplay(stream,
+            fileSizeShownInBadges = showFileSizeBadges && stream.behaviorHints?.videoSize != null)
     }
-    val streamDescription = remember(stream) { com.nuvio.tv.core.debrid.NativeDebridSourceCards.displayDescription(stream) }
-    val visibleBadges = remember(stream.badges) { stream.badges.filterNot { com.nuvio.tv.core.debrid.NativeDebridSourceCards.isSeederBadge(it.name) } }
+    val fullStreamName = remember(stream, unknownStreamLabel) {
+        com.nuvio.tv.core.debrid.NativeDebridSourceCards.displayText(stream.getDisplayNameOrNull())
+            ?: com.nuvio.tv.core.debrid.NativeDebridSourceCards.displayText(stream.title) ?: unknownStreamLabel
+    }
+    val streamName = if (showTechnicalDetails) fullStreamName else compactDisplay.title ?: unknownStreamLabel
+    val streamDescription = if (showTechnicalDetails) {
+        remember(stream) { com.nuvio.tv.core.debrid.NativeDebridSourceCards.displayDescription(stream) }
+    } else compactDisplay.description
+    val visibleBadges = remember(stream.badges) { com.nuvio.tv.core.debrid.NativeDebridSourceCards.compactBadges(stream.badges) }
     val hasBadges = visibleBadges.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints?.videoSize != null) || reserveBadgeSpace
     val cardShape = RoundedCornerShape(NuvioTheme.radii.md)
     val hasGradientFocusRing = NuvioTheme.palette.focusRingGradient.size > 1
@@ -1433,7 +1470,7 @@ internal fun StreamCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(NuvioTheme.spacing.lg),
+                .padding(horizontal = NuvioTheme.spacing.lg, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.lg)
         ) {
@@ -1448,7 +1485,8 @@ internal fun StreamCard(
                             fileSizeBytes = stream.behaviorHints?.videoSize,
                             showFileSizeBadge = showFileSizeBadges,
                             animate = shouldAnimateBadges,
-                            focused = isFocused
+                            focused = isFocused,
+                            maxRows = if (showTechnicalDetails) Int.MAX_VALUE else 2
                         )
                     } else {
                         Spacer(modifier = Modifier.height(20.dp))
@@ -1467,7 +1505,9 @@ internal fun StreamCard(
                         style = MaterialTheme.typography.titleMedium.copy(
                             textDirection = streamName.contentTextDirection()
                         ),
-                        color = NuvioTheme.colors.TextPrimary
+                        color = NuvioTheme.colors.TextPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                     if (label != null) {
                         Text(
@@ -1479,40 +1519,46 @@ internal fun StreamCard(
                     }
                 }
 
+                if (showTechnicalDetails) {
                 stream.nativeFileMetadata?.verifiedTracks?.let { facts ->
                     com.nuvio.tv.core.mediafacts.SourceMediaFormatFacts.summary(facts)?.let { summary ->
-                        Text(text = "Checked source file: $summary", style = MaterialTheme.typography.labelSmall,
+                        Text(text = "Checked source file: $summary", style = MaterialTheme.typography.labelMedium,
                             color = NuvioTheme.colors.TextPrimary)
                     }
                 }
                 stream.nativeFileMetadata?.selectedFileBytes?.takeIf { it > 0L }?.let { bytes ->
                     Text(text = "Selected file: ${android.text.format.Formatter.formatShortFileSize(context, bytes)}",
-                        style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary)
+                        style = MaterialTheme.typography.labelMedium, color = NuvioTheme.extendedColors.textSecondary)
                 }
                 val reportedQuality = remember(stream) { com.nuvio.tv.core.debrid.ReportedStreamFacts.qualitySummary(stream) }
                 reportedQuality?.let { summary ->
-                    Text(text = "Reported quality (unverified): $summary", style = MaterialTheme.typography.labelSmall,
+                    Text(text = "Reported quality (unverified): $summary", style = MaterialTheme.typography.labelMedium,
                         color = NuvioTheme.extendedColors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 val nativeBitrate = com.nuvio.tv.core.debrid.StreamBitrateFacts.estimatedBitsPerSecond(stream)
                 val reportedBitrate = remember(stream) { com.nuvio.tv.core.debrid.ReportedStreamFacts.bitrateLabel(stream) }
                 if (nativeBitrate != null || reportedBitrate == null) {
                     Text(text = com.nuvio.tv.core.debrid.StreamBitrateFacts.label(stream),
-                        style = MaterialTheme.typography.labelSmall, color = NuvioTheme.extendedColors.textSecondary)
+                        style = MaterialTheme.typography.labelMedium, color = NuvioTheme.extendedColors.textSecondary)
                 }
                 reportedBitrate?.let { reported ->
-                    Text(text = reported, style = MaterialTheme.typography.labelSmall,
+                    Text(text = reported, style = MaterialTheme.typography.labelMedium,
                         color = NuvioTheme.extendedColors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
 
+                }
+
                 com.nuvio.tv.core.debrid.NativeDebridSourceCards.displayText(stream.pluginSourceName)
-                    ?.takeIf { it.isNotBlank() && it != stream.addonName }?.let { sourceName ->
+                    ?.takeIf { it.isNotBlank() && it != stream.addonName &&
+                        com.nuvio.tv.core.debrid.NativeDebridSourceCards.visibleAddonName(it) }?.let { sourceName ->
                     Text(
                         text = sourceName,
-                        style = MaterialTheme.typography.labelSmall.copy(
+                        style = MaterialTheme.typography.labelMedium.copy(
                             textDirection = sourceName.contentTextDirection()
                         ),
-                        color = NuvioTheme.extendedColors.textSecondary
+                        color = NuvioTheme.extendedColors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -1521,10 +1567,12 @@ internal fun StreamCard(
                         Text(
                             text = description,
                             modifier = Modifier.align(description.contentTextDirection().toAbsoluteAlignment()),
-                            style = MaterialTheme.typography.bodySmall.copy(
+                            style = MaterialTheme.typography.bodyMedium.copy(
                                 textDirection = description.contentTextDirection()
                             ),
-                            color = NuvioTheme.extendedColors.textSecondary
+                            color = NuvioTheme.extendedColors.textSecondary,
+                            maxLines = if (showTechnicalDetails) Int.MAX_VALUE else 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -1537,6 +1585,7 @@ internal fun StreamCard(
                             showFileSizeBadge = showFileSizeBadges,
                             animate = shouldAnimateBadges,
                             focused = isFocused,
+                            maxRows = if (showTechnicalDetails) Int.MAX_VALUE else 2,
                             modifier = Modifier.padding(top = NuvioTheme.spacing.xxs)
                         )
                     } else {
@@ -1545,7 +1594,7 @@ internal fun StreamCard(
                 }
             }
 
-            if (showAddonLogo) {
+            if (showAddonLogo && com.nuvio.tv.core.debrid.NativeDebridSourceCards.visibleAddonName(stream.addonName)) {
                 Column(
                     horizontalAlignment = Alignment.End
                 ) {
@@ -1564,7 +1613,7 @@ internal fun StreamCard(
 
                     Text(
                         text = stream.addonName,
-                        style = MaterialTheme.typography.labelSmall.copy(
+                        style = MaterialTheme.typography.labelMedium.copy(
                             textDirection = stream.addonName.contentTextDirection()
                         ),
                         color = NuvioTheme.extendedColors.textTertiary,

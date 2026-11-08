@@ -3,4 +3,17 @@
     <string name="syclop_licenses_subtitle">Data providers, service credits, and Android playback licenses used by Syclop.</string>
     <string name="syclop_licenses_app_title">Syclop</string>
     <string name="syclop_licenses_app_body">Syclop is derived from NuvioTV and licensed under the GNU General Public License v3.0. Its corresponding source code and license are available in the Syclop repository. Upstream credits are retained below.</string>
+    <string name="syclop_licenses_sentry_native_title">Sentry Native 0.15.2</string>
+    <string name="syclop_licenses_sentry_native_body">Read the bundled licenses for Sentry Native, its Android unwind library, and MPack.</string>
+    <string name="syclop_licenses_mpegh_title">MPEG-H audio decoder</string>
+    <string name="syclop_licenses_mpegh_body">Read the bundled licenses for the Media3 MPEG-H wrapper and the Fraunhofer decoder.</string>
+    <string name="syclop_licenses_av1_title">AV1 video decoder</string>
+    <string name="syclop_licenses_av1_body">Read the bundled licenses for the Media3 AV1 wrapper, libgav1, and Google cpu_features.</string>
+    <string name="syclop_licenses_libass_title">Libass subtitle renderer</string>
+    <string name="syclop_licenses_libass_body">Read the bundled notices for libass and its text and font libraries.</string>
+    <string name="syclop_licenses_ffmpeg_audio_title">FFmpeg audio decoder</string>
+    <string name="syclop_licenses_ffmpeg_audio_body">Read the bundled licenses for FFmpeg, Media3, and the Kodi-derived audio changes.</string>
+    <string name="syclop_licenses_nextlib_title">NextLib media information</string>
+    <string name="syclop_licenses_nextlib_body">Read the bundled licenses for NextLib, FFmpeg, Mbed TLS, and their included components.</string>
+    <string name="syclop_licenses_mpv_body">Read the bundled notices for MPV and its media, subtitle, and graphics libraries.</string>
 </resources>

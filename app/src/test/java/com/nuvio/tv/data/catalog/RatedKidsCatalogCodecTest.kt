@@ -34,6 +34,24 @@ class RatedKidsCatalogCodecTest {
         assertNull(RatedKidsCatalogCodec.show(show().copy(genres = listOf("children"), subgenres = listOf("animals")), descriptor("nature-shows")))
         assertNull(RatedKidsCatalogCodec.show(show().copy(genres = listOf("family")), descriptor("documentary-shows")))
     }
+    @Test fun `new Kids genre feeds require both family and exact genre without relaxing certificate or mature checks`() {
+        for (genre in listOf("animation", "adventure", "comedy", "fantasy")) {
+            val movieDescriptor = descriptor("family-$genre-movies")
+            val showDescriptor = descriptor("family-$genre-shows")
+            val acceptedMovie = movie().copy(genres = listOf("family", genre))
+            val acceptedShow = show().copy(genres = listOf("children", genre))
+            assertNotNull(RatedKidsCatalogCodec.movie(acceptedMovie, movieDescriptor))
+            assertNotNull(RatedKidsCatalogCodec.show(acceptedShow, showDescriptor))
+            assertNull(RatedKidsCatalogCodec.movie(movie(), movieDescriptor))
+            assertNull(RatedKidsCatalogCodec.show(show(), showDescriptor))
+            assertNull(RatedKidsCatalogCodec.movie(acceptedMovie.copy(genres = listOf(genre)), movieDescriptor))
+            assertNull(RatedKidsCatalogCodec.movie(acceptedMovie.copy(certification = "PG"), movieDescriptor))
+            assertNull(RatedKidsCatalogCodec.show(acceptedShow.copy(certification = "TV-PG"), showDescriptor))
+            assertNull(RatedKidsCatalogCodec.show(acceptedShow.copy(genres = acceptedShow.genres.orEmpty() + "adult"), showDescriptor))
+        }
+        assertNotNull(RatedKidsCatalogCodec.movie(movie().copy(genres = listOf("documentary")), descriptor("documentary-movies")))
+        assertNull(RatedKidsCatalogCodec.movie(movie().copy(genres = listOf("documentary"), certification = "PG"), descriptor("documentary-movies")))
+    }
     @Test fun `Science needs documentary or educational context and never science fiction or title words`() {
         val fiction = show().copy(title = "Science Lessons", genres = listOf("family", "science-fiction"), subgenres = listOf("technology"))
         assertNull(RatedKidsCatalogCodec.show(fiction, descriptor("science-shows")))

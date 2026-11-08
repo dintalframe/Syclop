@@ -1,6 +1,9 @@
 package com.nuvio.tv.data.mdblist
 
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.currentCoroutineContext
+import com.nuvio.tv.core.tracking.TrackingPlaybackGrant
+import com.nuvio.tv.core.tracking.TrackingProviderId
 
 class MdbListApiClient(
     private val http: MdbListHttpClient,
@@ -55,7 +58,10 @@ class MdbListApiClient(
         scope: MdbListAuthScope,
         acceptedStatuses: Set<Int> = emptySet()
     ): MdbListHttpResponse {
+        val origin = currentCoroutineContext()[TrackingPlaybackGrant]?.takeIf { it.providerId == TrackingProviderId.MDBLIST }
+        origin?.checkpoint()
         var authorization = auth.authorization(scope)
+        origin?.checkpoint()
         repeat(2) { attempt ->
             val response = http.execute(
                 MdbListHttpRequest(
@@ -66,8 +72,9 @@ class MdbListApiClient(
                     accessToken = authorization.tokens.accessToken,
                     limitKey = limitKey(scope)
                 ),
-                checkScope = { store.checkScope(scope) }
+                checkScope = { origin?.checkpoint(); store.checkScope(scope) }
             )
+            origin?.checkpoint()
             if (response.status == 401) {
                 if (attempt == 1) {
                     store.clearAuth(scope, MdbListAuthError.AUTHORIZATION_REVOKED, authorization.tokens.accessToken)

@@ -10,7 +10,9 @@ import com.nuvio.tv.data.remote.dto.trakt.TraktScrobbleRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktShowDto
 import com.nuvio.tv.core.profile.ProfileManager
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
 import java.io.IOException
+import com.nuvio.tv.core.tracking.*
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -41,18 +43,24 @@ sealed interface TraktScrobbleItem {
 }
 
 @Singleton
-class TraktScrobbleService @Inject constructor(
+class TraktScrobbleService internal constructor(
     private val traktApi: TraktApi,
     private val traktAuthService: TraktAuthService,
     private val traktProgressService: TraktProgressService,
-    private val profileManager: ProfileManager
+    private val profileManager: ProfileManager,
+    private val nowEpochMs: () -> Long
 ) {
+    @Inject constructor(traktApi: TraktApi, traktAuthService: TraktAuthService,
+        traktProgressService: TraktProgressService, profileManager: ProfileManager) :
+        this(traktApi, traktAuthService, traktProgressService, profileManager, System::currentTimeMillis)
+
     companion object {
         private const val TAG = "TraktScrobbleSvc"
     }
 
     private data class ScrobbleStamp(
         val profileId: Int,
+        val grantId: String?,
         val action: String,
         val itemKey: String,
         val progress: Float,
@@ -65,6 +73,9 @@ class TraktScrobbleService @Inject constructor(
     private val maxRetries = 2
     private val retryDelayMs = 1_500L
     private val serverOverloadedRetryDelayMs = 5_000L
+
+    fun preparePlaybackGrant(profileId: Int) = traktAuthService.preparePlaybackGrant(profileId)
+    suspend fun recoverPlaybackGrant(profileId: Int, grantId: String) = traktAuthService.recoverPlaybackGrant(profileId, grantId)
 
     suspend fun scrobbleStart(item: TraktScrobbleItem, progressPercent: Float) {
         sendScrobble(action = "start", item = item, progressPercent = progressPercent)
@@ -83,12 +94,16 @@ class TraktScrobbleService @Inject constructor(
         item: TraktScrobbleItem,
         progressPercent: Float
     ) {
+        checkpointTrackingPlaybackOrigin(TrackingProviderId.TRAKT)
         val activeProfileId = profileManager.activeProfileId.value
         if (!traktAuthService.getCurrentAuthState().isAuthenticated) return
         if (!traktAuthService.hasRequiredCredentials()) return
+        checkpointTrackingPlaybackOrigin(TrackingProviderId.TRAKT)
 
+        val playbackGrantId = currentCoroutineContext()[TrackingPlaybackGrant]
+            ?.takeIf { it.providerId == TrackingProviderId.TRAKT }?.grantId
         val clampedProgress = progressPercent.coerceIn(0f, 100f)
-        if (shouldSkip(activeProfileId, action, item.itemKey, clampedProgress)) return
+        if (shouldSkip(activeProfileId, playbackGrantId, action, item.itemKey, clampedProgress)) return
 
         val requestBody = buildRequestBody(item, clampedProgress)
 
@@ -96,6 +111,7 @@ class TraktScrobbleService @Inject constructor(
         val attempts = if (action == "stop") maxRetries + 1 else 1
 
         for (attempt in 1..attempts) {
+            checkpointTrackingPlaybackOrigin(TrackingProviderId.TRAKT)
             val response = try {
                 traktAuthService.executeAuthorizedWriteRequest { authHeader ->
                     when (action) {
@@ -123,13 +139,15 @@ class TraktScrobbleService @Inject constructor(
                 return
             }
 
+            checkpointTrackingPlaybackOrigin(TrackingProviderId.TRAKT)
             if (response.isSuccessful || response.code() == 409) {
                 lastScrobbleStamp = ScrobbleStamp(
                     profileId = activeProfileId,
+                    grantId = playbackGrantId,
                     action = action,
                     itemKey = item.itemKey,
                     progress = clampedProgress,
-                    timestampMs = System.currentTimeMillis()
+                    timestampMs = nowEpochMs()
                 )
                 if (action == "stop") {
                     traktProgressService.refreshNow()
@@ -187,21 +205,21 @@ class TraktScrobbleService @Inject constructor(
         }
     }
 
-    private fun shouldSkip(profileId: Int, action: String, itemKey: String, progress: Float): Boolean {
+    private fun shouldSkip(profileId: Int, grantId: String?, action: String, itemKey: String, progress: Float): Boolean {
         val last = lastScrobbleStamp ?: return false
-        val now = System.currentTimeMillis()
+        val now = nowEpochMs()
         val isSameWindow = now - last.timestampMs < minSendIntervalMs
-        val isSameProfile = last.profileId == profileId
+        val isSameOwner = last.profileId == profileId && last.grantId == grantId
         val isSameAction = last.action == action
         val isSameItem = last.itemKey == itemKey
         val isNearProgress = abs(last.progress - progress) <= progressWindow
 
         // Never skip a stop/pause if the last successful action was start —
         // Trakt needs to know playback ended regardless of timing.
-        if ((action == "stop" || action == "pause") && last.action == "start" && isSameItem && isSameProfile) {
+        if ((action == "stop" || action == "pause") && last.action == "start" && isSameItem && isSameOwner) {
             return false
         }
 
-        return isSameWindow && isSameProfile && isSameAction && isSameItem && isNearProgress
+        return isSameWindow && isSameOwner && isSameAction && isSameItem && isNearProgress
     }
 }

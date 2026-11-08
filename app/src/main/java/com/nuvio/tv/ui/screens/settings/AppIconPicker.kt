@@ -188,7 +188,7 @@ private fun AppIconOptionCard(
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
             Image(
-                painter = painterResource(option.bannerResource),
+                painter = painterResource(R.drawable.syclop_banner_wordmark),
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -203,7 +203,7 @@ private fun AppIconOptionCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Image(
-                    painter = painterResource(option.iconResource),
+                    painter = painterResource(R.drawable.syclop_app_icon_512),
                     contentDescription = null,
                     modifier = Modifier
                         .size(34.dp)
@@ -232,26 +232,6 @@ private fun AppIconOptionCard(
         }
     }
 }
-
-internal val AppIconOption.iconResource: Int
-    get() = when (this) {
-        AppIconOption.ORIGINAL -> R.mipmap.ic_launcher
-        AppIconOption.ARCTIC_BLUE -> R.mipmap.ic_launcher_arctic_blue
-        AppIconOption.EMERALD -> R.mipmap.ic_launcher_emerald
-        AppIconOption.ROSE_GOLD -> R.mipmap.ic_launcher_rose_gold
-        AppIconOption.COPPER -> R.mipmap.ic_launcher_copper
-        AppIconOption.GRAPHITE -> R.mipmap.ic_launcher_graphite
-    }
-
-internal val AppIconOption.bannerResource: Int
-    get() = when (this) {
-        AppIconOption.ORIGINAL -> R.mipmap.banner
-        AppIconOption.ARCTIC_BLUE -> R.mipmap.banner_arctic_blue
-        AppIconOption.EMERALD -> R.mipmap.banner_emerald
-        AppIconOption.ROSE_GOLD -> R.mipmap.banner_rose_gold
-        AppIconOption.COPPER -> R.mipmap.banner_copper
-        AppIconOption.GRAPHITE -> R.mipmap.banner_graphite
-    }
 
 @Composable
 internal fun AppIconOption.localizedName(): String = when (this) {

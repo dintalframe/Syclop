@@ -478,7 +478,7 @@ private fun EntityRailRow(
     val restoreFocusRequester = remember(rail.mediaType, rail.railType) { FocusRequester() }
     var restorePending by remember(rail.mediaType, rail.railType) { mutableStateOf(false) }
     val firstItemFocusRequester = initialFocusRequester
-        ?: itemFocusRequesters.getOrPut(0) { FocusRequester() }
+        ?: itemFocusRequesters.getOrPut(0) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
     var lastLoadMoreRequestTotal by remember(rail.mediaType, rail.railType) { mutableIntStateOf(-1) }
 
     LaunchedEffect(shouldRequestInitialFocus, firstItemFocusRequester, rail.items.firstOrNull()?.id) {
@@ -592,7 +592,7 @@ private fun EntityRailRow(
                     val requester = when {
                         isRestoreTarget -> restoreFocusRequester
                         itemIndex == 0 -> firstItemFocusRequester
-                        else -> itemFocusRequesters.getOrPut(itemIndex) { FocusRequester() }
+                        else -> itemFocusRequesters.getOrPut(itemIndex) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                     }
                     GridContentCard(
                         item = item,

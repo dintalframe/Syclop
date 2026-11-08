@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.drm.DefaultDrmSession DefaultDrmSession(java.util.UUID, androidx.media3.exoplayer.drm.ExoMediaDrm, androidx.media3.exoplayer.drm.DefaultDrmSession.ProvisioningManager, androidx.media3.exoplayer.drm.DefaultDrmSession.ReferenceCountListener, java.util.List&lt;androidx.media3.common.DrmInitData.SchemeData&gt;, int, boolean, boolean, byte[], java.util.HashMap&lt;java.lang.String,java.lang.String&gt;, androidx.media3.exoplayer.drm.MediaDrmCallback, android.os.Looper, androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy, androidx.media3.exoplayer.analytics.PlayerId) 5">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_PLAYBACK, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_QUERY, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_DOWNLOAD, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_RELEASE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DefaultDrmSession int getState()">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmSession.STATE_RELEASED, androidx.media3.exoplayer.drm.DrmSession.STATE_ERROR, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENING, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED_WITH_KEYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DefaultDrmSession mode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_PLAYBACK, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_QUERY, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_DOWNLOAD, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_RELEASE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DefaultDrmSession state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmSession.STATE_RELEASED, androidx.media3.exoplayer.drm.DrmSession.STATE_ERROR, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENING, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED_WITH_KEYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DefaultDrmSession void onError(java.lang.Throwable, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmUtil.ERROR_SOURCE_EXO_MEDIA_DRM, androidx.media3.exoplayer.drm.DrmUtil.ERROR_SOURCE_LICENSE_ACQUISITION, androidx.media3.exoplayer.drm.DrmUtil.ERROR_SOURCE_PROVISIONING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DefaultDrmSessionManager void setMode(int, byte[]) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_PLAYBACK, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_QUERY, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_DOWNLOAD, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_RELEASE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DefaultDrmSessionManager.Mode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_PLAYBACK, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_QUERY, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_DOWNLOAD, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_RELEASE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DrmSession int getState()">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmSession.STATE_RELEASED, androidx.media3.exoplayer.drm.DrmSession.STATE_ERROR, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENING, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED_WITH_KEYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DrmSession.State">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmSession.STATE_RELEASED, androidx.media3.exoplayer.drm.DrmSession.STATE_ERROR, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENING, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED_WITH_KEYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DrmSessionEventListener void onDrmSessionAcquired(int, androidx.media3.exoplayer.source.MediaSource.MediaPeriodId, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmSession.STATE_RELEASED, androidx.media3.exoplayer.drm.DrmSession.STATE_ERROR, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENING, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED_WITH_KEYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DrmSessionEventListener.EventDispatcher void drmSessionAcquired(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmSession.STATE_RELEASED, androidx.media3.exoplayer.drm.DrmSession.STATE_ERROR, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENING, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED_WITH_KEYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DrmUtil int getErrorCodeForMediaDrmException(java.lang.Throwable, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmUtil.ERROR_SOURCE_EXO_MEDIA_DRM, androidx.media3.exoplayer.drm.DrmUtil.ERROR_SOURCE_LICENSE_ACQUISITION, androidx.media3.exoplayer.drm.DrmUtil.ERROR_SOURCE_PROVISIONING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.DrmUtil.ErrorSource">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmUtil.ERROR_SOURCE_EXO_MEDIA_DRM, androidx.media3.exoplayer.drm.DrmUtil.ERROR_SOURCE_LICENSE_ACQUISITION, androidx.media3.exoplayer.drm.DrmUtil.ERROR_SOURCE_PROVISIONING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest KeyRequest(byte[], java.lang.String, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_UNKNOWN, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_INITIAL, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_RENEWAL, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_RELEASE, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_NONE, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_UPDATE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest requestType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_UNKNOWN, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_INITIAL, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_RENEWAL, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_RELEASE, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_NONE, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_UPDATE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.RequestType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_UNKNOWN, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_INITIAL, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_RENEWAL, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_RELEASE, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_NONE, androidx.media3.exoplayer.drm.ExoMediaDrm.KeyRequest.REQUEST_TYPE_UPDATE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.OfflineLicenseHelper androidx.media3.exoplayer.drm.DrmSession acquireFirstSessionOnHandlerThread(int, byte[], androidx.media3.common.Format) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_PLAYBACK, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_QUERY, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_DOWNLOAD, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_RELEASE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.OfflineLicenseHelper byte[] acquireSessionAndGetOfflineLicenseKeySetIdOnHandlerThread(int, byte[], androidx.media3.common.Format) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_PLAYBACK, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_QUERY, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_DOWNLOAD, androidx.media3.exoplayer.drm.DefaultDrmSessionManager.MODE_RELEASE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.UnsupportedDrmException UnsupportedDrmException(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.UnsupportedDrmException.REASON_UNSUPPORTED_SCHEME, androidx.media3.exoplayer.drm.UnsupportedDrmException.REASON_INSTANTIATION_ERROR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.UnsupportedDrmException UnsupportedDrmException(int, java.lang.Exception) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.UnsupportedDrmException.REASON_UNSUPPORTED_SCHEME, androidx.media3.exoplayer.drm.UnsupportedDrmException.REASON_INSTANTIATION_ERROR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.UnsupportedDrmException reason">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.UnsupportedDrmException.REASON_UNSUPPORTED_SCHEME, androidx.media3.exoplayer.drm.UnsupportedDrmException.REASON_INSTANTIATION_ERROR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.drm.UnsupportedDrmException.Reason">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.UnsupportedDrmException.REASON_UNSUPPORTED_SCHEME, androidx.media3.exoplayer.drm.UnsupportedDrmException.REASON_INSTANTIATION_ERROR}" />
+    </annotation>
+  </item>
+</root>
+

@@ -775,15 +775,13 @@ fun ModernHomeContent(
                         else -> activeCarouselItem.heroPreview
                     }
                     
-                    // Only use the real enrichmentActive flag from the ViewModel.
-                    // Additionally, if enrichment is enabled but no enriched data exists yet
-                    // for this item, treat as pending to avoid showing un-enriched addon data.
-                    // Exception: if enrichment already failed for this item, show addon data.
-                    // Also treat as pending when activeCarouselItem is null (row not yet resolved).
-                    val heroEnrichmentEnabled = uiState.heroEnrichmentEnabled
+                    // A tab can own focus indefinitely, so show the catalog preview while
+                    // waiting for the user to enter a row. Preserve the focused enrichment gate.
                     val enrichmentFailed = activeItemId != null && activeItemId in failedEnrichmentIds
-                    val effectiveEnrichmentActive = activeCarouselItem == null || enrichmentActive ||
-                        (enrichedHero == null && activeItemId != null && heroEnrichmentEnabled && !enrichmentFailed)
+                    val enrichmentPending = enrichedHero == null && activeItemId != null &&
+                        uiState.heroEnrichmentEnabled && !enrichmentFailed
+                    val effectiveEnrichmentActive = activeCarouselItem == null ||
+                        (contentHasFocus.value && (enrichmentActive || enrichmentPending))
                     
                     val activeRowKeyVal = activeRowKey.value
                     val activeRow = activeRowKeyVal?.let { rowByKey[it] }
@@ -916,6 +914,7 @@ fun ModernHomeContent(
                 }
             }
             val liveHeroSceneState = remember(
+                activeCarouselItemState,
                 resolvedHeroState,
                 shouldPlayHeroTrailerState,
                 heroMediaDataState,
@@ -927,6 +926,7 @@ fun ModernHomeContent(
                     val (heroMediaUrl, heroMediaAudioUrl, heroMediaPlaybackKey) = heroMediaDataState.value
                     val preview = if (enrichmentActive) null else resolvedHero
                     ModernHeroSceneState(
+                        itemKey = activeCarouselItemState.value?.key,
                         heroBackdrop = heroBackdrop,
                         preview = preview,
                         enrichmentActive = enrichmentActive,
@@ -1141,6 +1141,7 @@ fun ModernHomeContent(
             }
 
             HeroTitleBlock(
+                itemKeyProvider = { heroSceneStateLambda().itemKey },
                 previewProvider = {
                     val state = heroSceneStateLambda()
                     if (isRapidHorizontalNav.value || state.enrichmentActive) null

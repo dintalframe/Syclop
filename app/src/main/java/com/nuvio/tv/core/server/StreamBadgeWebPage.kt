@@ -17,7 +17,7 @@ object StreamBadgeWebPage {
                 base.createConfigurationContext(config)
             } else base
         }
-        val appName = context?.getString(R.string.app_name) ?: "NuvioTV"
+        val appName = context?.getString(R.string.app_name) ?: "Syclop"
         val title = context?.getString(R.string.settings_stream_badges_section) ?: "Fusion Style"
         val urlsTitle = context?.getString(R.string.settings_stream_badge_urls_title) ?: "Fusion badge URLs"
         val badgePositionTitle = context?.getString(R.string.settings_stream_badge_position_title) ?: "Badge position"
@@ -29,6 +29,9 @@ object StreamBadgeWebPage {
             R.string.settings_stream_badge_urls_description,
             STREAM_BADGE_IMPORT_LIMIT
         ) ?: "Import up to $STREAM_BADGE_IMPORT_LIMIT Fusion-style stream badge JSON URLs. Each URL can be updated or deleted separately."
+        val playerPackTitle = context?.getString(R.string.settings_stream_player_badges_title) ?: "Custom player badge pack"
+        val editorInstructions = context?.getString(R.string.web_stream_badge_editor_instructions, playerPackTitle)
+            ?: "Paste a compatible player badge pack URL below. Then select it under $playerPackTitle on your TV."
         val urlLabel = context?.getString(R.string.settings_fusion_badge_url_label) ?: "Fusion badge JSON URL"
         val importAction = context?.getString(R.string.action_import) ?: "Import"
         val closeEmpty = context?.getString(R.string.settings_fusion_badges_empty) ?: "No Fusion badge URLs imported."
@@ -56,6 +59,7 @@ object StreamBadgeWebPage {
 <html lang="en">
 <head>
 <meta charset="utf-8">
+${LocalConfigSession.browserScript("syclop-badges-pairing", context?.getString(R.string.web_addon_pairing_required))}
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>${appName.html()} - ${title.html()}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -111,6 +115,7 @@ object StreamBadgeWebPage {
   <div class="intro">
     <div class="intro-title">${urlsTitle.html()}</div>
     <div class="intro-copy">${description.html()}</div>
+    <div class="intro-copy">${editorInstructions.html()}</div>
   </div>
   <div class="field">
     <label for="badgeSource">${urlLabel.html()}</label>
@@ -249,65 +254,97 @@ function showBadgePreview(importItem){
   badgePreview.className='preview active';
   badgePreview.innerHTML='<div class="preview-title">'+labels.previewTitle+'</div><div class="source">'+escapeHtml(importItem.sourceUrl)+'</div><div class="meta">'+fmt(labels.previewCount,badgeCount)+'</div>'+body;
 }
+function showBadgeRequestError(error, fallback){
+  statusBox.textContent=error.name==='LocalPairingRequired'?error.message:fallback;
+  statusBox.className='status error';
+}
 async function importBadges(){
+  const button=document.getElementById('importBadges');
+  if(button.disabled)return;
+  button.disabled=true;
   statusBox.textContent=labels.importing;
   statusBox.className='status';
-  const res=await fetch('/api/badges/import',{method:'POST',headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({sourceUrl:badgeSource.value})});
-  const body=await res.json().catch(()=>({error:labels.importError}));
-  if(res.ok){
-    streamBadgeRules=normalizeBadgeRules(body.streamBadgeRules||{imports:[]});
-    badgeSource.value='';
-    renderBadgeImports();
-    statusBox.textContent=labels.imported;
-  }else{
-    statusBox.textContent=body.error||labels.importError;
-    statusBox.className='status error';
+  try{
+    const res=await localConfigFetch('/api/badges/import',{method:'POST',headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({sourceUrl:badgeSource.value})});
+    const body=await res.json().catch(()=>({error:labels.importError}));
+    if(res.ok){
+      streamBadgeRules=normalizeBadgeRules(body.streamBadgeRules||{imports:[]});
+      badgeSource.value='';
+      renderBadgeImports();
+      statusBox.textContent=labels.imported;
+    }else{
+      statusBox.textContent=body.error||labels.importError;
+      statusBox.className='status error';
+    }
+  }catch(error){
+    showBadgeRequestError(error,labels.importError);
+  }finally{
+    button.disabled=false;
   }
 }
 async function setActiveBadge(sourceUrl){
-  const res=await fetch('/api/badges/active',{method:'POST',headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({sourceUrl})});
-  const body=await res.json().catch(()=>({error:labels.saveError}));
-  if(res.ok){
-    streamBadgeRules=normalizeBadgeRules(body.streamBadgeRules||streamBadgeRules);
-    renderBadgeImports();
-    statusBox.textContent=labels.saved;
-    statusBox.className='status';
-  }else{
-    statusBox.textContent=body.error||labels.saveError;
-    statusBox.className='status error';
+  try{
+    const res=await localConfigFetch('/api/badges/active',{method:'POST',headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({sourceUrl})});
+    const body=await res.json().catch(()=>({error:labels.saveError}));
+    if(res.ok){
+      streamBadgeRules=normalizeBadgeRules(body.streamBadgeRules||streamBadgeRules);
+      renderBadgeImports();
+      statusBox.textContent=labels.saved;
+      statusBox.className='status';
+    }else{
+      statusBox.textContent=body.error||labels.saveError;
+      statusBox.className='status error';
+    }
+  }catch(error){
+    showBadgeRequestError(error,labels.saveError);
   }
 }
 async function deleteBadge(sourceUrl){
-  const res=await fetch('/api/badges/delete',{method:'POST',headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({sourceUrl})});
-  const body=await res.json().catch(()=>({error:labels.saveError}));
-  if(res.ok){
-    streamBadgeRules=normalizeBadgeRules(body.streamBadgeRules||{imports:[]});
-    renderBadgeImports();
-    statusBox.textContent=labels.deleted;
-    statusBox.className='status';
-  }else{
-    statusBox.textContent=body.error||labels.saveError;
-    statusBox.className='status error';
+  try{
+    const res=await localConfigFetch('/api/badges/delete',{method:'POST',headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({sourceUrl})});
+    const body=await res.json().catch(()=>({error:labels.saveError}));
+    if(res.ok){
+      streamBadgeRules=normalizeBadgeRules(body.streamBadgeRules||{imports:[]});
+      renderBadgeImports();
+      statusBox.textContent=labels.deleted;
+      statusBox.className='status';
+    }else{
+      statusBox.textContent=body.error||labels.saveError;
+      statusBox.className='status error';
+    }
+  }catch(error){
+    showBadgeRequestError(error,labels.saveError);
   }
 }
 async function saveBadgePlacement(nextPlacement){
+  const buttons=Object.values(badgePlacementButtons);
+  if(buttons.some(button=>button.disabled))return;
+  buttons.forEach(button=>{button.disabled=true;});
   const previousPlacement=badgePlacement;
   badgePlacement=normalizeBadgePlacement(nextPlacement);
   renderBadgePlacement();
-  const res=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({badgePlacement})});
-  const body=await res.json().catch(()=>({error:labels.saveError}));
-  if(res.ok){
-    statusBox.textContent=labels.saved;
-    statusBox.className='status';
-  }else{
+  try{
+    const res=await localConfigFetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({badgePlacement})});
+    const body=await res.json().catch(()=>({error:labels.saveError}));
+    if(res.ok){
+      statusBox.textContent=labels.saved;
+      statusBox.className='status';
+    }else{
+      badgePlacement=previousPlacement;
+      renderBadgePlacement();
+      statusBox.textContent=body.error||labels.saveError;
+      statusBox.className='status error';
+    }
+  }catch(error){
     badgePlacement=previousPlacement;
     renderBadgePlacement();
-    statusBox.textContent=body.error||labels.saveError;
-    statusBox.className='status error';
+    showBadgeRequestError(error,labels.saveError);
+  }finally{
+    buttons.forEach(button=>{button.disabled=false;});
   }
 }
 async function load(){
-  const res = await fetch('/api/settings');
+  const res = await localConfigFetch('/api/settings');
   const body = await res.json();
   const settings = body.settings || {};
   streamBadgeRules = normalizeBadgeRules(settings.streamBadgeRules || {imports:[]});
@@ -318,7 +355,7 @@ async function load(){
 document.getElementById('importBadges').addEventListener('click',importBadges);
 badgePlacementButtons.BOTTOM.addEventListener('click',()=>saveBadgePlacement('BOTTOM'));
 badgePlacementButtons.TOP.addEventListener('click',()=>saveBadgePlacement('TOP'));
-load().catch(()=>{statusBox.textContent=labels.loadError;statusBox.className='status error';});
+load().catch(error=>{statusBox.textContent=error.name==='LocalPairingRequired'?error.message:labels.loadError;statusBox.className='status error';});
 </script>
 </body>
 </html>

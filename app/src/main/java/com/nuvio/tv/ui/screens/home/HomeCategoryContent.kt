@@ -29,6 +29,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.flow.first
+import com.nuvio.tv.core.network.NetworkResult
 
 /** Category data is separate; presentation uses the same hero, cards and rows as Modern Home. */
 @Composable
@@ -42,21 +50,34 @@ internal fun HomeCategoryContent(
     posterStyle: PosterCardStyle,
     onDetail: (String, String, String) -> Unit,
     isWatched: (MetaPreview) -> Boolean,
-    onLongPress: (MetaPreview, String) -> Unit
+    onLongPress: (MetaPreview, String) -> Unit,
+    onContinueWatchingClick: (ContinueWatchingItem) -> Unit = {},
+    onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit = onContinueWatchingClick,
+    onContinueWatchingPlayManually: (ContinueWatchingItem) -> Unit = onContinueWatchingClick,
+    showContinueWatchingManualPlayOption: Boolean = false
 ) {
     val observed by viewModel.state.collectAsStateWithLifecycle()
     val state = observed.takeIf { it.section == section && viewModel.isCurrent() }
-    val rows = remember(state?.rows) { state?.rows.orEmpty().mapNotNull { it.data?.takeIf { data -> data.items.isNotEmpty() } } }
+    val catalogs = remember(state?.rows) { state?.rows.orEmpty().mapNotNull { it.data?.takeIf { data -> data.items.isNotEmpty() } } }
+    val metadata = rememberTrackingRowMetadata(section, viewModel, homeViewModel, homeUiState)
+    val categoryState = remember(section, homeUiState, catalogs, metadata) {
+        projectCategoryTrackingRows(section, homeUiState, catalogs, metadata)
+    }
+    val rows = categoryState.catalogRows
+    val hasVisibleProgress = categoryState.continueWatchingEnabled &&
+        (categoryState.continueWatchingItems.isNotEmpty() || categoryState.upcomingItems.isNotEmpty())
     // Retain the established, focusable loading/empty/retry destination when no card can render.
-    if (rows.isEmpty()) {
+    if (rows.isEmpty() && !hasVisibleProgress) {
         HomeBrowseContent(section, viewModel, tabFocus, entry, posterStyle, onDetail, isWatched, onLongPress)
         return
     }
 
     val currentState = state ?: return
     key(section, currentState.originRevision, currentState.requestRevision) {
-        HomeCategoryModernContent(section, viewModel, homeViewModel, homeUiState,
-            entry, currentState, rows, onDetail, isWatched, onLongPress)
+        HomeCategoryModernContent(section, viewModel, homeViewModel, categoryState,
+            entry, currentState, rows, onDetail, isWatched, onLongPress,
+            onContinueWatchingClick, onContinueWatchingStartFromBeginning,
+            onContinueWatchingPlayManually, showContinueWatchingManualPlayOption)
     }
 }
 
@@ -69,7 +90,11 @@ private fun HomeCategoryModernContent(
     section: HomeBrowseSection, viewModel: HomeBrowseViewModel, homeViewModel: HomeViewModel,
     homeUiState: HomeUiState, entry: HomeBrowseEntry, state: HomeBrowseState,
     rows: List<CatalogRow>, onDetail: (String, String, String) -> Unit,
-    isWatched: (MetaPreview) -> Boolean, onLongPress: (MetaPreview, String) -> Unit
+    isWatched: (MetaPreview) -> Boolean, onLongPress: (MetaPreview, String) -> Unit,
+    onContinueWatchingClick: (ContinueWatchingItem) -> Unit,
+    onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit,
+    onContinueWatchingPlayManually: (ContinueWatchingItem) -> Unit,
+    showContinueWatchingManualPlayOption: Boolean
 ) {
     val revision = state.originRevision
     val focusState = remember(section, revision) { viewModel.focusState(section, revision) }
@@ -81,9 +106,8 @@ private fun HomeCategoryModernContent(
     val uiState = remember(homeUiState, rows, contentHasFocus) {
         homeUiState.copy(
             catalogRows = rows, homeRows = rows.map(HomeRow::Catalog),
-            continueWatchingItems = emptyList(), upcomingItems = emptyList(),
             heroItems = emptyList(), isLoading = false, error = null,
-            homeLayout = HomeLayout.MODERN, continueWatchingEnabled = false,
+            homeLayout = HomeLayout.MODERN,
             catalogTypeSuffixEnabled = false,
             // A highlighted category already has catalog artwork and metadata. Do not wait
             // for focus-triggered enrichment until a card actually receives focus.
@@ -124,23 +148,39 @@ private fun HomeCategoryModernContent(
                 trailerPreviewUrls = homeViewModel.trailerPreviewUrls,
                 trailerPreviewAudioUrls = homeViewModel.trailerPreviewAudioUrls,
                 onNavigateToDetail = { id, type, base ->
-                    if (viewModel.isCurrent() && rows.any { row -> row.addonBaseUrl == base && row.items.any {
-                        it.id == id && it.apiType == type && HomeBrowseRules.matches(section, it, row)
-                    } }) {
+                    val catalogMember = rows.any { row -> row.addonBaseUrl == base && row.items.any {
+                        it.id == id && it.apiType == type && (row.addonId == WATCHED_HISTORY_ADDON_ID || HomeBrowseRules.matches(section, it, row))
+                    } }
+                    val progressMember = base.isEmpty() && uiState.containsCategoryTrackingDetail(id, type)
+                    if (viewModel.isCurrent() && (catalogMember || progressMember)) {
                         viewModel.returnToCategory(section, revision)
                         onDetail(id, type, base)
                     }
                 },
-                onContinueWatchingClick = {},
+                onContinueWatchingClick = { item ->
+                    dispatchCategoryTrackingAction(viewModel.isCurrent(), uiState, item,
+                        { viewModel.returnToCategory(section, revision) }, onContinueWatchingClick)
+                },
+                onContinueWatchingStartFromBeginning = { item ->
+                    dispatchCategoryTrackingAction(viewModel.isCurrent(), uiState, item,
+                        { viewModel.returnToCategory(section, revision) }, onContinueWatchingStartFromBeginning)
+                },
+                onContinueWatchingPlayManually = { item ->
+                    dispatchCategoryTrackingAction(viewModel.isCurrent(), uiState, item,
+                        { viewModel.returnToCategory(section, revision) }, onContinueWatchingPlayManually)
+                },
+                showContinueWatchingManualPlayOption = showContinueWatchingManualPlayOption,
                 onRequestTrailerPreview = { id, title, release, type ->
                     if (viewModel.isCurrent()) homeViewModel.requestTrailerPreview(id, title, release, type)
                 },
                 onLoadMoreCatalog = viewModel::loadMoreCatalog,
-                onRemoveContinueWatching = { _, _, _, _ -> },
+                onRemoveContinueWatching = { id, season, episode, nextUp ->
+                    if (viewModel.isCurrent()) homeViewModel.onEvent(HomeEvent.OnRemoveContinueWatching(id, season, episode, nextUp))
+                },
                 isCatalogItemWatched = isWatched,
                 onCatalogItemLongPress = { item, base ->
                     if (viewModel.isCurrent() && rows.any { row -> row.addonBaseUrl == base && row.items.any {
-                        it.id == item.id && it.apiType == item.apiType && HomeBrowseRules.matches(section, it, row)
+                        it.id == item.id && it.apiType == item.apiType && (row.addonId == WATCHED_HISTORY_ADDON_ID || HomeBrowseRules.matches(section, it, row))
                     } }) onLongPress(item, base)
                 },
                 onItemFocus = { if (viewModel.isCurrent()) homeViewModel.onItemFocus(it) },
@@ -182,12 +222,14 @@ internal fun rememberHomeCategoryPresentation(
     val displayedRowKeys = remember { mutableStateOf(emptyList<String>()) }
     val buildLock = remember { Mutex() }
     val context = LocalContext.current
-    val input = remember(rows, homeUiState.modernLandscapePostersEnabled,
+    val input = remember(rows, homeUiState.continueWatchingItems, homeUiState.upcomingItems,
+        homeUiState.continueWatchingEnabled, homeUiState.modernLandscapePostersEnabled,
         homeUiState.showFullReleaseDate, homeUiState.homeImdbRatingsVisibility,
         homeUiState.detailImdbRatingsVisibility, LocaleCache.localeTag) {
         ModernHomePresentationInput(
             homeRows = rows.map(HomeRow::Catalog), catalogRows = rows,
-            continueWatchingItems = emptyList(), upcomingItems = emptyList(),
+            continueWatchingItems = homeUiState.continueWatchingItems.takeIf { homeUiState.continueWatchingEnabled }.orEmpty(),
+            upcomingItems = homeUiState.upcomingItems.takeIf { homeUiState.continueWatchingEnabled }.orEmpty(),
             useLandscapePosters = homeUiState.modernLandscapePostersEnabled,
             showCatalogTypeSuffix = false,
             showFullReleaseDate = homeUiState.showFullReleaseDate,
@@ -211,6 +253,39 @@ internal fun rememberHomeCategoryPresentation(
     // Keep current-profile cards composed during page append. The enclosing revision key
     // recreates this state on a profile or request change, so prior artwork cannot persist.
     HomeCategoryPreparedPresentation(produced?.presentation ?: ModernHomePresentationState(), produced?.input === input)
+}
+
+/** Resolve existing media IDs for category facts; names/languages never establish membership. */
+@Composable
+private fun rememberTrackingRowMetadata(section: HomeBrowseSection, browse: HomeBrowseViewModel,
+    home: HomeViewModel, state: HomeUiState): List<MetaPreview> {
+    val revision = browse.selectionRevision
+    val requests = remember(state.continueWatchingItems, state.upcomingItems, state.watchedHistoryItems) {
+        (state.continueWatchingItems + state.upcomingItems).map { item -> when (item) {
+            is ContinueWatchingItem.InProgress -> item.progress.contentType to item.progress.contentId
+            is ContinueWatchingItem.NextUp -> item.info.contentType to item.info.contentId
+        } }.plus(state.watchedHistoryItems.map { it.contentType to it.contentId }).distinct().take(48)
+    }
+    val metadata by produceState(revision to emptyList<MetaPreview>(), section, revision, requests) {
+        val permits = Semaphore(4)
+        val resolved = coroutineScope {
+            requests.map { (type, id) -> async {
+                permits.withPermit {
+                    try {
+                        val cached = home.metaRepository.getCachedMeta(type, id)
+                        val meta = cached ?: withTimeoutOrNull(5_000L) {
+                            (home.metaRepository.getMetaFromAllAddons(type, id)
+                                .first { it !is NetworkResult.Loading } as? NetworkResult.Success)?.data
+                        }
+                        meta?.trackingRowPreview()
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (_: Exception) { null }
+                }
+            } }.awaitAll().filterNotNull()
+        }
+        if (browse.selectionRevision == revision && browse.isCurrent()) value = revision to resolved
+    }
+    return metadata.takeIf { it.first == revision }?.second.orEmpty()
 }
 
 /** Down and a guarded detail return use one entry path; a catalog update alone never enters it. */

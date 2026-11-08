@@ -18,6 +18,7 @@ import retrofit2.http.Header
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface TorboxApi {
@@ -73,6 +74,22 @@ interface TorboxApi {
     suspend fun listCloudWebDownloads(
         @Header("Authorization") authorization: String
     ): Response<TorboxEnvelopeDto<List<TorboxCloudItemDto>>>
+
+    @GET("v1/api/{section}/mylist")
+    suspend fun getCloudItemForDeletion(
+        @Header("Authorization") authorization: String,
+        @Path("section") section: String,
+        @Query("id") id: Long,
+        @Query("bypass_cache") bypassCache: Boolean = true
+    ): Response<TorboxEnvelopeDto<TorboxCloudItemDto>>
+
+    @POST("v1/api/{section}/{action}")
+    suspend fun deleteCloudItem(
+        @Header("Authorization") authorization: String,
+        @Path("section") section: String,
+        @Path("action") action: String,
+        @Body payload: Map<String, @JvmSuppressWildcards Any>
+    ): Response<TorboxEnvelopeDto<Any>>
 
     @GET("v1/api/torrents/requestdl")
     suspend fun requestDownloadLink(

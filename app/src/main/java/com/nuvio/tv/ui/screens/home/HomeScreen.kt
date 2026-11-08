@@ -12,6 +12,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -33,9 +34,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -51,20 +54,18 @@ import com.nuvio.tv.domain.model.localizedMembershipTitle
 import com.nuvio.tv.domain.model.LibrarySourceMode
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.components.ErrorState
-import com.nuvio.tv.ui.components.SyclopBrandAnimation
-import com.nuvio.tv.ui.components.SyclopBrandState
 import com.nuvio.tv.ui.components.LocalStartupLoadingState
-import com.nuvio.tv.ui.components.LocalStartupSplashEnabled
-import com.nuvio.tv.ui.components.shouldShowHomeStartupLoader
 import com.nuvio.tv.ui.components.NuvioDialog
 import com.nuvio.tv.ui.components.PosterCardDefaults
 import com.nuvio.tv.ui.components.PosterCardStyle
 import androidx.compose.ui.res.stringResource
+import com.nuvio.tv.LocalContentFocusRequester
 import com.nuvio.tv.R
 import com.nuvio.tv.core.tracking.LOCAL_LIBRARY_LIST_KEY
 import com.nuvio.tv.core.tracking.supportsMembershipFor
 import com.nuvio.tv.data.local.StartupAuthNotice
 import com.nuvio.tv.ui.components.posteroptions.TrackingRemovalConfirmationDialog
+import com.nuvio.tv.ui.screens.addon.AddonManagementAccess
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -74,6 +75,52 @@ private data class HomePosterOptionsTarget(
 )
 
 private const val HOME_STABLE_GATE_TIMEOUT_MS = 5_000L
+
+@Composable
+internal fun HomeStartupIndicator() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            text = stringResource(R.string.startup_preparing_home),
+            style = MaterialTheme.typography.bodyMedium,
+            color = NuvioTheme.colors.TextPrimary
+        )
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+internal fun HomeSourceEmptyState(
+    message: String,
+    tabFocus: FocusRequester,
+    onSetupSources: (() -> Unit)?
+) {
+    Box(
+        modifier = Modifier.fillMaxSize().padding(horizontal = NuvioTheme.spacing.xl),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.lg)
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = NuvioTheme.colors.TextSecondary,
+                textAlign = TextAlign.Center
+            )
+            if (onSetupSources != null) {
+                Button(
+                    onClick = onSetupSources,
+                    modifier = Modifier
+                        .focusRequester(LocalContentFocusRequester.current)
+                        .focusProperties { up = tabFocus }
+                ) {
+                    Text(stringResource(R.string.essential_addon_setup_title))
+                }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -96,9 +143,13 @@ fun HomeScreen(
     onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit = onContinueWatchingClick,
     onContinueWatchingPlayManually: (ContinueWatchingItem) -> Unit = onContinueWatchingClick,
     onNavigateToCatalogSeeAll: (String, String, String) -> Unit = { _, _, _ -> },
-    onNavigateToFolderDetail: (String, String) -> Unit = { _, _ -> }
+    onNavigateToFolderDetail: (String, String) -> Unit = { _, _ -> },
+    onSetupContentSources: (() -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val setupSources = onSetupContentSources.takeUnless {
+        AddonManagementAccess.isReadOnly(viewModel.profileManager.activeProfile)
+    }
     val browseViewModel: HomeBrowseViewModel = hiltViewModel()
     var browseSectionName by rememberSaveable { mutableStateOf(HomeBrowseSection.HOME.name) }
     val browseSection = HomeBrowseSection.entries.firstOrNull { it.name == browseSectionName } ?: HomeBrowseSection.HOME
@@ -258,11 +309,6 @@ fun HomeScreen(
     ReportDrawnWhen { !showStartupLoader }
 
     val startupLoadingState = LocalStartupLoadingState.current
-    val showHomeLoader = shouldShowHomeStartupLoader(
-        loading = showStartupLoader,
-        sharedSplashEnabled = LocalStartupSplashEnabled.current,
-        startupComplete = startupLoadingState?.complete != false
-    )
     LaunchedEffect(showStartupLoader, startupLoadingState) {
         if (!showStartupLoader) {
             startupLoadingState?.complete = true
@@ -287,36 +333,22 @@ fun HomeScreen(
             }
 
             uiState.error == noAddonsError && uiState.catalogRows.isEmpty() -> {
-                if (!homeStableGateReleased) {
-                    Unit
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(R.string.home_no_addons),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = NuvioTheme.colors.TextSecondary
-                        )
-                    }
+                if (homeStableGateReleased) {
+                    HomeSourceEmptyState(
+                        message = stringResource(if (setupSources == null) R.string.home_empty_no_sources_title else R.string.home_no_addons),
+                        tabFocus = tabFocus,
+                        onSetupSources = setupSources
+                    )
                 }
             }
 
             uiState.error == noCatalogAddonsError && uiState.catalogRows.isEmpty() && !hasCollectionContent && !hasHeroContent -> {
-                if (!homeStableGateReleased) {
-                    Unit
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(R.string.home_no_catalog_addons),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = NuvioTheme.colors.TextSecondary
-                        )
-                    }
+                if (homeStableGateReleased) {
+                    HomeSourceEmptyState(
+                        message = stringResource(if (setupSources == null) R.string.web_no_catalogs else R.string.home_no_catalog_addons),
+                        tabFocus = tabFocus,
+                        onSetupSources = setupSources
+                    )
                 }
             }
 
@@ -432,13 +464,8 @@ fun HomeScreen(
             }
         }
 
-        if (showHomeLoader) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                SyclopBrandAnimation(SyclopBrandState.Loading)
-            }
+        if (showStartupLoader) {
+            HomeStartupIndicator()
         }
 
         val startupAuthNotice = uiState.startupAuthNotice
@@ -467,7 +494,9 @@ fun HomeScreen(
 
         } else {
             HomeCategoryContent(browseSection, browseViewModel, viewModel, uiState, tabFocus, entry, posterCardStyle,
-                onNavigateToDetailStable, isCatalogItemWatched, onCatalogItemLongPress)
+                onNavigateToDetailStable, isCatalogItemWatched, onCatalogItemLongPress,
+                onContinueWatchingClickStable, onContinueWatchingStartFromBeginningStable,
+                onContinueWatchingPlayManuallyStable, effectiveAutoplayEnabled)
         }
     }
 

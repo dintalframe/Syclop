@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.upstream.CmcdConfiguration CmcdConfiguration(java.lang.String, java.lang.String, androidx.media3.exoplayer.upstream.CmcdConfiguration.RequestConfig, int) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdConfiguration.MODE_REQUEST_HEADER, androidx.media3.exoplayer.upstream.CmcdConfiguration.MODE_QUERY_PARAMETER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdConfiguration dataTransmissionMode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdConfiguration.MODE_REQUEST_HEADER, androidx.media3.exoplayer.upstream.CmcdConfiguration.MODE_QUERY_PARAMETER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdConfiguration.CmcdKey">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_BITRATE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_BUFFER_LENGTH, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_CONTENT_ID, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_SESSION_ID, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_MAXIMUM_REQUESTED_BITRATE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_STREAMING_FORMAT, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_STREAM_TYPE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_VERSION, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_TOP_BITRATE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_OBJECT_DURATION, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_MEASURED_THROUGHPUT, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_OBJECT_TYPE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_BUFFER_STARVATION, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_DEADLINE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_PLAYBACK_RATE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_STARTUP, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_NEXT_OBJECT_REQUEST, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_NEXT_RANGE_REQUEST}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdConfiguration.DataTransmissionMode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdConfiguration.MODE_REQUEST_HEADER, androidx.media3.exoplayer.upstream.CmcdConfiguration.MODE_QUERY_PARAMETER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdConfiguration.HeaderKey">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_CMCD_OBJECT, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_CMCD_REQUEST, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_CMCD_SESSION, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_CMCD_STATUS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdConfiguration.RequestConfig boolean isKeyAllowed(java.lang.String) 0">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_BITRATE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_BUFFER_LENGTH, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_CONTENT_ID, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_SESSION_ID, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_MAXIMUM_REQUESTED_BITRATE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_STREAMING_FORMAT, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_STREAM_TYPE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_VERSION, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_TOP_BITRATE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_OBJECT_DURATION, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_MEASURED_THROUGHPUT, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_OBJECT_TYPE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_BUFFER_STARVATION, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_DEADLINE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_PLAYBACK_RATE, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_STARTUP, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_NEXT_OBJECT_REQUEST, androidx.media3.exoplayer.upstream.CmcdConfiguration.KEY_NEXT_RANGE_REQUEST}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData CmcdData(androidx.media3.exoplayer.upstream.CmcdData.CmcdObject, androidx.media3.exoplayer.upstream.CmcdData.CmcdRequest, androidx.media3.exoplayer.upstream.CmcdData.CmcdSession, androidx.media3.exoplayer.upstream.CmcdData.CmcdStatus, int) 4">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdConfiguration.MODE_REQUEST_HEADER, androidx.media3.exoplayer.upstream.CmcdConfiguration.MODE_QUERY_PARAMETER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData dataTransmissionMode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdConfiguration.MODE_REQUEST_HEADER, androidx.media3.exoplayer.upstream.CmcdConfiguration.MODE_QUERY_PARAMETER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.CmcdObject objectType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_INIT_SEGMENT, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_AUDIO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_VIDEO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MUXED_AUDIO_AND_VIDEO, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MANIFEST}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.CmcdObject.Builder androidx.media3.exoplayer.upstream.CmcdData.CmcdObject.Builder setObjectType(java.lang.String) 0">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_INIT_SEGMENT, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_AUDIO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_VIDEO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MUXED_AUDIO_AND_VIDEO, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MANIFEST}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.CmcdObject.Builder objectType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_INIT_SEGMENT, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_AUDIO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_VIDEO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MUXED_AUDIO_AND_VIDEO, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MANIFEST}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.CmcdSession streamType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.STREAM_TYPE_VOD, androidx.media3.exoplayer.upstream.CmcdData.STREAM_TYPE_LIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.CmcdSession streamingFormat">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_DASH, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_HLS, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_SS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.CmcdSession.Builder androidx.media3.exoplayer.upstream.CmcdData.CmcdSession.Builder setStreamType(java.lang.String) 0">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.STREAM_TYPE_VOD, androidx.media3.exoplayer.upstream.CmcdData.STREAM_TYPE_LIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.CmcdSession.Builder androidx.media3.exoplayer.upstream.CmcdData.CmcdSession.Builder setStreamingFormat(java.lang.String) 0">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_DASH, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_HLS, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_SS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.CmcdSession.Builder streamType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.STREAM_TYPE_VOD, androidx.media3.exoplayer.upstream.CmcdData.STREAM_TYPE_LIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.CmcdSession.Builder streamingFormat">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_DASH, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_HLS, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_SS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.Factory Factory(androidx.media3.exoplayer.upstream.CmcdConfiguration, java.lang.String) 1">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_DASH, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_HLS, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_SS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.Factory androidx.media3.exoplayer.upstream.CmcdData.Factory setObjectType(java.lang.String) 0">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_INIT_SEGMENT, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_AUDIO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_VIDEO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MUXED_AUDIO_AND_VIDEO, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MANIFEST}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.Factory boolean isManifestObjectType(java.lang.String) 0">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_INIT_SEGMENT, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_AUDIO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_VIDEO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MUXED_AUDIO_AND_VIDEO, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MANIFEST}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.Factory boolean isMediaObjectType(java.lang.String) 0">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_INIT_SEGMENT, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_AUDIO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_VIDEO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MUXED_AUDIO_AND_VIDEO, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MANIFEST}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.Factory objectType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_INIT_SEGMENT, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_AUDIO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_VIDEO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MUXED_AUDIO_AND_VIDEO, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MANIFEST}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.Factory streamingFormat">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_DASH, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_HLS, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_SS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.ObjectType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_INIT_SEGMENT, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_AUDIO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_VIDEO_ONLY, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MUXED_AUDIO_AND_VIDEO, androidx.media3.exoplayer.upstream.CmcdData.OBJECT_TYPE_MANIFEST}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.StreamType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.STREAM_TYPE_VOD, androidx.media3.exoplayer.upstream.CmcdData.STREAM_TYPE_LIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.CmcdData.StreamingFormat">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_DASH, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_HLS, androidx.media3.exoplayer.upstream.CmcdData.STREAMING_FORMAT_SS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FallbackOptions boolean isFallbackAvailable(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FALLBACK_TYPE_LOCATION, androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FALLBACK_TYPE_TRACK}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FallbackSelection FallbackSelection(int, long) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FALLBACK_TYPE_LOCATION, androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FALLBACK_TYPE_TRACK}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FallbackSelection type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FALLBACK_TYPE_LOCATION, androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FALLBACK_TYPE_TRACK}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FallbackType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FALLBACK_TYPE_LOCATION, androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FALLBACK_TYPE_TRACK}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.Loader.LoadErrorAction LoadErrorAction(int, long) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.Loader.ACTION_TYPE_RETRY, androidx.media3.exoplayer.upstream.Loader.ACTION_TYPE_RETRY_AND_RESET_ERROR_COUNT, androidx.media3.exoplayer.upstream.Loader.ACTION_TYPE_DONT_RETRY, androidx.media3.exoplayer.upstream.Loader.ACTION_TYPE_DONT_RETRY_FATAL}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.upstream.Loader.LoadErrorAction type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.upstream.Loader.ACTION_TYPE_RETRY, androidx.media3.exoplayer.upstream.Loader.ACTION_TYPE_RETRY_AND_RESET_ERROR_COUNT, androidx.media3.exoplayer.upstream.Loader.ACTION_TYPE_DONT_RETRY, androidx.media3.exoplayer.upstream.Loader.ACTION_TYPE_DONT_RETRY_FATAL}" />
+    </annotation>
+  </item>
+</root>
+

@@ -119,6 +119,13 @@ class MalApiClient internal constructor(
             "limit" to PAGE_SIZE.toString(), "offset" to offset.toString(), "fields" to ANIME_FIELDS)))
     }
 
+    /** Public popularity ranking; user account state and list tokens are never consulted. */
+    suspend fun popular(offset: Int, clientId: String): MalPage {
+        require(offset >= 0)
+        return page(publicGet("anime/ranking", clientId, mapOf("ranking_type" to "bypopularity",
+            "limit" to PAGE_SIZE.toString(), "offset" to offset.toString(), "fields" to ANIME_FIELDS)))
+    }
+
     suspend fun libraryPage(status: MalListStatus, offset: Int, token: String): MalPage {
         require(offset >= 0)
         return page(get("users/@me/animelist", token, mapOf("status" to status.wireValue,

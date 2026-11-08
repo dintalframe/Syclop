@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.ts.Ac3Reader state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.Ac3Reader.STATE_FINDING_SYNC, androidx.media3.extractor.ts.Ac3Reader.STATE_READING_HEADER, androidx.media3.extractor.ts.Ac3Reader.STATE_READING_SAMPLE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.Ac3Reader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.Ac4Reader state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.Ac4Reader.STATE_FINDING_SYNC, androidx.media3.extractor.ts.Ac4Reader.STATE_READING_HEADER, androidx.media3.extractor.ts.Ac4Reader.STATE_READING_SAMPLE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.Ac4Reader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.AdtsExtractor AdtsExtractor(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING, androidx.media3.extractor.ts.AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING_ALWAYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.AdtsExtractor flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING, androidx.media3.extractor.ts.AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING_ALWAYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.AdtsExtractor.Flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING, androidx.media3.extractor.ts.AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING_ALWAYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.AdtsReader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory DefaultTsPayloadReaderFactory(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_AAC_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_H264_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_OVERRIDE_CAPTION_DESCRIPTORS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory DefaultTsPayloadReaderFactory(int, java.util.List&lt;androidx.media3.common.Format&gt;) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_AAC_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_H264_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_OVERRIDE_CAPTION_DESCRIPTORS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory boolean isSet(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_AAC_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_H264_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_OVERRIDE_CAPTION_DESCRIPTORS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_AAC_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_H264_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_OVERRIDE_CAPTION_DESCRIPTORS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.Flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_AAC_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_H264_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_OVERRIDE_CAPTION_DESCRIPTORS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.DtsReader frameType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.DtsUtil.FRAME_TYPE_UNKNOWN, androidx.media3.extractor.DtsUtil.FRAME_TYPE_CORE, androidx.media3.extractor.DtsUtil.FRAME_TYPE_EXTENSION_SUBSTREAM, androidx.media3.extractor.DtsUtil.FRAME_TYPE_UHD_SYNC, androidx.media3.extractor.DtsUtil.FRAME_TYPE_UHD_NON_SYNC}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.DtsReader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.DvbSubtitleReader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.ElementaryStreamReader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.H262Reader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.H263Reader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.H263Reader.CsdBuffer state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.H263Reader.CsdBuffer.STATE_SKIP_TO_VISUAL_OBJECT_SEQUENCE_START, androidx.media3.extractor.ts.H263Reader.CsdBuffer.STATE_EXPECT_VISUAL_OBJECT_START, androidx.media3.extractor.ts.H263Reader.CsdBuffer.STATE_EXPECT_VIDEO_OBJECT_START, androidx.media3.extractor.ts.H263Reader.CsdBuffer.STATE_EXPECT_VIDEO_OBJECT_LAYER_START, androidx.media3.extractor.ts.H263Reader.CsdBuffer.STATE_WAIT_FOR_VOP_START}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.H264Reader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.H265Reader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.Id3Reader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.LatmReader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.MpegAudioReader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.MpeghReader boolean shouldParsePacket(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_FILLDATA, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_MPEGH3DACFG, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_MPEGH3DAFRAME, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_AUDIOSCENEINFO, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_SYNC, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_SYNCGAP, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_MARKER, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_CRC16, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_CRC32, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_DESCRIPTOR, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_USERINTERACTION, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_LOUDNESS_DRC, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_BUFFERINFO, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_GLOBAL_CRC16, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_GLOBAL_CRC32, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_AUDIOTRUNCATION, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_GENDATA, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYPE_EARCON, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYPE_PCMCONFIG, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYPE_PCMDATA, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_LOUDNESS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.MpeghReader flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.MpeghReader state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.MpeghReader.STATE_FINDING_SYNC, androidx.media3.extractor.ts.MpeghReader.STATE_READING_PACKET_HEADER, androidx.media3.extractor.ts.MpeghReader.STATE_READING_PACKET_PAYLOAD}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.MpeghReader void packetStarted(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader packetType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_FILLDATA, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_MPEGH3DACFG, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_MPEGH3DAFRAME, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_AUDIOSCENEINFO, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_SYNC, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_SYNCGAP, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_MARKER, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_CRC16, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_CRC32, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_DESCRIPTOR, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_USERINTERACTION, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_LOUDNESS_DRC, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_BUFFERINFO, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_GLOBAL_CRC16, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_GLOBAL_CRC32, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_AUDIOTRUNCATION, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_GENDATA, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYPE_EARCON, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYPE_PCMCONFIG, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYPE_PCMDATA, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_LOUDNESS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.Type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_FILLDATA, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_MPEGH3DACFG, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_MPEGH3DAFRAME, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_AUDIOSCENEINFO, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_SYNC, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_SYNCGAP, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_MARKER, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_CRC16, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_CRC32, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_DESCRIPTOR, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_USERINTERACTION, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_LOUDNESS_DRC, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_BUFFERINFO, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_GLOBAL_CRC16, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_GLOBAL_CRC32, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_AUDIOTRUNCATION, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_GENDATA, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYPE_EARCON, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYPE_PCMCONFIG, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYPE_PCMDATA, androidx.media3.extractor.ts.MpeghUtil.MhasPacketHeader.PACTYP_LOUDNESS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.PesReader void consume(androidx.media3.common.util.ParsableByteArray, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.SectionReader void consume(androidx.media3.common.util.ParsableByteArray, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor TsExtractor(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_AAC_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_H264_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_OVERRIDE_CAPTION_DESCRIPTORS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor TsExtractor(int, androidx.media3.common.util.TimestampAdjuster, androidx.media3.extractor.ts.TsPayloadReader.Factory) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.TsExtractor.MODE_MULTI_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_SINGLE_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_HLS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor TsExtractor(int, androidx.media3.common.util.TimestampAdjuster, androidx.media3.extractor.ts.TsPayloadReader.Factory, int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.TsExtractor.MODE_MULTI_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_SINGLE_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_HLS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor TsExtractor(int, androidx.media3.extractor.text.SubtitleParser.Factory) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor TsExtractor(int, int, androidx.media3.extractor.text.SubtitleParser.Factory, androidx.media3.common.util.TimestampAdjuster, androidx.media3.extractor.ts.TsPayloadReader.Factory, int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.TsExtractor.MODE_MULTI_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_SINGLE_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_HLS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor TsExtractor(int, int, androidx.media3.extractor.text.SubtitleParser.Factory, androidx.media3.common.util.TimestampAdjuster, androidx.media3.extractor.ts.TsPayloadReader.Factory, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor TsExtractor(int, int, int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.TsExtractor.MODE_MULTI_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_SINGLE_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_HLS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor TsExtractor(int, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_AAC_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_H264_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_IGNORE_SPLICE_INFO_STREAM, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_OVERRIDE_CAPTION_DESCRIPTORS, androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor extractorFlags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor mode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.TsExtractor.MODE_MULTI_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_SINGLE_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_HLS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor.Flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsExtractor.Mode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.TsExtractor.MODE_MULTI_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_SINGLE_PMT, androidx.media3.extractor.ts.TsExtractor.MODE_HLS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsPayloadReader void consume(androidx.media3.common.util.ParsableByteArray, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsPayloadReader.EsInfo EsInfo(int, java.lang.String, int, java.util.List&lt;androidx.media3.extractor.ts.TsPayloadReader.DvbSubtitleInfo&gt;, byte[]) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_UNDEFINED, androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_CLEAN_EFFECTS, androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_HEARING_IMPAIRED, androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_VISUAL_IMPAIRED_COMMENTARY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsPayloadReader.EsInfo audioType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_UNDEFINED, androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_CLEAN_EFFECTS, androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_HEARING_IMPAIRED, androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_VISUAL_IMPAIRED_COMMENTARY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AudioType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_UNDEFINED, androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_CLEAN_EFFECTS, androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_HEARING_IMPAIRED, androidx.media3.extractor.ts.TsPayloadReader.EsInfo.AUDIO_TYPE_VISUAL_IMPAIRED_COMMENTARY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.ts.TsPayloadReader.Flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.ts.TsPayloadReader.FLAG_PAYLOAD_UNIT_START_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_RANDOM_ACCESS_INDICATOR, androidx.media3.extractor.ts.TsPayloadReader.FLAG_DATA_ALIGNMENT_INDICATOR}" />
+    </annotation>
+  </item>
+</root>
+

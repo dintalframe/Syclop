@@ -2,6 +2,14 @@ package com.nuvio.tv.ui.screens.player
 
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
+import com.nuvio.tv.core.tracking.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import com.nuvio.tv.core.party.PartyPlayback
 import com.nuvio.tv.core.party.PartyUiState
 import com.nuvio.tv.data.local.InternalPlayerEngine
@@ -67,7 +75,7 @@ class PlayerPlaybackActionControllerTest {
         val repository = fixture.controller.watchProgressRepository
         val saved = slot<WatchProgress>()
         coEvery {
-            repository.saveProgress(capture(saved), 1, true)
+            repository.savePlaybackProgress(capture(saved), 1, any(), false, true)
         } just Runs
 
         fixture.controller.onEvent(PlayerEvent.OnStartFromBeginning)
@@ -83,7 +91,7 @@ class PlayerPlaybackActionControllerTest {
         assertFalse(saved.captured.isCompleted())
         // A rewatch updates playback progress without changing the user's watched history.
         coVerify(exactly = 0) {
-            repository.markAsCompleted(any(), any(), any())
+            repository.savePlaybackProgress(any(), any(), any(), true, any())
         }
     }
 
@@ -102,7 +110,7 @@ class PlayerPlaybackActionControllerTest {
             }
             "tt-fixture"
         }
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers { saved += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers { saved += firstArg<WatchProgress>() }
 
         fixture.controller.saveWatchProgressInternal(position = 3_400_000L, duration = 3_600_000L)
         runCurrent()
@@ -115,7 +123,7 @@ class PlayerPlaybackActionControllerTest {
 
         assertEquals(listOf(60_000L), saved.map { it.position })
         assertFalse(fixture.controller.hasMarkedCurrentEpisodeCompleted)
-        coVerify(exactly = 0) { repository.markAsCompleted(any(), any(), any()) }
+        coVerify(exactly = 0) { repository.savePlaybackProgress(any(), any(), any(), true, any()) }
     }
 
     @Test
@@ -125,12 +133,12 @@ class PlayerPlaybackActionControllerTest {
         val completionEntered = CompletableDeferred<Unit>()
         val releaseCompletion = CompletableDeferred<Unit>()
         val persisted = mutableListOf<String>()
-        coEvery { repository.markAsCompleted(any(), 1, false) } coAnswers {
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), true, true) } coAnswers {
             completionEntered.complete(Unit)
             releaseCompletion.await()
             persisted += "complete"
         }
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers {
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers {
             persisted += "resume:${firstArg<WatchProgress>().position}"
         }
 
@@ -165,8 +173,8 @@ class PlayerPlaybackActionControllerTest {
             }
             "tt-fixture"
         }
-        coEvery { repository.markAsCompleted(any(), 1, false) } coAnswers { completed += firstArg<WatchProgress>() }
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers { saved += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), true, true) } coAnswers { completed += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers { saved += firstArg<WatchProgress>() }
 
         fixture.controller.saveWatchProgressInternal(position = 3_400_000L, duration = 3_600_000L)
         runCurrent()
@@ -204,8 +212,8 @@ class PlayerPlaybackActionControllerTest {
             }
             "tt-fixture"
         }
-        coEvery { repository.markAsCompleted(any(), 1, false) } coAnswers { completed += firstArg<WatchProgress>() }
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers { saved += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), true, true) } coAnswers { completed += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers { saved += firstArg<WatchProgress>() }
 
         fixture.controller.saveWatchProgressInternal(position = 3_400_000L, duration = 3_600_000L)
         fixture.controller.saveWatchProgressInternal(position = 30_000L, duration = 0L)
@@ -234,8 +242,8 @@ class PlayerPlaybackActionControllerTest {
         val repository = fixture.controller.watchProgressRepository
         val completed = mutableListOf<WatchProgress>()
         val saved = mutableListOf<WatchProgress>()
-        coEvery { repository.markAsCompleted(any(), 1, false) } coAnswers { completed += firstArg<WatchProgress>() }
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers { saved += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), true, true) } coAnswers { completed += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers { saved += firstArg<WatchProgress>() }
 
         fixture.controller.saveWatchProgressInternal(position = 3_400_000L, duration = 3_600_000L)
         runCurrent()
@@ -265,8 +273,8 @@ class PlayerPlaybackActionControllerTest {
         val resolver = fixture.controller.directDebridResolver
         val completed = mutableListOf<WatchProgress>()
         val saved = mutableListOf<WatchProgress>()
-        coEvery { repository.markAsCompleted(any(), 1, false) } coAnswers { completed += firstArg<WatchProgress>() }
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers { saved += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), true, true) } coAnswers { completed += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers { saved += firstArg<WatchProgress>() }
         // Both preparation requests are denied. No source, playback grant or network is supplied.
         coEvery { resolver.isPlaybackAuthorized(any(), any(), any(), any(), any(), any()) } returns false
 
@@ -307,7 +315,7 @@ class PlayerPlaybackActionControllerTest {
             if (++normalizations == 1) { entered.complete(Unit); release.await() }
             "tt-fixture"
         }
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers { saved += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers { saved += firstArg<WatchProgress>() }
 
         old.controller.saveWatchProgressInternal(3_400_000L, 3_600_000L)
         runCurrent()
@@ -329,7 +337,7 @@ class PlayerPlaybackActionControllerTest {
 
         assertEquals(listOf(120_000L, 180_000L), saved.map { it.position })
         assertFalse(current.controller.hasMarkedCurrentEpisodeCompleted)
-        coVerify(exactly = 0) { repository.markAsCompleted(any(), any(), any()) }
+        coVerify(exactly = 0) { repository.savePlaybackProgress(any(), any(), any(), true, any()) }
         verify(exactly = 0) { old.player.seekTo(any()) }
     }
 
@@ -342,12 +350,12 @@ class PlayerPlaybackActionControllerTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val persisted = mutableListOf<String>()
-        coEvery { repository.markAsCompleted(any(), 1, false) } coAnswers {
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), true, true) } coAnswers {
             entered.complete(Unit)
             release.await()
             persisted += "old-completion"
         }
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers {
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers {
             persisted += "new-resume:${firstArg<WatchProgress>().position}"
         }
 
@@ -387,10 +395,10 @@ class PlayerPlaybackActionControllerTest {
                 }
                 "tt-fixture"
             }
-            coEvery { repository.markAsCompleted(any(), any(), false) } coAnswers {
+            coEvery { repository.savePlaybackProgress(any(), any(), any(), true, true) } coAnswers {
                 completed += arg<Int>(1) to firstArg<WatchProgress>()
             }
-            coEvery { repository.saveProgress(any(), any(), true) } coAnswers {
+            coEvery { repository.savePlaybackProgress(any(), any(), any(), false, true) } coAnswers {
                 saved += arg<Int>(1) to firstArg<WatchProgress>()
             }
 
@@ -419,7 +427,7 @@ class PlayerPlaybackActionControllerTest {
         val first = fixture(PlayerUiState(), authority = authority, repository = repository)
         val second = fixture(PlayerUiState(), authority = authority, repository = repository, activate = false)
         val saved = mutableListOf<WatchProgress>()
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers { saved += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers { saved += firstArg<WatchProgress>() }
         first.controller.saveWatchProgressInternal(60_000L, 3_600_000L)
         runCurrent()
         background(first)
@@ -470,8 +478,8 @@ class PlayerPlaybackActionControllerTest {
             runCurrent()
 
             assertTrue(fixture.controller.hasMarkedCurrentEpisodeCompleted)
-            coVerify(exactly = 1) { repository.markAsCompleted(any(), 1, false) }
-            coVerify(exactly = 0) { repository.saveProgress(any(), 1, any()) }
+            coVerify(exactly = 1) { repository.savePlaybackProgress(any(), 1, any(), true, true) }
+            coVerify(exactly = 0) { repository.savePlaybackProgress(any(), 1, any(), false, any()) }
         }
     }
 
@@ -481,7 +489,7 @@ class PlayerPlaybackActionControllerTest {
         val repository = fixture.controller.watchProgressRepository
         val resolver = fixture.controller.directDebridResolver
         val saved = mutableListOf<WatchProgress>()
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers { saved += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers { saved += firstArg<WatchProgress>() }
 
         prepareDenied(fixture)
         fixture.controller.saveWatchProgressInternal(60_000L, 3_600_000L)
@@ -539,7 +547,7 @@ class PlayerPlaybackActionControllerTest {
             release.await()
             "tt-fixture"
         }
-        coEvery { repository.saveProgress(any(), 1, true) } coAnswers { saved += firstArg<WatchProgress>() }
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers { saved += firstArg<WatchProgress>() }
 
         fixture.controller.saveWatchProgressInternal(120_000L, 3_600_000L)
         runCurrent()
@@ -559,6 +567,56 @@ class PlayerPlaybackActionControllerTest {
         val ui: MutableStateFlow<PlayerUiState>,
         val timeline: MutableStateFlow<PlaybackTimelineState>
     )
+
+    @Test fun `final local progress and captured grant stop survive clearing the player during origin capture`() = runTest {
+        val repository = mockk<WatchProgressRepository>(relaxed = true)
+        val fixture = fixture(PlayerUiState(), repository = repository)
+        val captureWorker = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val playerJob = Job()
+        val playerScope = CoroutineScope(playerJob + StandardTestDispatcher(testScheduler))
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val writes = mutableListOf<String>()
+        val granted = TrackingPlaybackGrant(TrackingProviderId.TRAKT, 1, "original-grant", { true })
+        val origin = TrackingPlaybackOriginResolver(captureWorker).capture(1,
+            TrackingPlaybackOriginCapture(1, listOf(TrackingPlaybackGrantCapture { granted }))) {
+            entered.complete(Unit); release.await(); "original-account"
+        }
+        val media = TrackingMediaReference(TrackingMediaKind.MOVIE, ids = TrackingExternalIds(imdb = "tt-fixture"))
+        val scrobbler = object : TrackingScrobbler {
+            override val providerId = TrackingProviderId.TRAKT
+            override suspend fun scrobble(action: TrackingScrobbleAction, event: TrackingScrobbleEvent) {
+                writes += currentCoroutineContext()[TrackingPlaybackGrant]!!.grantId + ":" + action.wireValue
+            }
+        }
+        val provider = mockk<TrackingProvider>()
+        every { provider.descriptor } returns TrackingProviderDescriptor(TrackingProviderId.TRAKT, "Fixture", setOf(TrackingCapability.SCROBBLE))
+        every { provider.isAuthenticated } returns MutableStateFlow(true)
+        every { provider.scrobbler } returns scrobbler
+        val coordinator = TrackingScrobbleCoordinator(TrackingProviderRegistry(listOf(provider)))
+        every { fixture.controller.playbackOrigin } returns origin
+        every { fixture.controller.scope } returns playerScope
+        every { fixture.controller.trackingScrobbleCoordinator } returns coordinator
+        every { fixture.controller.currentScrobbleItem } returns media
+        every { fixture.controller.hasRequestedScrobbleStartForCurrentItem } returns true
+        val saved = mutableListOf<WatchProgress>()
+        coEvery { repository.savePlaybackProgress(any(), 1, any(), false, true) } coAnswers { saved += firstArg<WatchProgress>() }
+        try {
+            var ordinaryWorkCompleted = false
+            playerScope.launch { origin.await(); ordinaryWorkCompleted = true }
+            fixture.controller.saveWatchProgressInternal(50_000L, 100_000L)
+            fixture.controller.emitScrobbleStop(50f)
+            runCurrent()
+            assertTrue(entered.isCompleted)
+            playerJob.cancel()
+            release.complete(Unit)
+            runCurrent()
+            assertFalse(ordinaryWorkCompleted)
+            assertEquals("original-account", saved.single().localPlaybackScope)
+            assertEquals(listOf("original-grant:stop"), writes)
+            coVerify(exactly = 1) { repository.savePlaybackProgress(any(), 1, any(), false, true) }
+        } finally { captureWorker.cancel(); playerScope.cancel() }
+    }
 
     private fun TestScope.fixture(
         initialState: PlayerUiState,
@@ -591,7 +649,7 @@ class PlayerPlaybackActionControllerTest {
         val coordinator = PlayerProgressWriteCoordinator(authority)
         every { controller.progressWriteCoordinator } returns coordinator
         every { controller.watchProgressRepository } returns repository
-        every { controller.localPlaybackScope } returns CompletableDeferred<String?>(value = capturedPlaybackScope)
+        every { controller.playbackOrigin } returns CompletableDeferred(TrackingPlaybackOrigin(profileId, emptyMap(), capturedPlaybackScope))
         every { controller.party.state } returns MutableStateFlow(PartyUiState())
         every { controller.party.playback } returns MutableStateFlow<PartyPlayback?>(null)
         every { controller.contentId } returns "tt-fixture"

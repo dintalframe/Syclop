@@ -3,7 +3,7 @@ package com.nuvio.tv.domain.model
 /** Fixed reason codes only: never retains provider URLs, account tokens or response payloads. */
 enum class SourceSearchReason(val label: String) {
     MISSING_MAPPING("missing anime mapping"),
-    MISSING_COORDINATES("missing episode coordinates"),
+    MISSING_COORDINATES("providers missing search data"),
     TIMEOUT("timed out"),
     RATE_LIMITED("rate limited"),
     PARSER_ERROR("parser failures"),

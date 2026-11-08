@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.offline.DefaultDownloadIndex androidx.media3.exoplayer.offline.DownloadCursor getDownloads(int...) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.STATE_QUEUED, androidx.media3.exoplayer.offline.Download.STATE_STOPPED, androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING, androidx.media3.exoplayer.offline.Download.STATE_COMPLETED, androidx.media3.exoplayer.offline.Download.STATE_FAILED, androidx.media3.exoplayer.offline.Download.STATE_REMOVING, androidx.media3.exoplayer.offline.Download.STATE_RESTARTING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DefaultDownloadIndex java.lang.String getStateQuery(int...) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.STATE_QUEUED, androidx.media3.exoplayer.offline.Download.STATE_STOPPED, androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING, androidx.media3.exoplayer.offline.Download.STATE_COMPLETED, androidx.media3.exoplayer.offline.Download.STATE_FAILED, androidx.media3.exoplayer.offline.Download.STATE_REMOVING, androidx.media3.exoplayer.offline.Download.STATE_RESTARTING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.Download Download(androidx.media3.exoplayer.offline.DownloadRequest, int, long, long, long, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.STATE_QUEUED, androidx.media3.exoplayer.offline.Download.STATE_STOPPED, androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING, androidx.media3.exoplayer.offline.Download.STATE_COMPLETED, androidx.media3.exoplayer.offline.Download.STATE_FAILED, androidx.media3.exoplayer.offline.Download.STATE_REMOVING, androidx.media3.exoplayer.offline.Download.STATE_RESTARTING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.Download Download(androidx.media3.exoplayer.offline.DownloadRequest, int, long, long, long, int, int) 6">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.FAILURE_REASON_NONE, androidx.media3.exoplayer.offline.Download.FAILURE_REASON_UNKNOWN}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.Download Download(androidx.media3.exoplayer.offline.DownloadRequest, int, long, long, long, int, int, androidx.media3.exoplayer.offline.DownloadProgress) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.STATE_QUEUED, androidx.media3.exoplayer.offline.Download.STATE_STOPPED, androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING, androidx.media3.exoplayer.offline.Download.STATE_COMPLETED, androidx.media3.exoplayer.offline.Download.STATE_FAILED, androidx.media3.exoplayer.offline.Download.STATE_REMOVING, androidx.media3.exoplayer.offline.Download.STATE_RESTARTING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.Download Download(androidx.media3.exoplayer.offline.DownloadRequest, int, long, long, long, int, int, androidx.media3.exoplayer.offline.DownloadProgress) 6">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.FAILURE_REASON_NONE, androidx.media3.exoplayer.offline.Download.FAILURE_REASON_UNKNOWN}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.Download failureReason">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.FAILURE_REASON_NONE, androidx.media3.exoplayer.offline.Download.FAILURE_REASON_UNKNOWN}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.Download state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.STATE_QUEUED, androidx.media3.exoplayer.offline.Download.STATE_STOPPED, androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING, androidx.media3.exoplayer.offline.Download.STATE_COMPLETED, androidx.media3.exoplayer.offline.Download.STATE_FAILED, androidx.media3.exoplayer.offline.Download.STATE_REMOVING, androidx.media3.exoplayer.offline.Download.STATE_RESTARTING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.Download.FailureReason">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.FAILURE_REASON_NONE, androidx.media3.exoplayer.offline.Download.FAILURE_REASON_UNKNOWN}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.Download.State">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.STATE_QUEUED, androidx.media3.exoplayer.offline.Download.STATE_STOPPED, androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING, androidx.media3.exoplayer.offline.Download.STATE_COMPLETED, androidx.media3.exoplayer.offline.Download.STATE_FAILED, androidx.media3.exoplayer.offline.Download.STATE_REMOVING, androidx.media3.exoplayer.offline.Download.STATE_RESTARTING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadHelper mode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.DownloadHelper.MODE_NOT_PREPARE, androidx.media3.exoplayer.offline.DownloadHelper.MODE_PREPARE_PROGRESSIVE_SOURCE, androidx.media3.exoplayer.offline.DownloadHelper.MODE_PREPARE_NON_PROGRESSIVE_SOURCE_AND_SELECT_TRACKS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadIndex androidx.media3.exoplayer.offline.DownloadCursor getDownloads(int...) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.STATE_QUEUED, androidx.media3.exoplayer.offline.Download.STATE_STOPPED, androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING, androidx.media3.exoplayer.offline.Download.STATE_COMPLETED, androidx.media3.exoplayer.offline.Download.STATE_FAILED, androidx.media3.exoplayer.offline.Download.STATE_REMOVING, androidx.media3.exoplayer.offline.Download.STATE_RESTARTING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadManager int getNotMetRequirements()">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadManager void onRequirementsStateChanged(androidx.media3.exoplayer.scheduler.RequirementsWatcher, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadManager.InternalHandler androidx.media3.exoplayer.offline.Download copyDownloadWithState(androidx.media3.exoplayer.offline.Download, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.STATE_QUEUED, androidx.media3.exoplayer.offline.Download.STATE_STOPPED, androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING, androidx.media3.exoplayer.offline.Download.STATE_COMPLETED, androidx.media3.exoplayer.offline.Download.STATE_FAILED, androidx.media3.exoplayer.offline.Download.STATE_REMOVING, androidx.media3.exoplayer.offline.Download.STATE_RESTARTING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadManager.InternalHandler androidx.media3.exoplayer.offline.Download putDownloadWithState(androidx.media3.exoplayer.offline.Download, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.STATE_QUEUED, androidx.media3.exoplayer.offline.Download.STATE_STOPPED, androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING, androidx.media3.exoplayer.offline.Download.STATE_COMPLETED, androidx.media3.exoplayer.offline.Download.STATE_FAILED, androidx.media3.exoplayer.offline.Download.STATE_REMOVING, androidx.media3.exoplayer.offline.Download.STATE_RESTARTING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadManager.InternalHandler notMetRequirements">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadManager.InternalHandler void setNotMetRequirements(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadManager.Listener void onRequirementsStateChanged(androidx.media3.exoplayer.offline.DownloadManager, androidx.media3.exoplayer.scheduler.Requirements, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadNotificationHelper android.app.Notification buildProgressNotification(android.content.Context, int, android.app.PendingIntent, java.lang.String, java.util.List&lt;androidx.media3.exoplayer.offline.Download&gt;, int) 5">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadService android.app.Notification getForegroundNotification(java.util.List&lt;androidx.media3.exoplayer.offline.Download&gt;, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadService boolean needsStartedService(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.offline.Download.STATE_QUEUED, androidx.media3.exoplayer.offline.Download.STATE_STOPPED, androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING, androidx.media3.exoplayer.offline.Download.STATE_COMPLETED, androidx.media3.exoplayer.offline.Download.STATE_FAILED, androidx.media3.exoplayer.offline.Download.STATE_REMOVING, androidx.media3.exoplayer.offline.Download.STATE_RESTARTING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.offline.DownloadService.DownloadManagerHelper void onRequirementsStateChanged(androidx.media3.exoplayer.offline.DownloadManager, androidx.media3.exoplayer.scheduler.Requirements, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+</root>
+

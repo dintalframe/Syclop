@@ -8,7 +8,8 @@ import android.os.Build
 import android.util.Log
 import android.view.Display
 import androidx.media3.common.MimeTypes
-import io.github.anilbeesetti.nextlib.mediainfo.MediaInfo
+import com.nuvio.tv.ui.screens.player.isOriginScopedPlaybackHeader
+import com.nuvio.tv.ui.screens.player.scopePlaybackHeaders
 import io.github.anilbeesetti.nextlib.mediainfo.MediaInfoBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -35,7 +36,7 @@ object FrameRateUtils {
     private const val MIN_VALID_VIDEO_FPS = 10f
     private const val MAX_VALID_VIDEO_FPS = 120f
     private const val TIMESTAMP_REORDER_MARGIN = 16
-    private val NEXTLIB_HTTP_SCHEMES = setOf("http", "https")
+    private const val EXTRACTOR_REDIRECT_HEADER = "android-allow-cross-domain-redirect"
     private val LIVE_STREAM_EXTENSIONS = listOf(".mpd", ".ism/manifest")
     private const val MKV_EXTENSION = ".mkv"
     private const val SWITCH_POLL_INTERVAL_MS = 60L
@@ -71,35 +72,23 @@ object FrameRateUtils {
         return sanitized
     }
 
-    /**
-     * Headers used for NextLib bypass decision and NextLib probe invocation.
-     * Range is stripped because it is never meaningful for frame-rate probing.
-     */
+    /** The HTTP probe controls its own byte ranges. */
     internal fun streamHeadersForAfrProbe(headers: Map<String, String>): Map<String, String> {
         return headers.filterKeys { !it.equals("Range", ignoreCase = true) }
     }
 
     /**
      * Headers for MediaExtractor fallback. Adds Connection: close so the probe
-     * connection is torn down promptly after sampling.
+     * connection is torn down promptly after sampling. Android's flag also
+     * blocks protocol changes; the primary HTTP probe handles CDN redirects.
      */
     internal fun extractorProbeHeaders(headers: Map<String, String>): Map<String, String> {
-        return streamHeadersForAfrProbe(headers).toMutableMap().apply {
+        return streamHeadersForAfrProbe(headers).filterKeys {
+            !it.equals("Connection", ignoreCase = true) &&
+                !it.equals(EXTRACTOR_REDIRECT_HEADER, ignoreCase = true)
+        }.toMutableMap().apply {
             put("Connection", "close")
-        }
-    }
-
-    /**
-     * True when headers contain values NextLib cannot forward (auth tokens, cookies, etc.).
-     * Synthetic / always-present headers (Range, User-Agent, Connection) are ignored so public
-     * and debrid streams that only inject UA still get NextLib probing.
-     */
-    internal fun hasNextLibBlockingHeaders(headers: Map<String, String>): Boolean {
-        return headers.any { (k, v) ->
-            v.isNotBlank() &&
-                !k.equals("Range", ignoreCase = true) &&
-                !k.equals("User-Agent", ignoreCase = true) &&
-                !k.equals("Connection", ignoreCase = true)
+            put(EXTRACTOR_REDIRECT_HEADER, "0")
         }
     }
 
@@ -553,6 +542,7 @@ object FrameRateUtils {
 
         val requestBuilder = okhttp3.Request.Builder()
             .url(url)
+            .scopePlaybackHeaders(url, headers.keys)
             .header("Range", "bytes=0-${AFR_CDN_WARMUP_MAX_BYTES - 1}")
 
         if (headers.none { it.key.equals("User-Agent", ignoreCase = true) }) {
@@ -600,7 +590,7 @@ object FrameRateUtils {
             }
         } catch (e: Exception) {
             call.cancel()
-            Log.d(TAG, "AFR CDN warmup failed: ${e.message}")
+            Log.d(TAG, "AFR CDN warmup failed: ${e.javaClass.simpleName}")
             false
         }
     }
@@ -613,18 +603,7 @@ object FrameRateUtils {
         filename: String? = null
     ): FrameRateDetection? {
         detectFrameRateWithOkHttpProbe(context, sourceUrl, headers, mimeType, filename)?.let { return it }
-        detectFrameRateFromNextLib(context, sourceUrl, headers, mimeType, filename)?.let { return it }
         return detectFrameRateFromExtractor(context, sourceUrl, headers)
-    }
-
-    fun detectFrameRateFromNextLib(
-        context: Context,
-        sourceUrl: String,
-        headers: Map<String, String> = emptyMap(),
-        mimeType: String? = null,
-        filename: String? = null
-    ): FrameRateDetection? {
-        return detectFrameRateWithNextLib(context, sourceUrl, headers, mimeType, filename)
     }
 
     fun detectFrameRateFromExtractor(
@@ -807,7 +786,8 @@ object FrameRateUtils {
         if (scheme != "http" && scheme != "https") return null
         if (isLiveStreamUrl(sourceUrl)) return null
 
-        val targetUrl = if (isResolveProxyUrl(sourceUrl)) {
+        // A nested URL does not authorize the proxy's playback credentials.
+        val targetUrl = if (isResolveProxyUrl(sourceUrl) && headers.keys.none(::isOriginScopedPlaybackHeader)) {
             extractEmbeddedResolveUrl(sourceUrl)?.takeIf { parseUriScheme(it) == "http" || parseUriScheme(it) == "https" } ?: sourceUrl
         } else {
             sourceUrl
@@ -841,7 +821,7 @@ object FrameRateUtils {
                 //
                 // Pass 1 uses a truncated head range only — never run MediaExtractor timestamp
                 // sampling here. Sampling ~350 frames on an incomplete MKV/MP4 can hang for the
-                // full OkHttp preflight budget and starve NextLib/extractor fallbacks (MPV total
+                // full OkHttp preflight budget and starve the extractor fallback (MPV total
                 // AFR await is only ~18s). Declared KEY_FRAME_RATE / NextLib on the head chunk is enough.
                 if (isMkvDetected) {
                     val mkvDetection = probeMkvFromHeadAndSparseTracks(
@@ -853,7 +833,7 @@ object FrameRateUtils {
                         isCancelled = isCancelled
                     )
                     if (mkvDetection != null) return mkvDetection
-                    Log.d(TAG, "MKV OkHttp probe exhausted; aborting for full-URL NextLib/extractor fallback")
+                    Log.d(TAG, "MKV OkHttp probe exhausted; leaving detection to the extractor fallback")
                     return null
                 }
 
@@ -947,7 +927,7 @@ object FrameRateUtils {
                 }
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "OkHttp AFR probe failed: ${e.message}")
+            Log.w(TAG, "OkHttp AFR probe failed: ${e.javaClass.simpleName}")
         } finally {
             runCatching { tempFile.delete() }
         }
@@ -1266,6 +1246,7 @@ object FrameRateUtils {
         if (isCancelled()) return HttpRangeFetchResult(success = false)
         val requestBuilder = okhttp3.Request.Builder()
             .url(url)
+            .scopePlaybackHeaders(url, headers.keys)
             .header("Range", rangeHeader)
 
         if (headers.none { it.key.equals("User-Agent", ignoreCase = true) }) {
@@ -1317,7 +1298,7 @@ object FrameRateUtils {
             }
         } catch (e: Exception) {
             call.cancel()
-            Log.w(TAG, "fetchHttpRangeToFile failed for url=$url range=$rangeHeader: ${e.message}")
+            Log.w(TAG, "AFR range request failed for $rangeHeader: ${e.javaClass.simpleName}")
             HttpRangeFetchResult(success = false)
         }
     }
@@ -1330,6 +1311,7 @@ object FrameRateUtils {
         if (isCancelled()) return -1L
         val requestBuilder = okhttp3.Request.Builder()
             .url(url)
+            .scopePlaybackHeaders(url, headers.keys)
             .head()
 
         if (headers.none { it.key.equals("User-Agent", ignoreCase = true) }) {
@@ -1364,7 +1346,7 @@ object FrameRateUtils {
         file: java.io.File,
         allowTimestampSampling: Boolean = true
     ): FrameRateDetection? {
-        detectFrameRateWithNextLibFromLocalFile(context, file)?.let { return it }
+        detectFrameRateWithNextLibFromLocalFile(file)?.let { return it }
 
         return detectFrameRateWithExtractor(
             context = context,
@@ -1374,13 +1356,14 @@ object FrameRateUtils {
         )
     }
 
-    internal fun detectFrameRateWithNextLibFromLocalFile(
-        context: Context,
-        file: java.io.File
-    ): FrameRateDetection? {
+    /** Never send a URL or an arbitrary downloaded playlist to the native probe. */
+    internal fun canProbeLocalContainerWithNextLib(file: java.io.File): Boolean =
+        file.isAbsolute && file.isFile && (hasEbmlHeader(file) || hasFtypAtom(file))
+
+    private fun detectFrameRateWithNextLibFromLocalFile(file: java.io.File): FrameRateDetection? {
+        if (!canProbeLocalContainerWithNextLib(file)) return null
         try {
-            val uri = Uri.fromFile(file)
-            val mediaInfo = MediaInfoBuilder().from(context = context, uri = uri).build()
+            val mediaInfo = MediaInfoBuilder().from(file.absolutePath).build()
             if (mediaInfo != null) {
                 try {
                     val video = mediaInfo.videoStream
@@ -1405,69 +1388,22 @@ object FrameRateUtils {
         return null
     }
 
-    private fun detectFrameRateWithNextLib(
-        context: Context,
-        sourceUrl: String,
-        headers: Map<String, String>,
-        mimeType: String? = null,
-        filename: String? = null
-    ): FrameRateDetection? {
-        if (!shouldUseNextLibProbe(sourceUrl, headers, mimeType, filename)) return null
-
-        val embeddedResolveUrl = extractEmbeddedResolveUrl(sourceUrl)
-        val shouldPreferEmbedded = isResolveProxyUrl(sourceUrl)
-        val candidates = buildList {
-            if (shouldPreferEmbedded && !embeddedResolveUrl.isNullOrBlank() && embeddedResolveUrl != sourceUrl) {
-                add(embeddedResolveUrl)
-                add(sourceUrl)
-                return@buildList
-            }
-
-            add(sourceUrl)
-            if (!embeddedResolveUrl.isNullOrBlank() && embeddedResolveUrl != sourceUrl) {
-                add(embeddedResolveUrl)
-            }
-        }
-
-        candidates.forEach { candidateUrl ->
-            var mediaInfo: MediaInfo? = null
-            try {
-                val uri = Uri.parse(candidateUrl)
-                val builder = MediaInfoBuilder().from(context = context, uri = uri)
-                mediaInfo = builder.build() ?: return@forEach
-
-                val video = mediaInfo.videoStream ?: return@forEach
-                val measured = video.frameRate.toFloat()
-                if (!isValidVideoFrameRate(measured)) return@forEach
-
-                return FrameRateDetection(
-                    raw = measured,
-                    snapped = snapToStandardRate(measured),
-                    videoWidth = video.frameWidth.takeIf { it > 0 },
-                    videoHeight = video.frameHeight.takeIf { it > 0 }
-                )
-            } catch (e: Throwable) {
-                Log.w(TAG, "NextLib frame rate probe failed: ${e.message}")
-            } finally {
-                runCatching { mediaInfo?.release() }
-            }
-        }
-        return null
-    }
-
     private fun detectFrameRateWithExtractor(
         context: Context,
         sourceUrl: String,
         headers: Map<String, String>,
         allowTimestampSampling: Boolean = true
     ): FrameRateDetection? {
-        val safeHeaders = headers
         val extractor = MediaExtractor()
         return try {
             val uri = Uri.parse(sourceUrl)
             when (uri.scheme?.lowercase()) {
-                "http", "https" -> extractor.setDataSource(sourceUrl, safeHeaders)
-                else -> extractor.setDataSource(context, uri, safeHeaders)
+                "http", "https" -> {
+                    // The platform extractor does not expose redirect hops for header filtering.
+                    if (headers.keys.any(::isOriginScopedPlaybackHeader)) return null
+                    extractor.setDataSource(sourceUrl, extractorProbeHeaders(headers))
+                }
+                else -> extractor.setDataSource(context, uri, headers)
             }
 
             var videoTrackIndex = -1
@@ -1536,40 +1472,13 @@ object FrameRateUtils {
                 videoHeight = detectedVideoHeight
             )
         } catch (e: Exception) {
-            Log.w(TAG, "Frame rate probe failed: ${e.message}")
+            Log.w(TAG, "Frame rate probe failed: ${e.javaClass.simpleName}")
             null
         } finally {
             try {
                 extractor.release()
             } catch (_: Exception) {
             }
-        }
-    }
-
-    /**
-     * Whether NextLib MediaInfo probe should run for this source.
-     * Exposed as internal for regression tests (0.7.10 parity + header bypass).
-     */
-    internal fun shouldUseNextLibProbe(
-        sourceUrl: String,
-        headers: Map<String, String>,
-        mimeType: String? = null,
-        filename: String? = null
-    ): Boolean {
-        if (sourceUrl.isBlank()) return false
-        if (isLiveStreamUrl(sourceUrl)) return false
-
-        // Bypass NextLib when auth/custom headers are present: MediaInfoBuilder cannot forward them.
-        if (hasNextLibBlockingHeaders(headers)) return false
-
-        if (isMkvSource(sourceUrl, mimeType, filename)) return true
-
-        val scheme = parseUriScheme(sourceUrl)
-        return when (scheme) {
-            in NEXTLIB_HTTP_SCHEMES -> true
-            "file", "content" -> true
-            null -> true
-            else -> false
         }
     }
 

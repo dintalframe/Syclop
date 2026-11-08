@@ -265,7 +265,7 @@ fun ContinueWatchingSection(
                     }
                 }
             ) { index, progress ->
-                val requester = focusRequesters.getOrPut(index) { FocusRequester() }
+                val requester = focusRequesters.getOrPut(index) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                 val focusModifier = Modifier.focusRequester(requester)
                 val stableOnClick = remember(progress) { { onItemClick(progress) } }
                 val stableOnLongPress = remember(progress) { { optionsItem = progress } }
@@ -482,15 +482,11 @@ fun ContinueWatchingCard(
     val progress = remember(item) { (item as? ContinueWatchingItem.InProgress)?.progress }
     val nextUp = remember(item) { (item as? ContinueWatchingItem.NextUp)?.info }
     val cardContext = LocalContext.current
-    val episodeStr = remember(progress, nextUp, cardContext) {
-        val season = progress?.season ?: nextUp?.season
-        val episode = progress?.episode ?: nextUp?.episode
-        if (season != null && episode != null) {
-            cardContext.getString(R.string.season_episode_format, season, episode)
-        } else {
-            null
-        }
-    }
+    val season = progress?.season ?: nextUp?.season
+    val episode = progress?.episode ?: nextUp?.episode
+    val episodeStr = if (season != null && episode != null) {
+        stringResource(R.string.season_episode_format, season, episode)
+    } else null
     val strUpcoming = stringResource(R.string.cw_upcoming)
     val strNextUp = stringResource(R.string.cw_next_up)
     val strNextUpShort = stringResource(R.string.cw_next_up_short)

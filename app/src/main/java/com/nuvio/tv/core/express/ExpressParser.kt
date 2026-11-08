@@ -9,25 +9,71 @@ import java.net.URLDecoder
 import java.util.Locale
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
+import org.jsoup.select.QueryParser
+import org.jsoup.select.Selector.SelectorParseException
 
 internal data class ExpressRow(val title: String?, val size: Long?, val url: String?, val hash: String?,
     val fileIdx: Int? = null, val filename: String? = null, val trackers: List<String> = emptyList(), val seeds: String? = null)
 
 /** Interprets an explicit declarative subset. No JavaScript engine, eval, or downloaded code. */
 internal object ExpressParser {
+    private const val MAX_SELECTOR_LENGTH = 512
+    private const val MAX_SELECTOR_DEPTH = 8
+    private const val MAX_EXPRESSION_LENGTH = MAX_SELECTOR_LENGTH + 256
     private val rowExpression = Regex("^doc\\.querySelectorAll\\((['\"])(.*?)\\1\\)$")
     private val fieldExpression = Regex("^row\\.querySelector\\((['\"])(.*?)\\1\\)\\.(textContent|getAttribute\\((['\"])(.*?)\\4\\))(?:\\.match\\(/\\\\d\\+/g\\)\\[(\\d+)])?$")
     private val jsonPath = Regex("^[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$")
 
     fun supported(config: JsonObject): Boolean = when {
         config.get("json_format")?.isJsonObject == true -> config.getAsJsonObject("json_format").entrySet()
-            .all { (_, value) -> value.isJsonPrimitive && jsonPath.matches(value.asString) }
+            .all { (_, value) -> value.isJsonPrimitive && value.asString.length <= MAX_EXPRESSION_LENGTH &&
+                jsonPath.matches(value.asString) }
         config.get("html_parser")?.isJsonObject == true -> {
             val parser = config.getAsJsonObject("html_parser")
-            rowExpression.matches(parser.string("row").orEmpty()) && parser.entrySet().filter { it.key != "row" }
-                .all { (_, value) -> value.isJsonPrimitive && fieldExpression.matches(value.asString) }
+            supportedSelectorExpression(parser.get("row"), rowExpression) &&
+                parser.entrySet().filter { it.key != "row" }
+                    .all { (_, value) -> supportedSelectorExpression(value, fieldExpression) }
         }
         else -> false
+    }
+
+    private fun supportedSelectorExpression(value: JsonElement?, expression: Regex): Boolean {
+        if (value == null || !value.isJsonPrimitive || !value.asJsonPrimitive.isString) return false
+        val text = value.asString
+        if (text.length > MAX_EXPRESSION_LENGTH) return false
+        val selector = expression.matchEntire(text)?.groupValues?.get(2) ?: return false
+        if (selector.isBlank() || selector.length > MAX_SELECTOR_LENGTH) return false
+        var depth = 0
+        var quote: Char? = null
+        var escaped = false
+        selector.forEachIndexed { index, char ->
+            if (quote != null) {
+                if (escaped) escaped = false
+                else if (char == '\\') escaped = true
+                else if (char == quote) quote = null
+            } else when (char) {
+                '\'', '"' -> quote = char
+                '(', '[' -> {
+                    depth++
+                    if (depth > MAX_SELECTOR_DEPTH) return false
+                }
+                ')', ']' -> {
+                    depth--
+                    if (depth < 0) return false
+                }
+                // Escaped operators and jsoup's Java regex extensions bypass plain CSS bounds.
+                '\\' -> return false
+                ':' -> if (selector.regionMatches(index + 1, "matches", 0, 7, ignoreCase = true)) return false
+                '~' -> if (selector.getOrNull(index + 1) == '=') return false
+            }
+        }
+        if (quote != null || depth != 0) return false
+        return try {
+            QueryParser.parse(selector)
+            true
+        } catch (_: SelectorParseException) {
+            false
+        }
     }
 
     fun parse(config: JsonObject, text: String): List<ExpressRow> {

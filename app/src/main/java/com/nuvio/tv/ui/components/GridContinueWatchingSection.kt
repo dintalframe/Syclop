@@ -146,7 +146,7 @@ fun GridContinueWatchingSection(
                     }
                 }
             ) { index, progress ->
-                val requester = focusRequesters.getOrPut(index) { FocusRequester() }
+                val requester = focusRequesters.getOrPut(index) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                 val focusModifier = Modifier.focusRequester(requester)
                 val stableOnClick = remember(progress) { { onItemClick(progress) } }
                 val stableOnLongPress = remember(progress) { { optionsItem = progress } }

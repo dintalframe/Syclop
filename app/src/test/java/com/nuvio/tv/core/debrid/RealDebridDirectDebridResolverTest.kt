@@ -192,7 +192,9 @@ class RealDebridDirectDebridResolverTest {
             addResponse = Response.error(451, "restricted".toResponseBody()),
             infoResponses = mutableListOf()
         )
-        assertEquals(directDebridHttpFailure(451, "realdebrid"), resolver(api).resolve(stream(7), null, null))
+        val result = resolver(api).resolve(stream(7), null, null)
+        assertEquals(directDebridHttpFailure(451, "realdebrid"), result)
+        assertEquals(DirectDebridFailureReason.SOURCE_REJECTED, (result as DirectDebridResolveResult.Failure).detail.reason)
         assertEquals(1, api.addCalls)
         assertEquals(0, api.infoCalls)
         assertEquals(0, api.selectCalls)

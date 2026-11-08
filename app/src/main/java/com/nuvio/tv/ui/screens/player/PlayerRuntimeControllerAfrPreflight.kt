@@ -16,14 +16,13 @@ import kotlinx.coroutines.withContext
  * AFR preflight probe budgets.
  *
  * Keep user-facing wait short. Cold debrid/CDN TTFB is handled by a tiny Range warmup
- * inside the OkHttp probe (not by inflating these ceilings). NextLib/extractor only use
+ * inside the OkHttp probe. The platform extractor only uses
  * whatever remains of the total deadline after OkHttp.
  */
 internal const val AFR_PREFLIGHT_OKHTTP_TIMEOUT_MS = 15_000L
-internal const val AFR_PREFLIGHT_NEXTLIB_TIMEOUT_MS = 10_000L
 internal const val AFR_PREFLIGHT_FALLBACK_TIMEOUT_MS = 5_000L
 internal const val AFR_PREFLIGHT_TOTAL_TIMEOUT_MS = 18_000L
-/** Minimum remaining time to attempt NextLib / extractor after OkHttp. */
+/** Minimum remaining time to attempt another stage. */
 internal const val AFR_PREFLIGHT_MIN_STAGE_MS = 2_000L
 
 /** A stream switch or a player release: a preflight still running for the old stream stands down. */
@@ -66,11 +65,7 @@ internal suspend fun PlayerRuntimeController.runAfrPreflightIfEnabled(
         it.clearFrameRateDetection().copy(afrProbeRunning = true)
     }
 
-    // Original stream headers (without Range) – used for NextLib bypass decision.
-    // If these contain auth/custom headers, NextLib is skipped (MediaInfoBuilder cannot forward them).
     val streamHeaders = FrameRateUtils.streamHeadersForAfrProbe(headers)
-    // Extractor fallback headers – add Connection: close for proper connection teardown.
-    val probeHeaders = FrameRateUtils.extractorProbeHeaders(headers)
     val effectiveMimeType = mimeType ?: currentStreamMimeType
     val filename = currentFilename
     val deadlineElapsedRealtime = SystemClock.elapsedRealtime() + AFR_PREFLIGHT_TOTAL_TIMEOUT_MS
@@ -158,47 +153,22 @@ internal suspend fun PlayerRuntimeController.runAfrPreflightIfEnabled(
             Log.d(PlayerRuntimeController.TAG, "AFR preflight: OkHttp probe succeeded! FPS=${okHttpDetection.snapped}")
             okHttpDetection
         } else {
-            val nextLibBudget = minOf(AFR_PREFLIGHT_NEXTLIB_TIMEOUT_MS, remainingMs())
-            val nextLibDetection = if (nextLibBudget >= AFR_PREFLIGHT_MIN_STAGE_MS) {
-                withTimeoutOrNull(nextLibBudget) {
+            val fallbackBudget = minOf(AFR_PREFLIGHT_FALLBACK_TIMEOUT_MS, remainingMs())
+            if (fallbackBudget < AFR_PREFLIGHT_MIN_STAGE_MS) {
+                Log.w(
+                    PlayerRuntimeController.TAG,
+                    "AFR preflight: no time left for extractor fallback (remaining=${remainingMs()}ms)"
+                )
+                null
+            } else {
+                Log.d(PlayerRuntimeController.TAG, "AFR preflight: trying extractor fallback (${fallbackBudget}ms)")
+                withTimeoutOrNull(fallbackBudget) {
                     withContext(Dispatchers.IO) {
-                        FrameRateUtils.detectFrameRateFromNextLib(
+                        FrameRateUtils.detectFrameRateFromExtractor(
                             context = context,
                             sourceUrl = url,
-                            headers = streamHeaders,
-                            mimeType = effectiveMimeType,
-                            filename = filename
+                            headers = streamHeaders
                         )
-                    }
-                }
-            } else {
-                null
-            }
-            if (nextLibDetection != null) {
-                nextLibDetection
-            } else if (isStale()) {
-                return
-            } else {
-                val fallbackBudget = minOf(AFR_PREFLIGHT_FALLBACK_TIMEOUT_MS, remainingMs())
-                if (fallbackBudget < AFR_PREFLIGHT_MIN_STAGE_MS) {
-                    Log.w(
-                        PlayerRuntimeController.TAG,
-                        "AFR preflight: no time left for extractor fallback (remaining=${remainingMs()}ms)"
-                    )
-                    null
-                } else {
-                    Log.w(
-                        PlayerRuntimeController.TAG,
-                        "AFR preflight NextLib probe failed/timed out; trying extractor fallback (${fallbackBudget}ms)"
-                    )
-                    withTimeoutOrNull(fallbackBudget) {
-                        withContext(Dispatchers.IO) {
-                            FrameRateUtils.detectFrameRateFromExtractor(
-                                context = context,
-                                sourceUrl = url,
-                                headers = probeHeaders
-                            )
-                        }
                     }
                 }
             }
@@ -207,7 +177,7 @@ internal suspend fun PlayerRuntimeController.runAfrPreflightIfEnabled(
         if (detection == null) {
             Log.w(
                 PlayerRuntimeController.TAG,
-                "AFR preflight probe timed out/failed (OkHttp + NextLib + extractor fallback)"
+                "AFR preflight probe timed out or could not detect the frame rate"
             )
             return
         }

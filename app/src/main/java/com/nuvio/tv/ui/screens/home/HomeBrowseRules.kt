@@ -98,6 +98,13 @@ internal object HomeBrowseRules {
         val nativeAnime = addon.id == MalCatalog.ADDON_ID || MalCatalog.isNativeAddon(addon.baseUrl)
         val animePrefix = addon.idPrefixes.any { it.lowercase() in animePrefixes }
         val nativeSimkl = addon.id == SimklPublicCatalog.ADDON_ID && SimklPublicCatalog.isNativeAddon(addon.baseUrl)
+        val nativeKids = addon.id == RatedKidsCatalog.ADDON_ID && RatedKidsCatalog.isNativeAddon(addon.baseUrl)
+        // Native feeds advertise their exact scope. Avoid spending the small initial
+        // batch on unrelated rows that cannot pass this destination's metadata rules.
+        if (nativeAnime && section != HomeBrowseSection.ANIME) return null
+        if (nativeKids && section != HomeBrowseSection.KIDS) return null
+        if (nativeSimkl && (section == HomeBrowseSection.KIDS ||
+                section == HomeBrowseSection.DOCUMENTARY && !isNativeDocumentaryCatalog(catalog.id))) return null
         val explicitAnime = nativeAnime || catalog.apiType.equals("anime", true) ||
             (addon.idPrefixes.isNotEmpty() && addon.idPrefixes.all { it.lowercase() in animePrefixes })
         val genreExtra = catalog.extra.firstOrNull { it.name.equals("genre", true) }
@@ -120,6 +127,36 @@ internal object HomeBrowseRules {
         if (required.any { name -> name != "skip" && extras.keys.none { it.equals(name, true) } }) return null
         return HomeBrowseRequest(addon, catalog, extras)
     }
+
+    /** First paint contains broad discovery; genres remain reachable in subsequent small batches. */
+    fun discoveryPriority(section: HomeBrowseSection, request: HomeBrowseRequest): Int {
+        val addon = request.addon
+        val id = request.catalog.id
+        if (section == HomeBrowseSection.KIDS && addon.id == RatedKidsCatalog.ADDON_ID &&
+            RatedKidsCatalog.isNativeAddon(addon.baseUrl)) return 0
+        if (addon.id == MalCatalog.ADDON_ID && MalCatalog.isNativeAddon(addon.baseUrl)) return when (id) {
+            "popular" -> 0
+            "ranking" -> 2
+            else -> 12
+        }
+        if (addon.id == SimklPublicCatalog.ADDON_ID && SimklPublicCatalog.isNativeAddon(addon.baseUrl)) return when {
+            section == HomeBrowseSection.DOCUMENTARY && id in setOf("movies-genre-documentary", "tv-genre-documentary") -> 0
+            section == HomeBrowseSection.DOCUMENTARY && isNativeDocumentaryCatalog(id) -> 6
+            id.endsWith("-week") -> 1
+            id.endsWith("-month") -> 3
+            id.endsWith("-today") -> 4
+            "-genre-" in id -> 6
+            else -> 10
+        }
+        // Keep the existing public Cinemeta order ahead of genre-specific native feeds.
+        if (addon.id == "com.linvo.cinemeta" && catalogUrlIdentity(addon.baseUrl) == SimklPublicCatalog.CINEMETA_URL) {
+            return when (id) { "top" -> 0; "imdbRating" -> 2; else -> 8 }
+        }
+        return 10
+    }
+
+    private fun isNativeDocumentaryCatalog(id: String) =
+        Regex("(?:movies|tv)-genre-documentary(?:-(?:crime|history|music|adventure|travel|sport|food))?").matches(id)
 
     /** Filtering never rewrites API type, catalog identity, cursor or upstream item identity. */
     fun scoped(section: HomeBrowseSection, row: CatalogRow): CatalogRow = row.copy(items = row.items.filter { matches(section, it, row) })

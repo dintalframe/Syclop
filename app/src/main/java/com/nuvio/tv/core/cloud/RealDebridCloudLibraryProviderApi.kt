@@ -16,10 +16,10 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Read-only cloud browsing. Playback only unrestricts an already-selected file's link. */
 @Singleton
 class RealDebridCloudLibraryProviderApi @Inject constructor(
-    private val api: RealDebridApi
+    private val api: RealDebridApi,
+    private val deletion: CloudLibraryDeletionTransport
 ) : CloudLibraryProviderApi {
     override val provider = DebridProviders.RealDebrid
     private val requestMutex = Mutex()
@@ -99,6 +99,48 @@ class RealDebridCloudLibraryProviderApi @Inject constructor(
         }
     }
 
+    override suspend fun torrentIdsBeforeCreate(apiKey: String): Set<String>? {
+        if (apiKey.isBlank()) return null
+        return try {
+            val response = request { deletion.realDebrid.listTorrents("Bearer $apiKey", 1, INVENTORY_LIMIT) }
+            val items = response.bodyOrThrow()
+            val total = response.headers().values("X-Total-Count").singleOrNull()?.toIntOrNull()
+            if (total != items.size || items.size > INVENTORY_LIMIT) return null
+            val ids = items.map { it.id?.takeIf(String::isNotBlank) ?: return null }
+            ids.toSet().takeIf { it.size == items.size }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            null
+        }
+    }
+
+    override suspend fun deleteCompletedFile(
+        apiKey: String,
+        item: CloudLibraryItem,
+        file: CloudLibraryFile,
+        isStillAuthorized: suspend () -> Boolean
+    ): Boolean {
+        if (apiKey.isBlank() || item.type != CloudLibraryItemType.Torrent ||
+            !item.matchesSinglePlayableFile(provider.id, file)) return false
+
+        val authorization = "Bearer $apiKey"
+        return try {
+            val info = request { deletion.realDebrid.getTorrentInfo(authorization, item.id) }.bodyOrThrow()
+            val soleFile = info.files?.singleOrNull() ?: return false
+            if (info.id != item.id || !info.status.equals("downloaded", true) || soleFile.selected != 1 ||
+                soleFile.id?.toString() != file.id || soleFile.path.normalizedPath() != file.name.normalizedPath() ||
+                soleFile.bytes != file.sizeBytes) return false
+            if (!isStillAuthorized()) return false
+            val response = deletion.realDebrid.deleteTorrent(authorization, item.id)
+            response.body()?.close()
+            response.errorBody()?.close()
+            response.code() == 204
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            false
+        }
+    }
+
     private suspend fun unlock(authorization: String, link: String): RealDebridUnrestrictLinkDto =
         request { api.unrestrictLink(authorization, link) }.bodyOrThrow()
 
@@ -145,6 +187,7 @@ class RealDebridCloudLibraryProviderApi @Inject constructor(
 
     private companion object {
         const val PAGE_SIZE = 100
+        const val INVENTORY_LIMIT = 5000
         const val REQUEST_INTERVAL_MS = 400L
     }
 }

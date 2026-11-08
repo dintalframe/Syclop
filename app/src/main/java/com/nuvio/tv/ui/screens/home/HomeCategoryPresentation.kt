@@ -22,6 +22,12 @@ internal object HomeCategoryPresentation {
         val sourceByKey = catalogs.associateBy(::catalogRowKey)
         var rowIndex = 0
         val grouped = base.rows.list.flatMap { row ->
+            // These rows have already passed the same Kids classifier as catalog cards.
+            // Keep their own identity/title rather than dropping CW or relabelling history.
+            if (row.key == MODERN_CONTINUE_WATCHING_ROW_KEY || row.key == MODERN_UPCOMING_ROW_KEY ||
+                sourceByKey[row.key]?.addonId == WATCHED_HISTORY_ADDON_ID) {
+                return@flatMap listOf(row.copy(globalRowIndex = rowIndex++))
+            }
             val source = sourceByKey[row.key] ?: return@flatMap emptyList()
             val byGroup = row.items.list.groupBy { card -> card.metaPreview?.let { HomeBrowseRules.kidsGroup(it, source) } }
             KidsBrowseGroup.entries.mapNotNull { group ->

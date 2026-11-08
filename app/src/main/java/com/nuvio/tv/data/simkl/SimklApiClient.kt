@@ -1,6 +1,11 @@
 package com.nuvio.tv.data.simkl
 
 import android.util.Log
+import com.nuvio.tv.core.tracking.TrackingPlaybackGrant
+import com.nuvio.tv.core.tracking.TrackingProviderId
+import com.nuvio.tv.core.tracking.TrackingPlaybackAccountChangedException
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import com.nuvio.tv.core.initialization.InitializationReadScope
 import com.nuvio.tv.core.initialization.InitializationProvider
 import com.nuvio.tv.core.initialization.InitializationReadException
@@ -68,6 +73,10 @@ fun interface SimklHttpEngine {
     ): SimklRawHttpResponse
 }
 
+internal class SimklPlaybackAuthScope(val auth: SimklAuthScope) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<SimklPlaybackAuthScope>
+}
+
 class SimklApiClient(
     private val engine: SimklHttpEngine,
     private val configuration: SimklApiConfiguration,
@@ -87,12 +96,18 @@ class SimklApiClient(
         request: SimklApiRequest,
         expectedAuthScope: SimklAuthScope? = null
     ): SimklApiResponse {
+        val playbackScope = currentCoroutineContext()[TrackingPlaybackGrant]?.takeIf { it.providerId == TrackingProviderId.SIMKL }
+        playbackScope?.checkpoint()
+        val playbackAuth = currentCoroutineContext()[SimklPlaybackAuthScope]?.auth
         val importScope = currentCoroutineContext()[InitializationReadScope]?.takeIf { it.provider == InitializationProvider.SIMKL }
         importScope?.checkpoint()
+            playbackScope?.checkpoint()
         val batchAuth = currentCoroutineContext()[SimklInitializationAuthScope]?.auth
         if (batchAuth != null && expectedAuthScope != null && batchAuth != expectedAuthScope)
             throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
-        val requiredAuthScope = batchAuth ?: expectedAuthScope
+        if (playbackAuth != null && expectedAuthScope != null && playbackAuth != expectedAuthScope)
+            throw TrackingPlaybackAccountChangedException()
+        val requiredAuthScope = playbackAuth ?: batchAuth ?: expectedAuthScope
         if (configuration.clientId.isBlank()) throw SimklAuthException(SimklAuthError.MISSING_CLIENT_ID)
         val queuedAtEpochMs = nowEpochMs()
         if (request.path.startsWith("/scrobble/")) {
@@ -103,6 +118,7 @@ class SimklApiClient(
         }
         return requestMutex.withLock {
             importScope?.checkpoint()
+            playbackScope?.checkpoint()
             if (request.path.startsWith("/scrobble/")) {
                 Log.d(
                     TRACKING_SCROBBLE_DIAGNOSTIC_TAG,
@@ -121,8 +137,10 @@ class SimklApiClient(
             val initialAuthorization = requestAuthorization
             if (initialAuthorization != null && renewAuthorization != null) {
                 importScope?.checkpoint()
+            playbackScope?.checkpoint()
                 requestAuthorization = renewAuthorization.invoke(initialAuthorization, false)
                 importScope?.checkpoint()
+            playbackScope?.checkpoint()
             }
             val maxAttempts = if (request.retryPolicy == SimklRetryPolicy.NEVER) 1 else MAX_ATTEMPTS
             var syncWriteLockRetried = false
@@ -130,6 +148,7 @@ class SimklApiClient(
             var attempt = 0
             while (attempt < maxAttempts) {
                 importScope?.checkpoint()
+            playbackScope?.checkpoint()
                 requestAuthorization?.let { current ->
                     if (authorization()?.scope != current.scope) {
                         throw SimklApiException(409, "auth_scope_changed", "Simkl authentication profile changed")
@@ -138,6 +157,7 @@ class SimklApiClient(
                 val response = try {
                     executeRateLimited(request.method) {
                         importScope?.checkpoint()
+            playbackScope?.checkpoint()
                         engine.execute(
                             method = request.method.name,
                             url = buildSimklApiUrl(configuration, request.path, request.query),
@@ -148,6 +168,7 @@ class SimklApiClient(
                     }
                 } catch (error: CancellationException) { throw error }
                 catch (error: InitializationReadException) { throw error }
+                catch (error: TrackingPlaybackAccountChangedException) { throw error }
                 catch (error: Throwable) {
                     if (attempt == maxAttempts - 1) {
                         throw SimklApiException(null, "transport_failure", "Simkl request failed", error)
@@ -161,6 +182,7 @@ class SimklApiClient(
                     }
                 }
                 importScope?.checkpoint()
+            playbackScope?.checkpoint()
                 logSyncResponse(request, response, attempt + 1)
                 if (request.path.startsWith("/scrobble/")) {
                     Log.d(TRACKING_SCROBBLE_DIAGNOSTIC_TAG,

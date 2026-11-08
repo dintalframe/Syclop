@@ -33,6 +33,13 @@ internal class PlayerProgressWriteCoordinator(private val authority: PlayerProgr
         foreground = null
     }
 
+    /** Merely returning from the accepted external player is not a new internal playback. */
+    @Synchronized
+    fun suspendForExternalHandoff() {
+        deactivateForeground()
+        preparedOwner = null
+    }
+
     @Synchronized
     fun onPlaybackOwnerChanged(owner: PlayerProgressWriteOwner): Boolean {
         preparedOwner = owner

@@ -29,6 +29,7 @@ private const val TAG = "TvChannelSync"
 class AndroidTvChannelManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val prefs: TvChannelPreferences,
+    private val cardLaunches: TvCardLaunchAuthenticator,
 ) {
     private val syncedProgramFingerprints = ConcurrentHashMap<String, ChannelProgramFingerprint>()
 
@@ -125,6 +126,8 @@ class AndroidTvChannelManager @Inject constructor(
      * Syncs [items] to the Continue Watching channel: upserts present items and
      * removes rows that are no longer in the list (completed or dismissed).
      */
+    // tvprovider 1.0 exposes these documented public APIs through restricted base classes.
+    @android.annotation.SuppressLint("RestrictedApi")
     suspend fun reconcile(items: List<WatchProgress>) = withContext(Dispatchers.IO) {
         if (!isSupported()) return@withContext
         runCatching {
@@ -215,6 +218,7 @@ class AndroidTvChannelManager @Inject constructor(
 
     /** Removes all preview programs from our channel (used on sign-out / history clear). */
     suspend fun clearAll() = withContext(Dispatchers.IO) {
+        cardLaunches.revoke()
         if (!isSupported()) return@withContext
         runCatching {
             val channelId = prefs.getChannelId() ?: return@runCatching
@@ -233,6 +237,8 @@ class AndroidTvChannelManager @Inject constructor(
 
     // ---
 
+    // tvprovider 1.0 exposes these documented public APIs through restricted base classes.
+    @android.annotation.SuppressLint("RestrictedApi")
     private fun queryExistingPrograms(channelId: Long): Map<String, List<Long>> {
         val projection = arrayOf(
             TvContractCompat.PreviewPrograms._ID,
@@ -259,6 +265,8 @@ class AndroidTvChannelManager @Inject constructor(
         return result
     }
 
+    // tvprovider 1.0 exposes these documented public APIs through restricted base classes.
+    @android.annotation.SuppressLint("RestrictedApi")
     private fun buildProgramValues(
         progress: WatchProgress,
         channelId: Long,
@@ -266,21 +274,7 @@ class AndroidTvChannelManager @Inject constructor(
         key: String
     ): ContentValues {
         val intentUri = Uri.parse(
-            Intent(context, MainActivity::class.java).apply {
-                action = Intent.ACTION_VIEW
-                putExtra("contentId", progress.contentId)
-                putExtra("contentType", progress.contentType)
-                putExtra("videoId", progress.videoId)
-                putExtra("name", progress.name)
-                putExtra("poster", progress.poster)
-                putExtra("backdrop", progress.backdrop)
-                putExtra("logo", progress.logo)
-                progress.season?.let { putExtra("season", it) }
-                progress.episode?.let { putExtra("episode", it) }
-                progress.episodeTitle?.let { putExtra("episodeTitle", it) }
-                putExtra("launchMode", "stream")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            }.toUri(Intent.URI_INTENT_SCHEME)
+            cardLaunches.createIntent(context, progress).toUri(Intent.URI_INTENT_SCHEME)
         )
 
         val type = if (progress.contentType.equals("movie", ignoreCase = true))
@@ -354,7 +348,7 @@ class AndroidTvChannelManager @Inject constructor(
 
     private fun writeChannelLogo(channelId: Long) {
         runCatching {
-            val bitmap = BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
+            val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.syclop_app_icon_512)
                 ?: return
             context.contentResolver.openOutputStream(
                 TvContractCompat.buildChannelLogoUri(channelId)

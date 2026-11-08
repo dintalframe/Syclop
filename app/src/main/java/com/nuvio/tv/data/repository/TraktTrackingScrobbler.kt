@@ -8,6 +8,7 @@ import com.nuvio.tv.core.tracking.TrackingScrobbleEvent
 import com.nuvio.tv.core.tracking.TrackingScrobbler
 import com.nuvio.tv.core.tracking.TrackingSeekScrobblePolicy
 import com.nuvio.tv.data.remote.dto.trakt.TraktIdsDto
+import com.nuvio.tv.core.tracking.*
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,6 +17,10 @@ class TraktTrackingScrobbler @Inject constructor(
     private val service: TraktScrobbleService,
     private val episodeMappingService: TraktEpisodeMappingService
 ) : TrackingScrobbler {
+    override fun preparePlaybackGrant(profileId: Int) = service.preparePlaybackGrant(profileId)
+    override suspend fun recoverPlaybackGrant(profileId: Int, grantId: String) =
+        service.recoverPlaybackGrant(profileId, grantId)
+
     override val providerId = TrackingProviderId.TRAKT
     override val seekScrobblePolicy = TrackingSeekScrobblePolicy.STOP_AND_RESTART
 
@@ -23,7 +28,9 @@ class TraktTrackingScrobbler @Inject constructor(
         action: TrackingScrobbleAction,
         event: TrackingScrobbleEvent
     ) {
+        checkpointTrackingPlaybackOrigin(providerId)
         val item = event.media.toTraktScrobbleItem() ?: return
+        checkpointTrackingPlaybackOrigin(providerId)
         when (action) {
             TrackingScrobbleAction.START -> service.scrobbleStart(item, event.progressPercent.toFloat())
             TrackingScrobbleAction.PAUSE -> service.scrobbleStop(item, event.progressPercent.toFloat())

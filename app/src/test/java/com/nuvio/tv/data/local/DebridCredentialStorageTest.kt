@@ -1,6 +1,7 @@
 package com.nuvio.tv.data.local
 
 import androidx.datastore.preferences.core.mutablePreferencesOf
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.nuvio.tv.TestPreferencesStore
 import com.nuvio.tv.core.debrid.DebridProviders
@@ -54,7 +55,6 @@ class DebridCredentialStorageTest {
         val store = dataStore(memory)
         store.setProviderApiKey(DebridProviders.REAL_DEBRID_ID, "rd-token")
         store.setProviderApiKey(DebridProviders.ALL_DEBRID_ID, "ad-token")
-        store.setEnabled(true)
         assertEquals("ad-token", store.settings.first().allDebridApiKey)
         assertFalse(memory.data.first().toString().contains("ad-token"))
         store.setProviderApiKey(DebridProviders.ALL_DEBRID_ID, "")
@@ -63,7 +63,23 @@ class DebridCredentialStorageTest {
         assertEquals("", settings.allDebridApiKey)
         assertTrue(settings.enabled)
         store.setProviderApiKey(DebridProviders.REAL_DEBRID_ID, "")
-        assertFalse(store.settings.first().enabled)
+        assertFalse(store.settings.first().canResolvePlayableLinks)
+    }
+
+    @Test
+    fun `saved disabled flag cannot turn off resolving for a connected service`() = runTest {
+        val memory = TestPreferencesStore(mutablePreferencesOf(booleanPreferencesKey("debrid_enabled") to false))
+        val store = dataStore(memory)
+        assertFalse(store.settings.first().canResolvePlayableLinks)
+        store.setProviderApiKey(DebridProviders.REAL_DEBRID_ID, "rd-token")
+        assertTrue(store.settings.first().canResolvePlayableLinks)
+        store.setProviderApiKey(DebridProviders.ALL_DEBRID_ID, "ad-token")
+        store.setPreferredResolverProviderId(DebridProviders.ALL_DEBRID_ID)
+        assertTrue(store.settings.first().canResolvePlayableLinks)
+        store.setProviderApiKey(DebridProviders.ALL_DEBRID_ID, "")
+        assertTrue(store.settings.first().canResolvePlayableLinks)
+        store.setProviderApiKey(DebridProviders.REAL_DEBRID_ID, "")
+        assertFalse(store.settings.first().canResolvePlayableLinks)
     }
 
     @Test

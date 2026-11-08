@@ -1,6 +1,8 @@
 package com.nuvio.tv.core.debrid
 
 import android.util.Log
+import com.nuvio.tv.core.cloud.CloudLibraryFile
+import com.nuvio.tv.core.cloud.CloudLibraryItem
 
 import com.nuvio.tv.data.local.DebridSettingsDataStore
 import com.nuvio.tv.domain.model.Stream
@@ -24,8 +26,10 @@ class AllDebridDirectDebridResolver @Inject constructor(
                 ?: DebridMagnetBuilder.fromStream(stream)
             val source: String
             var selectedFile: AllDebridFile? = null
+            var createdCloudItem: CloudLibraryItem? = null
             if (magnet != null) {
                 stage = "magnet_upload"
+                val beforeCreate = operation?.torrentIdsBeforeCreate()
                 val uploaded = scopedDebridRequest(operation) { service.upload(apiKey, magnet) }
                 val id = uploaded.id ?: return DirectDebridResolveResult.Stale
                 // No extra requests or background polling. A processing job remains in the cloud.
@@ -54,6 +58,10 @@ class AllDebridDirectDebridResolver @Inject constructor(
                     isPlayable = { it.path.hasDebridVideoExtension() },
                     size = { it.size ?: 0L }
                 ) ?: return wrongDebridFile(DebridProviders.ALL_DEBRID_ID)
+                if (files.size == 1) {
+                    createdCloudItem = newSingleFileCloudTorrent(beforeCreate, DebridProviders.AllDebrid, id.toString(),
+                        CloudLibraryFile(selectedFile.path, selectedFile.path, selectedFile.size))
+                }
                 source = selectedFile.link
             } else {
                 source = stream.getStreamUrl()?.takeIf { it.isHttpUrl() }
@@ -64,7 +72,8 @@ class AllDebridDirectDebridResolver @Inject constructor(
             DirectDebridResolveResult.Success(
                 url = result.link ?: return DirectDebridResolveResult.Stale,
                 filename = result.filename ?: selectedFile?.path?.substringAfterLast('/'),
-                videoSize = result.filesize ?: selectedFile?.size
+                videoSize = result.filesize ?: selectedFile?.size,
+                createdCloudItem = createdCloudItem
             )
         } catch (error: Exception) {
             if (error is CancellationException) throw error

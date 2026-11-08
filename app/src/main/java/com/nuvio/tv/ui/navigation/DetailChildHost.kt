@@ -62,6 +62,8 @@ internal fun DetailChildHost(
     content: @Composable (childNav: NavHostController) -> Unit
 ) {
     val childNav = rememberNavController()
+    // Child restoration needs hidden entries as well as the visible destination.
+    @Suppress("RestrictedApi")
     val childBackStack by childNav.currentBackStack.collectAsState()
     val showingChild = childBackStack.any { it.toSavedChildRoute() != null }
     var savedChildRoutes by rememberSaveable { mutableStateOf(listOf<String>()) }
@@ -238,6 +240,9 @@ internal fun DetailChildHost(
                         playOnLoad = nestedArgs?.getString("playOnLoad")?.toBooleanStrictOrNull() == true,
                         playOnLoadManually = nestedArgs?.getString("manualSelection")?.toBooleanStrictOrNull() == true,
                         onBackPress = { childNav.popBackStack() },
+                        onSetupPlayback = {
+                            parentNavController.navigate(Screen.AddonManager.route) { launchSingleTop = true }
+                        },
                         onNavigateToCastDetail = { personId, personName, preferCrew ->
                             childNav.navigate(Screen.CastDetail.createRoute(personId, personName, preferCrew))
                         },
@@ -326,11 +331,14 @@ internal fun NavHostController.navigateNestedDetail(
     addonBaseUrl: String? = null
 ) {
     val route = Screen.Detail.createRoute(itemId, itemType, addonBaseUrl)
+    // Enforce the nested-detail cap across the complete stack, including hidden entries.
+    @Suppress("RestrictedApi")
     val detailCount = currentBackStack.value.count { it.destination.route == Screen.Detail.route }
     if (detailCount < DETAIL_CHILD_MAX_NESTED_DEPTH) {
         navigate(route)
         return
     }
+    @Suppress("RestrictedApi")
     val rebuilt = applyNestedDetailCap(
         listOf(DETAIL_CHILD_IDLE) +
             currentBackStack.value.mapNotNull { it.toSavedChildRoute() } +

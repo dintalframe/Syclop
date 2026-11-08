@@ -7,6 +7,7 @@ import com.nuvio.tv.data.remote.dto.PremiumizeDeviceTokenDto
 import com.nuvio.tv.data.remote.dto.PremiumizeDirectDownloadDto
 import com.nuvio.tv.data.remote.dto.PremiumizeItemDetailsDto
 import com.nuvio.tv.data.remote.dto.PremiumizeItemListAllDto
+import com.nuvio.tv.data.remote.dto.PremiumizeRootFolderDto
 import retrofit2.Response
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
@@ -46,6 +47,18 @@ interface PremiumizeApi {
         @Header("Authorization") authorization: String,
         @Query("id") itemId: String
     ): Response<PremiumizeItemDetailsDto>
+
+    @GET("api/folder/list")
+    suspend fun listRootFolder(
+        @Header("Authorization") authorization: String
+    ): Response<PremiumizeRootFolderDto>
+
+    @FormUrlEncoded
+    @POST("api/item/delete")
+    suspend fun deleteItem(
+        @Header("Authorization") authorization: String,
+        @Field("id") itemId: String
+    ): Response<Map<String, String>>
 
     @FormUrlEncoded
     @POST("api/cache/check")

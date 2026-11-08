@@ -17,7 +17,8 @@ import kotlin.system.exitProcess
 @Singleton
 class AppRestarter @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val initialization: StartupInitializationCoordinator
+    private val initialization: StartupInitializationCoordinator,
+    private val externalPlaybackTracker: com.nuvio.tv.core.player.ExternalPlaybackTracker
 ) {
     /**
      * Reopens Home with a fresh activity/navigation task. Android destroys the previous activities
@@ -29,6 +30,7 @@ class AppRestarter @Inject constructor(
         return try {
             initialization.prepareForAppRestart()
             context.startActivity(intent)
+            externalPlaybackTracker.prepareForAppTaskExit()
             true
         } catch (_: android.content.ActivityNotFoundException) {
             false

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.jpeg.JpegExtractor JpegExtractor(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.jpeg.JpegExtractor.FLAG_READ_IMAGE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.jpeg.JpegExtractor.Flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.jpeg.JpegExtractor.FLAG_READ_IMAGE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.jpeg.JpegMotionPhotoExtractor state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.jpeg.JpegMotionPhotoExtractor.STATE_READING_MARKER, androidx.media3.extractor.jpeg.JpegMotionPhotoExtractor.STATE_READING_SEGMENT_LENGTH, androidx.media3.extractor.jpeg.JpegMotionPhotoExtractor.STATE_READING_SEGMENT, androidx.media3.extractor.jpeg.JpegMotionPhotoExtractor.STATE_SNIFFING_MOTION_PHOTO_VIDEO, androidx.media3.extractor.jpeg.JpegMotionPhotoExtractor.STATE_READING_MOTION_PHOTO_VIDEO, androidx.media3.extractor.jpeg.JpegMotionPhotoExtractor.STATE_ENDED}" />
+    </annotation>
+  </item>
+</root>
+

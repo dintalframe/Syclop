@@ -6,8 +6,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
 interface SimklV2AuthPersistence {
     fun read(profileId: Int): String?
@@ -28,6 +32,32 @@ class SimklV2AuthStore(
     private var failedRead = initial.error != null
     private val mutableState = MutableStateFlow(stateFor(initial.error))
     override val state: StateFlow<SimklAuthState> = mutableState.asStateFlow()
+
+    override suspend fun capturePlaybackGrantId(profileId: Int): String? {
+        if (profileId !in 1..6) return null
+        val expected = synchronized(lock) {
+            currentScope.takeIf { it.profileId == profileId && stored.tokens?.isValid() == true && !failedRead }
+        } ?: return null
+        val captured = withContext(Dispatchers.IO) {
+            synchronized(lock) {
+                if (currentScope != expected || stored.tokens?.isValid() != true || failedRead) return@synchronized null
+                stored.playbackGrantId?.takeIf(::validPlaybackGrantId) ?: try {
+                    val id = UUID.randomUUID().toString()
+                    val next = stored.copy(playbackGrantId = id)
+                    persistence.write(profileId, json.encodeToString(next))
+                    stored = next
+                    id
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            }
+        }
+        return captured?.takeIf { synchronized(lock) { currentScope == expected && isPlaybackGrantCurrent(profileId, it) } }
+    }
+
+    override fun isPlaybackGrantCurrent(profileId: Int, grantId: String): Boolean = synchronized(lock) {
+        profileId in 1..6 && currentScope.profileId == profileId && !failedRead && stored.tokens?.isValid() == true &&
+            validPlaybackGrantId(grantId) && stored.playbackGrantId == grantId
+    }
 
     override fun currentScope(): SimklAuthScope = synchronized(lock) { currentScope }
     override fun isCurrent(scope: SimklAuthScope): Boolean = synchronized(lock) { currentScope == scope }
@@ -70,7 +100,8 @@ class SimklV2AuthStore(
     ): Boolean = synchronized(lock) {
         if (currentScope != scope || stored.tokens?.accessToken != expectedAccessToken) return@synchronized false
         mutate(scope, advanceGeneration = expectedAccessToken == null) {
-            it.copy(tokens = tokens, metadata = it.metadata.copy(pinSession = null))
+            it.copy(tokens = tokens, metadata = it.metadata.copy(pinSession = null),
+                playbackGrantId = if (expectedAccessToken == null) UUID.randomUUID().toString() else it.playbackGrantId)
         }
     }
 
@@ -152,8 +183,12 @@ class SimklV2AuthStore(
 
     @Serializable
     private data class Stored(
-        val tokens: SimklV2Tokens? = null, val metadata: SimklStoredAuthMetadata = SimklStoredAuthMetadata()
+        val tokens: SimklV2Tokens? = null, val metadata: SimklStoredAuthMetadata = SimklStoredAuthMetadata(),
+        @SerialName("playback_grant_id") val playbackGrantId: String? = null
     ) {
         override fun toString() = "SimklStoredAuth()"
     }
+
+    private fun validPlaybackGrantId(value: String): Boolean =
+        value.matches(Regex("[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"))
 }

@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection AdaptiveTrackSelection(androidx.media3.common.TrackGroup, int[], int, androidx.media3.exoplayer.upstream.BandwidthMeter, long, long, long, int, int, float, float, java.util.List&lt;androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection.AdaptationCheckpoint&gt;, androidx.media3.common.util.Clock) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.BaseTrackSelection BaseTrackSelection(androidx.media3.common.TrackGroup, int[], int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.BaseTrackSelection type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.RendererConfiguration[],androidx.media3.exoplayer.trackselection.ExoTrackSelection[]&gt; selectTracks(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], int[], androidx.media3.exoplayer.source.MediaSource.MediaPeriodId, androidx.media3.common.Timeline) 1">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.RendererConfiguration[],androidx.media3.exoplayer.trackselection.ExoTrackSelection[]&gt; selectTracks(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], int[], androidx.media3.exoplayer.source.MediaSource.MediaPeriodId, androidx.media3.common.Timeline) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition,java.lang.Integer&gt; selectAudioTrack(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], int[], androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters) 1">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition,java.lang.Integer&gt; selectAudioTrack(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], int[], androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition,java.lang.Integer&gt; selectImageTrack(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters) 1">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition,java.lang.Integer&gt; selectTextTrack(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, java.lang.String) 1">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition,java.lang.Integer&gt; selectTracksForType(int, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], androidx.media3.exoplayer.trackselection.DefaultTrackSelector.TrackInfo.Factory&lt;T&gt;, java.util.Comparator&lt;java.util.List&lt;T&gt;&gt;) 2">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition,java.lang.Integer&gt; selectVideoTrack(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], int[], androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, java.lang.String) 1">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition,java.lang.Integer&gt; selectVideoTrack(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], int[], androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, java.lang.String) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition selectOtherTrack(int, androidx.media3.exoplayer.source.TrackGroupArray, int[][], androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters) 2">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition[] selectAllTracks(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], int[], androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters) 1">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition[] selectAllTracks(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], int[], androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector boolean isSupported(int, boolean) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector boolean rendererSupportsOffload(androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int, androidx.media3.common.Format) 1">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector boolean rendererSupportsTunneling(int[][], androidx.media3.exoplayer.source.TrackGroupArray, androidx.media3.exoplayer.trackselection.ExoTrackSelection) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector void maybeConfigureRendererForOffload(androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], androidx.media3.exoplayer.RendererConfiguration[], androidx.media3.exoplayer.trackselection.ExoTrackSelection[]) 2">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector void maybeConfigureRenderersForTunneling(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], androidx.media3.exoplayer.RendererConfiguration[], androidx.media3.exoplayer.trackselection.ExoTrackSelection[]) 1">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.AudioTrackInfo AudioTrackInfo(int, androidx.media3.common.TrackGroup, int, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int, boolean, com.google.common.base.Predicate&lt;androidx.media3.common.Format&gt;, int) 4">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.AudioTrackInfo AudioTrackInfo(int, androidx.media3.common.TrackGroup, int, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int, boolean, com.google.common.base.Predicate&lt;androidx.media3.common.Format&gt;, int) 7">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.AudioTrackInfo com.google.common.collect.ImmutableList&lt;androidx.media3.exoplayer.trackselection.DefaultTrackSelector.AudioTrackInfo&gt; createForTrackGroup(int, androidx.media3.common.TrackGroup, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int[], boolean, com.google.common.base.Predicate&lt;androidx.media3.common.Format&gt;, int) 3">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.AudioTrackInfo com.google.common.collect.ImmutableList&lt;androidx.media3.exoplayer.trackselection.DefaultTrackSelector.AudioTrackInfo&gt; createForTrackGroup(int, androidx.media3.common.TrackGroup, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int[], boolean, com.google.common.base.Predicate&lt;androidx.media3.common.Format&gt;, int) 6">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.AudioTrackInfo int evaluateSelectionEligibility(int, boolean, int) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.AudioTrackInfo int evaluateSelectionEligibility(int, boolean, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.AudioTrackInfo selectionEligibility">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_NO, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_FIXED, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_ADAPTIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.ImageTrackInfo ImageTrackInfo(int, androidx.media3.common.TrackGroup, int, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int) 4">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.ImageTrackInfo com.google.common.collect.ImmutableList&lt;androidx.media3.exoplayer.trackselection.DefaultTrackSelector.ImageTrackInfo&gt; createForTrackGroup(int, androidx.media3.common.TrackGroup, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int[]) 3">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.ImageTrackInfo selectionEligibility">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_NO, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_FIXED, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_ADAPTIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.OtherTrackScore OtherTrackScore(androidx.media3.common.Format, int) 1">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SelectionOverride SelectionOverride(int, int[], int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SelectionOverride type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.TextTrackInfo TextTrackInfo(int, androidx.media3.common.TrackGroup, int, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int, java.lang.String, java.lang.String) 4">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.TextTrackInfo com.google.common.collect.ImmutableList&lt;androidx.media3.exoplayer.trackselection.DefaultTrackSelector.TextTrackInfo&gt; createForTrackGroup(int, androidx.media3.common.TrackGroup, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int[], java.lang.String, java.lang.String) 3">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.TextTrackInfo selectionEligibility">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_NO, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_FIXED, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_ADAPTIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.TrackInfo.Factory java.util.List&lt;T&gt; create(int, androidx.media3.common.TrackGroup, int[]) 2">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.VideoTrackInfo VideoTrackInfo(int, androidx.media3.common.TrackGroup, int, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int, java.lang.String, int, boolean) 4">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.VideoTrackInfo VideoTrackInfo(int, androidx.media3.common.TrackGroup, int, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int, java.lang.String, int, boolean) 6">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.VideoTrackInfo com.google.common.collect.ImmutableList&lt;androidx.media3.exoplayer.trackselection.DefaultTrackSelector.VideoTrackInfo&gt; createForTrackGroup(int, androidx.media3.common.TrackGroup, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int[], java.lang.String, int, android.graphics.Point) 3">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.VideoTrackInfo com.google.common.collect.ImmutableList&lt;androidx.media3.exoplayer.trackselection.DefaultTrackSelector.VideoTrackInfo&gt; createForTrackGroup(int, androidx.media3.common.TrackGroup, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters, int[], java.lang.String, int, android.graphics.Point) 5">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.VideoTrackInfo int evaluateSelectionEligibility(int, int) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.VideoTrackInfo int evaluateSelectionEligibility(int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.DefaultTrackSelector.VideoTrackInfo selectionEligibility">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_NO, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_FIXED, androidx.media3.exoplayer.trackselection.DefaultTrackSelector.SELECTION_ELIGIBILITY_ADAPTIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition Definition(androidx.media3.common.TrackGroup, int[], int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.ExoTrackSelection.Definition type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.FixedTrackSelection FixedTrackSelection(androidx.media3.common.TrackGroup, int, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.FixedTrackSelection FixedTrackSelection(androidx.media3.common.TrackGroup, int, int, int, java.lang.Object) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.MappingTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.RendererConfiguration[],androidx.media3.exoplayer.trackselection.ExoTrackSelection[]&gt; selectTracks(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], int[], androidx.media3.exoplayer.source.MediaSource.MediaPeriodId, androidx.media3.common.Timeline) 1">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.MappingTrackSelector android.util.Pair&lt;androidx.media3.exoplayer.RendererConfiguration[],androidx.media3.exoplayer.trackselection.ExoTrackSelection[]&gt; selectTracks(androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo, int[][][], int[], androidx.media3.exoplayer.source.MediaSource.MediaPeriodId, androidx.media3.common.Timeline) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo MappedTrackInfo(java.lang.String[], int[], androidx.media3.exoplayer.source.TrackGroupArray[], int[], int[][][], androidx.media3.exoplayer.source.TrackGroupArray) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo MappedTrackInfo(java.lang.String[], int[], androidx.media3.exoplayer.source.TrackGroupArray[], int[], int[][][], androidx.media3.exoplayer.source.TrackGroupArray) 4">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo int getRendererSupport(int)">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_NO_TRACKS, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_UNSUPPORTED_TRACKS, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_EXCEEDS_CAPABILITIES_TRACKS, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_PLAYABLE_TRACKS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo int getTypeSupport(int)">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_NO_TRACKS, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_UNSUPPORTED_TRACKS, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_EXCEEDS_CAPABILITIES_TRACKS, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_PLAYABLE_TRACKS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo rendererFormatSupports">
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo rendererMixedMimeTypeAdaptiveSupports">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RendererSupport">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_NO_TRACKS, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_UNSUPPORTED_TRACKS, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_EXCEEDS_CAPABILITIES_TRACKS, androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo.RENDERER_SUPPORT_PLAYABLE_TRACKS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.RandomTrackSelection RandomTrackSelection(androidx.media3.common.TrackGroup, int[], int, java.util.Random) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.trackselection.TrackSelection.Type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.trackselection.TrackSelection.TYPE_UNSET}" />
+    </annotation>
+  </item>
+</root>
+

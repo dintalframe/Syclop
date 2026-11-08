@@ -6,7 +6,6 @@
 package com.nuvio.tv.ui.screens.player
 
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.ui.layout.boundsInWindow
 import com.nuvio.tv.ui.screens.detail.formatPlaybackTime
 import com.nuvio.tv.ui.theme.NuvioMotion
 
@@ -18,6 +17,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -68,12 +68,15 @@ import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -141,7 +144,6 @@ import com.nuvio.tv.ui.screens.party.ConfirmDialog
 import com.nuvio.tv.ui.screens.party.PartyPanel
 import com.nuvio.tv.ui.screens.party.PartyStatusPill
 import com.nuvio.tv.core.player.PlayerWindowBackdrop
-import com.nuvio.tv.ui.util.localizeEpisodeTitle
 import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.data.local.SubtitleStyleSettings
 import com.nuvio.tv.data.local.StreamAutoPlayMode
@@ -198,7 +200,8 @@ fun PlayerScreen(
     onOpenPartyMedia: (PartyMedia) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val playerBadges = rememberPlayerBadges(viewModel, uiState)
+    val playbackBadgeMediaInfo = rememberPlaybackBadgeMediaInfo(viewModel, uiState)
+    val playerBadges = rememberPlayerBadges(uiState, playbackBadgeMediaInfo)
     val partyState by viewModel.party.state.collectAsState()
     val partyPlayback by viewModel.party.playback.collectAsState()
     val partyAvailable by viewModel.party.available.collectAsState()
@@ -504,7 +507,7 @@ fun PlayerScreen(
     }
 
     // Frame rate matching lifecycle.
-    val activity = LocalContext.current as? android.app.Activity
+    val activity = LocalActivity.current
     LaunchedEffect(activity) {
         viewModel.attachHostActivity(activity)
         viewModel.startInitialPlaybackIfNeeded()
@@ -1539,6 +1542,7 @@ fun PlayerScreen(
             PlayerControlsOverlay(
                 uiState = uiState,
                 playerBadges = playerBadges,
+                playbackBadgeMediaInfo = playbackBadgeMediaInfo,
                 viewModel = viewModel,
                 subtitleReportingActive = playerControlsVisible,
                 onSubtitleClearanceChanged = {
@@ -2369,14 +2373,6 @@ private val SUBTITLE_TITLE_MARGIN = 16.dp
 private const val EXO_SUBTITLE_BASE_SP = 24f
 private const val EXO_SUBTITLE_INNER_PADDING_RATIO = 0.125f
 
-@Composable
-private fun Modifier.reportRightEdge(key: String, rights: MutableMap<String, Float>): Modifier {
-    DisposableEffect(key, rights) {
-        onDispose { rights.remove(key) }
-    }
-    return onGloballyPositioned { rights[key] = it.boundsInWindow().right }
-}
-
 private fun Modifier.reportSubtitleClearance(gapPx: Float, onClearance: (Float) -> Unit): Modifier =
     onGloballyPositioned { coordinates ->
         val rootHeight = coordinates.findRootCoordinates().size.height
@@ -2604,6 +2600,7 @@ private fun PlayerView.setAssOverlayVisibility(visibility: Int) {
 private fun PlayerControlsOverlay(
     uiState: PlayerUiState,
     playerBadges: List<StreamBadge>,
+    playbackBadgeMediaInfo: PlayerMediaInfo,
     viewModel: PlayerViewModel,
     playPauseFocusRequester: FocusRequester,
     progressBarFocusRequester: FocusRequester,
@@ -2660,6 +2657,7 @@ private fun PlayerControlsOverlay(
     val customSourcePainter = rememberRawSvgPainter(R.raw.ic_player_source)
     val customAspectPainter = rememberRawSvgPainter(R.raw.ic_player_aspect_ratio)
     val customEpisodesPainter = rememberRawSvgPainter(R.raw.ic_player_episodes)
+    val focusedControlLabel = remember { mutableStateOf<State<String>?>(null) }
     var showEngineSwitchConfirm by remember { mutableStateOf(false) }
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
     val isLivePlayback = playbackTimeline.isLive
@@ -2688,35 +2686,13 @@ private fun PlayerControlsOverlay(
                 )
         )
 
-        // Bottom gradient
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(200.dp)
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.8f)
-                        )
-                    )
-                )
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .onGloballyPositioned { coordinates ->
-                    val rootHeight = coordinates.findRootCoordinates().size.height
-                    val top = coordinates.boundsInRoot().top
-                    if (rootHeight > 0) {
-                        controlsClearancePx = (rootHeight - top - clearanceOffsetPx).coerceAtLeast(0f)
-                    }
-                }
-                .padding(horizontal = NuvioTheme.spacing.xxl, vertical = NuvioTheme.spacing.xl)
-        ) {
+        PlayerControlsBottomLayout(onColumnPositioned = { coordinates ->
+            val rootHeight = coordinates.findRootCoordinates().size.height
+            val top = coordinates.boundsInRoot().top
+            if (rootHeight > 0) {
+                controlsClearancePx = (rootHeight - top - clearanceOffsetPx).coerceAtLeast(0f)
+            }
+        }) {
             val skipIntroVisible = uiState.activeSkipInterval != null
 
             AnimatedVisibility(
@@ -2724,65 +2700,12 @@ private fun PlayerControlsOverlay(
                 enter = fadeIn(animationSpec = tween(NuvioMotion.tokens.durations.fast)),
                 exit = fadeOut(animationSpec = tween(NuvioMotion.tokens.durations.fast))
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    val displayName = if (uiState.currentEpisode != null) {
-                        uiState.contentName ?: uiState.title
-                    } else {
-                        uiState.title
-                    }
-
-                    Text(
-                        text = displayName,
-                        modifier = Modifier.reportRightEdge("name", titleRights),
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    if (uiState.currentEpisode != null) {
-                        val seasonEpisodeCode = if (uiState.currentSeason == null) {
-                            stringResource(R.string.playback_episode_number, uiState.currentEpisode)
-                        } else {
-                            stringResource(R.string.season_episode_format, uiState.currentSeason, uiState.currentEpisode)
-                        }
-                        val appContext = LocalContext.current
-                        val localizedEpisodeTitle = uiState.currentEpisodeTitle
-                            ?.takeIf { it.isNotBlank() }
-                            ?.localizeEpisodeTitle(appContext)
-                        val episodeInfo = if (localizedEpisodeTitle != null) {
-                            "$seasonEpisodeCode • $localizedEpisodeTitle"
-                        } else {
-                            seasonEpisodeCode
-                        }
-                        Text(
-                            text = episodeInfo,
-                            modifier = Modifier.reportRightEdge("episode", titleRights),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White.copy(alpha = 0.9f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    if (playerBadges.isNotEmpty()) {
-                        PlayerBadges(
-                            badges = playerBadges,
-                            modifier = Modifier
-                                .padding(vertical = NuvioTheme.spacing.xs)
-                                .reportRightEdge("badges", titleRights)
-                        )
-                    }
-
-                    if (!uiState.releaseYear.isNullOrBlank()) {
-                        Text(
-                            text = uiState.releaseYear.orEmpty(),
-                            modifier = Modifier.reportRightEdge("year", titleRights),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.68f)
-                        )
-                    }
-                }
+                PlayerPlaybackMetadataHeader(
+                    uiState = uiState,
+                    playerBadges = playerBadges,
+                    playbackBadgeMediaInfo = playbackBadgeMediaInfo,
+                    titleRights = titleRights
+                )
             }
 
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
@@ -2854,6 +2777,7 @@ private fun PlayerControlsOverlay(
                         icon = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         iconPainter = if (uiState.isPlaying) customPausePainter else customPlayPainter,
                         contentDescription = if (uiState.isPlaying) stringResource(R.string.cd_pause) else stringResource(R.string.cd_play),
+                        focusedLabel = focusedControlLabel,
                         onClick = onPlayPause,
                         focusRequester = playPauseFocusRequester,
                         upFocusRequester = progressUpTarget,
@@ -2866,6 +2790,7 @@ private fun PlayerControlsOverlay(
                             icon = Icons.Default.ClosedCaption,
                             iconPainter = customSubtitlePainter,
                             contentDescription = stringResource(R.string.cd_subtitles),
+                            focusedLabel = focusedControlLabel,
                             onClick = onShowSubtitleDialog,
                             upFocusRequester = progressUpTarget,
                             onDownKey = onHideControls,
@@ -2878,6 +2803,7 @@ private fun PlayerControlsOverlay(
                             icon = Icons.AutoMirrored.Filled.VolumeUp,
                             iconPainter = customAudioPainter,
                             contentDescription = stringResource(R.string.cd_audio_tracks),
+                            focusedLabel = focusedControlLabel,
                             onClick = onShowAudioDialog,
                             upFocusRequester = progressUpTarget,
                             onDownKey = onHideControls,
@@ -2889,6 +2815,7 @@ private fun PlayerControlsOverlay(
                         ControlButton(
                             icon = Icons.AutoMirrored.Filled.Toc,
                             contentDescription = stringResource(R.string.player_chapters),
+                            focusedLabel = focusedControlLabel,
                             onClick = onShowChaptersPanel,
                             upFocusRequester = progressUpTarget,
                             onDownKey = onHideControls,
@@ -2900,6 +2827,7 @@ private fun PlayerControlsOverlay(
                         icon = Icons.Default.SwapHoriz,
                         iconPainter = customSourcePainter,
                         contentDescription = stringResource(R.string.cd_sources),
+                        focusedLabel = focusedControlLabel,
                         onClick = onShowSourcesPanel,
                         upFocusRequester = progressUpTarget,
                         onDownKey = onHideControls,
@@ -2911,6 +2839,7 @@ private fun PlayerControlsOverlay(
                             icon = Icons.AutoMirrored.Filled.List,
                             iconPainter = customEpisodesPainter,
                             contentDescription = stringResource(R.string.cd_episodes),
+                            focusedLabel = focusedControlLabel,
                             onClick = onShowEpisodesPanel,
                             upFocusRequester = progressUpTarget,
                             onDownKey = onHideControls,
@@ -2922,6 +2851,7 @@ private fun PlayerControlsOverlay(
                         ControlButton(
                             icon = Icons.Rounded.Groups,
                             contentDescription = stringResource(R.string.party_title),
+                            focusedLabel = focusedControlLabel,
                             onClick = onShowPartyPanel,
                             upFocusRequester = progressUpTarget,
                             onDownKey = onHideControls,
@@ -2948,6 +2878,7 @@ private fun PlayerControlsOverlay(
                             ControlButton(
                                 icon = Icons.Default.Speed,
                                 contentDescription = stringResource(R.string.cd_playback_speed),
+                                focusedLabel = focusedControlLabel,
                                 onClick = {
                                     onShowSpeedDialog()
                                 },
@@ -2959,6 +2890,7 @@ private fun PlayerControlsOverlay(
                                 icon = Icons.Default.AspectRatio,
                                 iconPainter = customAspectPainter,
                                 contentDescription = stringResource(R.string.cd_aspect_ratio),
+                                focusedLabel = focusedControlLabel,
                                 onClick = {
                                     onToggleAspectRatio()
                                 },
@@ -2969,6 +2901,7 @@ private fun PlayerControlsOverlay(
                             ControlButton(
                                 icon = Icons.Default.SwapHoriz,
                                 contentDescription = stringResource(R.string.cd_switch_player_engine),
+                                focusedLabel = focusedControlLabel,
                                 onClick = { showEngineSwitchConfirm = true },
                                 upFocusRequester = progressUpTarget,
                                 onDownKey = onHideControls,
@@ -2978,6 +2911,7 @@ private fun PlayerControlsOverlay(
                                 ControlButton(
                                     icon = Icons.AutoMirrored.Filled.OpenInNew,
                                     contentDescription = stringResource(R.string.cd_open_external_player),
+                                    focusedLabel = focusedControlLabel,
                                     onClick = openInExternalPlayer,
                                     upFocusRequester = progressUpTarget,
                                     onDownKey = onHideControls,
@@ -2987,6 +2921,7 @@ private fun PlayerControlsOverlay(
                             ControlButton(
                                 icon = Icons.Default.Info,
                                 contentDescription = stringResource(R.string.cd_stream_info),
+                                focusedLabel = focusedControlLabel,
                                 onClick = {
                                     onShowStreamInfo()
                                 },
@@ -2999,6 +2934,7 @@ private fun PlayerControlsOverlay(
                                 ReportControlButton(
                                     reportId = uiState.playbackIssueReportId,
                                     showReportId = reportCodeVisible,
+                                    focusedLabel = focusedControlLabel,
                                     onClick = onReportPlaybackIssue,
                                     enabled = uiState.playbackIssueReportStatus != PlaybackIssueReportStatus.Sending &&
                                         uiState.playbackIssueReportStatus != PlaybackIssueReportStatus.Sent,
@@ -3014,9 +2950,10 @@ private fun PlayerControlsOverlay(
                         icon = if (uiState.showMoreDialog) {
                             Icons.AutoMirrored.Filled.KeyboardArrowLeft
                         } else {
-                            Icons.AutoMirrored.Filled.KeyboardArrowRight
+                            Icons.Default.MoreHoriz
                         },
                         contentDescription = if (uiState.showMoreDialog) stringResource(R.string.cd_close_more_actions) else stringResource(R.string.cd_more_actions),
+                        focusedLabel = focusedControlLabel,
                         onClick = onToggleMoreActions,
                         upFocusRequester = progressUpTarget,
                         onDownKey = onHideControls,
@@ -3028,6 +2965,8 @@ private fun PlayerControlsOverlay(
                 PlayerControlsTimeTextHost(viewModel = viewModel)
             }
             }
+
+            PlayerControlCaption(focusedControlLabel.value?.value)
         }
     }
 
@@ -3104,6 +3043,7 @@ private fun PlayerControlsTimeTextHost(viewModel: PlayerViewModel) {
 private fun ReportControlButton(
     reportId: String?,
     showReportId: Boolean,
+    focusedLabel: MutableState<State<String>?>,
     onClick: () -> Unit,
     enabled: Boolean,
     upFocusRequester: FocusRequester,
@@ -3114,6 +3054,7 @@ private fun ReportControlButton(
         ControlButton(
             icon = Icons.Default.BugReport,
             contentDescription = stringResource(R.string.player_report_issue),
+            focusedLabel = focusedLabel,
             onClick = onClick,
             enabled = enabled,
             upFocusRequester = upFocusRequester,
@@ -3142,10 +3083,11 @@ private fun ReportControlButton(
 }
 
 @Composable
-private fun ControlButton(
+internal fun ControlButton(
     icon: ImageVector,
     iconPainter: Painter? = null,
     contentDescription: String,
+    focusedLabel: MutableState<State<String>?>,
     onClick: () -> Unit,
     focusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
@@ -3154,7 +3096,12 @@ private fun ControlButton(
     onFocused: (() -> Unit)? = null,
     contentColor: Color = Color.White
 ) {
-    var isFocused by remember { mutableStateOf(false) }
+    val label = rememberUpdatedState(contentDescription)
+    DisposableEffect(focusedLabel, label) {
+        onDispose {
+            if (focusedLabel.value === label) focusedLabel.value = null
+        }
+    }
 
     IconButton(
         onClick = onClick,
@@ -3194,8 +3141,12 @@ private fun ControlButton(
                 }
             }
             .onFocusChanged {
-                isFocused = it.isFocused
-                if (it.isFocused) onFocused?.invoke()
+                if (it.isFocused) {
+                    focusedLabel.value = label
+                    onFocused?.invoke()
+                } else if (focusedLabel.value === label) {
+                    focusedLabel.value = null
+                }
             },
         colors = IconButtonDefaults.colors(
             containerColor = Color.Transparent,

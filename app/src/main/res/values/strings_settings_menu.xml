@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_menu_accounts">Accounts</string>
+    <string name="settings_menu_connected_services">Connected Services</string>
+    <string name="settings_menu_connected_services_description">Connect the services you use. You can change their options later.</string>
+    <string name="settings_menu_app">App</string>
+    <string name="settings_menu_app_description">Manage profiles, check for updates, or back up local data.</string>
+    <string name="settings_menu_about_updates">About and updates</string>
+    <string name="settings_menu_about_updates_description">Check the app version, updates, and licenses.</string>
+    <string name="settings_menu_update_preferences">Update preferences</string>
+    <string name="settings_menu_supporters">Supporters and contributors</string>
+    <string name="settings_menu_tracking_preferences">Tracking preferences</string>
+    <string name="settings_menu_tracking_preferences_description">Choose where Syclop keeps your library and watch progress.</string>
+    <string name="settings_menu_debrid_services">Debrid services</string>
+    <string name="settings_menu_debrid_preferences">Debrid preferences</string>
+    <string name="settings_menu_playback_description">Player, audio, subtitle, and stream options.</string>
+    <string name="settings_menu_sources">Sources</string>
+    <string name="settings_menu_appearance">Appearance</string>
+    <string name="settings_menu_library">Library</string>
+    <string name="settings_menu_accounts_description">Connect your services and manage who is watching.</string>
+    <string name="settings_menu_sources_description">Manage where Syclop finds movies, shows, and playable sources.</string>
+    <string name="settings_menu_appearance_description">Choose how Syclop looks and arrange your Home screen.</string>
+    <string name="settings_menu_advanced_description">Customize playback, appearance, and service options.</string>
+    <string name="settings_menu_connected_accounts">Connected accounts</string>
+    <string name="settings_menu_connected_accounts_description">Connect Trakt, SIMKL, MDBList, or MyAnimeList.</string>
+    <string name="settings_menu_syclop_account">Syclop account and profiles</string>
+    <string name="settings_menu_syclop_account_description">Your Syclop account and local profile tools.</string>
+    <string name="settings_menu_profiles_description">Choose who is watching and manage local profiles.</string>
+    <string name="settings_menu_watch_party_description">Watch together with friends.</string>
+    <string name="settings_menu_sources_tools">Add-ons and media servers</string>
+    <string name="settings_menu_sources_tools_description">Manage catalogs, source providers, and your own media.</string>
+    <string name="settings_menu_streaming_services">Streaming services</string>
+    <string name="settings_menu_streaming_services_description">Connect Real-Debrid, TorBox, AllDebrid, or Premiumize.</string>
+    <string name="settings_menu_theme">Theme and display</string>
+    <string name="settings_menu_theme_description">Colors, text, and the look of your menus.</string>
+    <string name="settings_menu_layout">Home and card layout</string>
+    <string name="settings_menu_layout_description">Arrange rows, posters, and Continue Watching.</string>
+    <string name="settings_menu_system">App and network options</string>
+    <string name="settings_menu_system_description">Performance, update preferences, and troubleshooting.</string>
+    <string name="settings_menu_integrations">More integrations</string>
+    <string name="settings_menu_integrations_description">Metadata, custom lists, and anime skip services.</string>
+    <string name="settings_menu_debug_description">Inspect detailed app diagnostics.</string>
+    <string name="settings_get_sign_in_code">Get sign-in code</string>
+</resources>

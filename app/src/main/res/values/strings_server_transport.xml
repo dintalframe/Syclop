@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="servers_local_http_title">Allow this local connection?</string>
+    <string name="servers_local_http_description">%1$s uses an unencrypted connection. Other devices on this network may read your sign-in information and playback activity. Allow it only on a network you trust.</string>
+    <string name="servers_local_http_allow">Allow local connection</string>
+    <string name="servers_status_review_connection">Review local connection</string>
+    <string name="servers_error_insecure_connection">Use HTTPS for this server. Local HTTP connections require approval in the server settings.</string>
+</resources>

@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.UUID
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -53,6 +55,7 @@ class MalAuthStore internal constructor(
     private val mutableState = MutableStateFlow(MalAccountState(scope = MalScope(initialProfileId, 0), configuration = shippedConfiguration))
     val state: StateFlow<MalAccountState> = mutableState.asStateFlow()
     private var tokens: MalTokens? = null
+    private var playbackGrantId: String? = null
 
     init {
         if (initialProfileId in 1..6) load(initialProfileId)
@@ -68,6 +71,31 @@ class MalAuthStore internal constructor(
     fun isCurrent(expected: MalScope): Boolean = state.value.scope == expected
     fun credentials(expected: MalScope): MalTokens? = synchronized(lock) { if (persistence.available && isCurrent(expected)) tokens else null }
 
+    suspend fun capturePlaybackGrantId(profileId: Int): String? {
+        if (profileId !in 1..6) return null
+        val expected = synchronized(lock) {
+            state.value.scope.takeIf { it.profileId == profileId && persistence.available && state.value.connected && validTokens() }
+        } ?: return null
+        val captured = withContext(Dispatchers.IO) {
+            synchronized(lock) {
+                if (!isCurrent(expected) || !persistence.available || !state.value.connected || !validTokens()) return@synchronized null
+                playbackGrantId?.takeIf(::validPlaybackGrantId) ?: try {
+                    val id = UUID.randomUUID().toString()
+                    persistence.write(mapOf(key(profileId) to record(state.value, tokens, id)))
+                    playbackGrantId = id
+                    id
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            }
+        }
+        return captured?.takeIf { synchronized(lock) { isCurrent(expected) && isPlaybackGrantCurrent(profileId, it) } }
+    }
+
+    fun isPlaybackGrantCurrent(profileId: Int, grantId: String): Boolean = synchronized(lock) {
+        profileId in 1..6 && state.value.scope.profileId == profileId && persistence.available && state.value.connected && validTokens() &&
+            validPlaybackGrantId(grantId) && playbackGrantId == grantId
+    }
+
     fun configure(configuration: MalConfiguration) = synchronized(lock) {
         val current = state.value
         require(current.scope.profileId in 1..6) { "The active profile is still loading." }
@@ -76,6 +104,7 @@ class MalAuthStore internal constructor(
             configuration = configuration, connected = false, username = null)
         persistence.write(mapOf("application_configuration" to configurationJson(configuration), key(next.scope.profileId) to record(next, null)))
         tokens = null
+        playbackGrantId = null
         mutableState.value = next
     }
 
@@ -84,8 +113,10 @@ class MalAuthStore internal constructor(
         require(received.accessToken.isNotBlank() && received.refreshToken.isNotBlank() && received.expiresAtMs > 0)
         // A newly completed login is a different grant, even on the same viewer/registration.
         val next = state.value.copy(scope = expected.copy(generation = expected.generation + 1), connected = true, username = username)
-        persistence.write(mapOf(key(expected.profileId) to record(next, received)))
+        val grantId = UUID.randomUUID().toString()
+        persistence.write(mapOf(key(expected.profileId) to record(next, received, grantId)))
         tokens = received
+        playbackGrantId = grantId
         mutableState.value = next
         true
     }
@@ -109,6 +140,7 @@ class MalAuthStore internal constructor(
         val next = state.value.copy(scope = expected.copy(generation = expected.generation + 1), connected = false, username = null)
         persistence.write(mapOf(key(expected.profileId) to record(next, null)))
         tokens = null
+        playbackGrantId = null
         mutableState.value = next
         true
     }
@@ -123,6 +155,7 @@ class MalAuthStore internal constructor(
         persistence.write(mapOf(key(profileId) to null))
         if (state.value.scope.profileId == profileId) {
             tokens = null
+            playbackGrantId = null
             mutableState.value = MalAccountState(scope = state.value.scope.copy(generation = state.value.scope.generation + 1),
                 configuration = state.value.configuration)
         }
@@ -131,6 +164,7 @@ class MalAuthStore internal constructor(
     override fun clearAllProfiles() = synchronized(lock) {
         persistence.clear()
         tokens = null
+        playbackGrantId = null
         mutableState.value = MalAccountState(scope = state.value.scope.copy(generation = state.value.scope.generation + 1), configuration = shippedConfiguration)
     }
 
@@ -139,6 +173,7 @@ class MalAuthStore internal constructor(
         val scope = MalScope(profileId, state.value.scope.generation + 1)
         // Clear previous-viewer memory before a storage read can block or fail.
         tokens = null
+        playbackGrantId = null
         mutableState.value = MalAccountState(scope = scope, configuration = shippedConfiguration)
         try {
             val account = persistence.read(key(profileId))?.let { Json.parseToJsonElement(it).jsonObject }
@@ -154,6 +189,8 @@ class MalAuthStore internal constructor(
                 MalTokens(access, string("refresh_token"), account?.get("expires_at")?.jsonPrimitive?.longOrNull ?: 0)
             }?.takeIf { it.refreshToken.isNotBlank() && it.expiresAtMs > 0 }
             tokens = restored
+            playbackGrantId = runCatching { string("playback_grant_id") }.getOrNull()
+                ?.takeIf { restored != null && validPlaybackGrantId(it) }
             mutableState.value = MalAccountState(scope = scope, configuration = configuration,
                 connected = restored != null, username = string("username").takeIf { restored != null && it.isNotBlank() },
                 automaticProgress = string("automatic_progress") != "false")
@@ -168,10 +205,18 @@ class MalAuthStore internal constructor(
     private fun configurationJson(configuration: MalConfiguration) = buildJsonObject {
         put("client_id", configuration.clientId); put("redirect_uri", configuration.redirectUri)
     }.toString()
-    private fun record(account: MalAccountState, credential: MalTokens?) = buildJsonObject {
+    private fun record(account: MalAccountState, credential: MalTokens?, grantId: String? = playbackGrantId) = buildJsonObject {
         put("client_id", account.configuration.clientId); put("redirect_uri", account.configuration.redirectUri)
         put("username", account.username.orEmpty()); put("automatic_progress", account.automaticProgress.toString())
-        credential?.let { put("access_token", it.accessToken); put("refresh_token", it.refreshToken); put("expires_at", it.expiresAtMs) }
+        credential?.let {
+            put("access_token", it.accessToken); put("refresh_token", it.refreshToken); put("expires_at", it.expiresAtMs)
+            grantId?.takeIf(::validPlaybackGrantId)?.let { id -> put("playback_grant_id", id) }
+        }
     }.toString()
     private fun key(profile: Int) = "account.p$profile"
+    private fun validTokens(): Boolean = tokens?.let {
+        it.accessToken.isNotBlank() && it.refreshToken.isNotBlank() && it.expiresAtMs > 0L
+    } == true
+    private fun validPlaybackGrantId(value: String): Boolean =
+        value.matches(Regex("[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"))
 }

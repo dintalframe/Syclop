@@ -95,6 +95,7 @@ fun HeroContentSection(
     nextToWatch: NextToWatch?,
     onPlayClick: () -> Unit,
     isPlayEnabled: Boolean = true,
+    onSetupPlayback: (() -> Unit)? = null,
     onPlayLongPress: (() -> Unit)? = null,
     onStartFromBeginning: (() -> Unit)? = null,
     isInLibrary: Boolean,
@@ -253,11 +254,17 @@ fun HeroContentSection(
                         horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val setupAction = onSetupPlayback.takeUnless { isPlayEnabled }
                         PlayButton(
-                            text = if (isPlayEnabled) nextToWatch?.displayText else stringResource(R.string.playback_unavailable),
-                            enabled = isPlayEnabled,
-                            onClick = onPlayClick,
-                            onLongPress = onPlayLongPress,
+                            text = when {
+                                isPlayEnabled -> nextToWatch?.displayText
+                                setupAction != null -> stringResource(R.string.hero_set_up_playback)
+                                else -> stringResource(R.string.playback_unavailable)
+                            },
+                            enabled = isPlayEnabled || setupAction != null,
+                            onClick = setupAction ?: onPlayClick,
+                            onLongPress = onPlayLongPress.takeIf { isPlayEnabled },
+                            showPlayIcon = setupAction == null,
                             focusRequester = playButtonFocusRequester,
                             restoreFocusToken = restorePlayFocusToken,
                             onFocusRestored = {
@@ -391,6 +398,7 @@ internal fun PlayButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongPress: (() -> Unit)? = null,
+    showPlayIcon: Boolean = true,
     focusRequester: FocusRequester? = null,
     restoreFocusToken: Int = 0,
     onFocusRestored: () -> Unit = {}
@@ -481,11 +489,13 @@ internal fun PlayButton(
                 )
             )
         ) {
-            Icon(
-                painter = playPainter,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
+            if (showPlayIcon) {
+                Icon(
+                    painter = playPainter,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
             AnimatedVisibility(
                 visible = text != null,
                 enter = fadeIn(animationSpec = tween(NuvioMotion.tokens.durations.fast)),

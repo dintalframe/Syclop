@@ -191,10 +191,11 @@ internal class PlayerMediaSourceFactory(private val context: Context) {
                 PlayerPlaybackNetworking.createHttpDataSourceFactory(
                     sanitizedHeaders,
                     useLongReadTimeout = isLoopbackUrl(url),
+                    credentialOriginUrl = url,
                 ),
             )
         } else {
-            PlayerPlaybackNetworking.createDataSourceFactory(context, sanitizedHeaders)
+            PlayerPlaybackNetworking.createDataSourceFactory(context, sanitizedHeaders, credentialOriginUrl = url)
         }
 
         val mediaItemBuilder = MediaItem.Builder().setUri(url)
@@ -227,7 +228,8 @@ internal class PlayerMediaSourceFactory(private val context: Context) {
         parallelStartupPrefetchUnlocked.set(!useChunkSessionSource)
         val networkProgressiveFactory: DataSource.Factory = if (useChunkSessionSource) {
             val sessionConnections = parallelConnectionCount
-            val okHttpFactory = OkHttpDataSource.Factory(playbackHttpClient).apply {
+            val scopedClient = playbackHttpClient.withScopedPlaybackHeaders(url, sanitizedHeaders.keys)
+            val okHttpFactory = OkHttpDataSource.Factory(scopedClient).apply {
                 setDefaultRequestProperties(sanitizedHeaders)
                 if (sanitizedHeaders.none { it.key.equals("User-Agent", ignoreCase = true) }) {
                     setUserAgent(DEFAULT_USER_AGENT)
@@ -251,7 +253,11 @@ internal class PlayerMediaSourceFactory(private val context: Context) {
                 onResolvedUri = { resolved -> currentVodCacheResolvedUrl = resolved?.toString() }
             )
         } else if (isLoopbackUrl(url)) {
-            PlayerPlaybackNetworking.createHttpDataSourceFactory(sanitizedHeaders, useLongReadTimeout = true)
+            PlayerPlaybackNetworking.createHttpDataSourceFactory(
+                sanitizedHeaders,
+                useLongReadTimeout = true,
+                credentialOriginUrl = url
+            )
         } else {
             httpDataSourceFactory
         }
@@ -926,7 +932,7 @@ internal class PlayerMediaSourceFactory(private val context: Context) {
             val methods = listOf("HEAD", "GET")
             for (method in methods) {
                 runCatching {
-                    val requestBuilder = Request.Builder().url(url)
+                    val requestBuilder = Request.Builder().url(url).scopePlaybackHeaders(url, sanitizedHeaders.keys)
                     if (method == "GET") {
                         requestBuilder.header("Range", "bytes=0-2048")
                     }

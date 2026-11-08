@@ -23,7 +23,12 @@ import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.tv.material3.Button
 import androidx.tv.material3.Text
+import com.nuvio.tv.core.initialization.InitializationFailure
 import com.nuvio.tv.core.initialization.InitializationPhase
+import com.nuvio.tv.core.initialization.InitializationProvider
+import com.nuvio.tv.core.initialization.InitializationStage
+import com.nuvio.tv.core.initialization.InitializationStageStatus
+import com.nuvio.tv.core.initialization.InitializationStep
 import com.nuvio.tv.core.initialization.StartupInitializationState
 import com.nuvio.tv.ui.theme.NuvioTheme
 import java.io.File
@@ -40,6 +45,7 @@ class StartupInitializationScreenTvTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val blocked = mutableStateOf(false)
     private val phase = mutableStateOf(InitializationPhase.CHECKING)
+    private val stages = mutableStateOf<List<InitializationStage>>(emptyList())
     private val homeFocus = FocusRequester()
     private val homeActions = AtomicInteger()
     private val homeBacks = AtomicInteger()
@@ -74,7 +80,7 @@ class StartupInitializationScreenTvTest {
         press(KeyEvent.KEYCODE_DPAD_CENTER)
         assertEquals(1, retries.get())
         assertEquals(0, continues.get())
-        compose.onNodeWithText(RETRY).assertIsFocused()
+        compose.onNodeWithText(CONTINUE).assertIsFocused()
         capture("startup-gate-actions")
         press(KeyEvent.KEYCODE_DPAD_LEFT)
         press(KeyEvent.KEYCODE_DPAD_CENTER)
@@ -118,7 +124,87 @@ class StartupInitializationScreenTvTest {
         capture("startup-gate-same-window")
     }
 
-    private fun setGate() {
+    @Test fun retryThatRemovesFocusedActionKeepsContinueUsableUntilHomeReturns() {
+        setGate(retryStartsImport = true)
+        focusHome()
+        compose.runOnIdle { phase.value = InitializationPhase.NEEDS_ATTENTION; blocked.value = true }
+        repeat(3) { attempt ->
+            compose.onNodeWithText(CONTINUE).assertIsFocused()
+            press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            compose.onNodeWithText(RETRY).assertIsFocused()
+            press(KeyEvent.KEYCODE_DPAD_CENTER)
+            assertEquals(attempt + 1, retries.get())
+            compose.onNodeWithText(RETRY).assertDoesNotExist()
+            compose.onNodeWithText(CONTINUE).assertIsFocused()
+            compose.runOnIdle { phase.value = InitializationPhase.IMPORTING }
+            var accepted = true
+            compose.runOnIdle { accepted = homeFocus.requestFocus() }
+            assertFalse("An import retry must keep background Home blocked", accepted)
+            press(KeyEvent.KEYCODE_DPAD_LEFT)
+            press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            compose.onNodeWithText(CONTINUE).assertIsFocused()
+            assertEquals(0, homeActions.get())
+            compose.runOnIdle { phase.value = InitializationPhase.NEEDS_ATTENTION }
+        }
+        // Account/profile work can also replace the error actions without a click.
+        compose.onNodeWithText(CONTINUE).assertIsFocused()
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        compose.onNodeWithText(RETRY).assertIsFocused()
+        compose.runOnIdle { phase.value = InitializationPhase.CHECKING }
+        compose.onNodeWithText(RETRY).assertDoesNotExist()
+        compose.onNodeWithText(CONTINUE).assertIsFocused()
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertEquals(1, continues.get())
+        compose.onNodeWithText(CONTINUE).assertDoesNotExist()
+        compose.onNodeWithText(HOME).assertIsFocused()
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertEquals(1, homeActions.get())
+        capture("startup-gate-retry-focus-restored")
+    }
+
+    @Test fun providerProgressChangesKeepContinueFocusedAndShowOnlyObservedStages() {
+        setGate()
+        focusHome()
+        compose.runOnIdle { blocked.value = true }
+        compose.onNodeWithText("Checking connected accounts").assertIsDisplayed()
+        compose.onNodeWithText("Trakt", substring = true).assertDoesNotExist()
+        compose.onNodeWithText(CONTINUE).assertIsFocused()
+
+        val trakt = InitializationStage(InitializationProvider.TRAKT, InitializationStageStatus.READING,
+            step = InitializationStep.HISTORY)
+        compose.runOnIdle {
+            phase.value = InitializationPhase.IMPORTING
+            stages.value = listOf(trakt)
+        }
+        compose.onNodeWithText("Preparing connected accounts").assertIsDisplayed()
+        compose.onNodeWithText("Trakt · Reading watch history and resume positions").assertIsDisplayed()
+        compose.onNodeWithText("Simkl", substring = true).assertDoesNotExist()
+        compose.onNodeWithText(CONTINUE).assertIsFocused()
+
+        compose.runOnIdle { stages.value = listOf(trakt.copy(step = InitializationStep.LIBRARY)) }
+        compose.onNodeWithText("Trakt · Reading lists and library").assertIsDisplayed()
+        compose.onNodeWithText(CONTINUE).assertIsFocused()
+
+        compose.runOnIdle {
+            phase.value = InitializationPhase.NEEDS_ATTENTION
+            stages.value = listOf(
+                InitializationStage(InitializationProvider.TRAKT, InitializationStageStatus.COMPLETE,
+                    count = 2, truncated = true),
+                InitializationStage(InitializationProvider.SIMKL, InitializationStageStatus.FAILED,
+                    failure = InitializationFailure.TIMEOUT),
+                InitializationStage(InitializationProvider.MAL, InitializationStageStatus.COMPLETE, count = 1)
+            )
+        }
+        compose.onNodeWithText("Some accounts need attention").assertIsDisplayed()
+        compose.onNodeWithText("Trakt · 2 entries read · Partial history or list").assertIsDisplayed()
+        compose.onNodeWithText("Simkl · Timed out").assertIsDisplayed()
+        compose.onNodeWithText("MyAnimeList · 1 entry read").assertIsDisplayed()
+        compose.onNodeWithText(CONTINUE).assertIsFocused()
+        compose.onNodeWithText(RETRY).assertIsDisplayed()
+        capture("startup-gate-provider-stages")
+    }
+
+    private fun setGate(retryStartsImport: Boolean = false) {
         compose.setContent {
             NuvioTheme {
                 Box(Modifier.fillMaxSize()) {
@@ -128,8 +214,11 @@ class StartupInitializationScreenTvTest {
                             Text(HOME)
                         }
                     }
-                    if (blocked.value) StartupInitializationScreen(StartupInitializationState(1, 1, phase.value),
-                        onRetry = { retries.incrementAndGet() },
+                    if (blocked.value) StartupInitializationScreen(StartupInitializationState(1, 1, phase.value, stages.value),
+                        onRetry = {
+                            retries.incrementAndGet()
+                            if (retryStartsImport) phase.value = InitializationPhase.CHECKING
+                        },
                         onContinue = { continues.incrementAndGet(); blocked.value = false })
                 }
             }

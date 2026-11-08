@@ -72,6 +72,7 @@ import android.content.Intent
 import android.net.Uri
 import com.nuvio.tv.R
 import com.nuvio.tv.core.build.AppFeaturePolicy
+import com.nuvio.tv.ui.screens.addon.AddonManagementAccess
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
@@ -113,6 +114,9 @@ class MetaDetailsViewModel @Inject constructor(
     private val isServerItem = ServerItemRef.isServerId(itemId)
     private val itemType: String = savedStateHandle["itemType"] ?: ""
     private val preferredAddonBaseUrl: String? = savedStateHandle["addonBaseUrl"]
+
+    internal val canManagePlaybackSources: Boolean
+        get() = !AddonManagementAccess.isReadOnly(profileManager.activeProfile)
 
     private var traktActionJob: Job? = null
     private var traktActionSession: com.nuvio.tv.core.trakt.TraktActionSession? = null
@@ -310,7 +314,7 @@ class MetaDetailsViewModel @Inject constructor(
         _uiState.value.meta?.let { meta ->
             metaDetailsSessionState.putNextToWatch(
                 profileId = profileManager.activeProfileId.value,
-                progressSource = traktSettingsDataStore.watchProgressSource.value.name,
+                progressSource = watchProgressRepository.effectiveProgressSource.value.name,
                 contentId = _effectiveContentId.value,
                 contentType = meta.apiType,
                 nextToWatch = nextToWatch
@@ -1136,7 +1140,7 @@ class MetaDetailsViewModel @Inject constructor(
         syncEffectiveContentId(enriched)
         val cachedNextToWatch = metaDetailsSessionState.getNextToWatch(
             profileId = profileManager.activeProfileId.value,
-            progressSource = traktSettingsDataStore.watchProgressSource.value.name,
+            progressSource = watchProgressRepository.effectiveProgressSource.value.name,
             contentId = _effectiveContentId.value,
             contentType = enriched.apiType
         )?.resolveForMeta(enriched)

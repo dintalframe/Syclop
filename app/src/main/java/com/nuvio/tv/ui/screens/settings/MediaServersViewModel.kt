@@ -52,13 +52,14 @@ class MediaServersViewModel @Inject constructor(
         address: String,
         username: String,
         password: String,
+        localHttpApproved: Boolean = false,
         onConnected: (ServerConnection) -> Unit
     ) {
         if (mutableSignIn.value.connecting) return
         mutableSignIn.value = ServerSignInState(connecting = true)
         viewModelScope.launch {
             try {
-                val connection = repository.connect(provider, address, username.trim(), password)
+                val connection = repository.connect(provider, address, username.trim(), password, localHttpApproved)
                 mutableSignIn.value = ServerSignInState()
                 onConnected(connection)
             } catch (error: CancellationException) {
@@ -89,6 +90,9 @@ class MediaServersViewModel @Inject constructor(
     }
 
     fun setEnabled(connectionId: String, enabled: Boolean) = repository.setEnabled(connectionId, enabled)
+
+    fun approveLocalHttp(connection: ServerConnection) =
+        repository.approveLocalHttp(connection.id, connection.address, connection.credentialRef)
 
     fun setCatalogMetadata(connectionId: String, enabled: Boolean) = repository.setCatalogMetadata(connectionId, enabled)
 

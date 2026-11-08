@@ -48,8 +48,8 @@ class DebridSettingsDataStore @Inject constructor(
     private fun store(profileId: Int = profileManager.activeProfileId.value) =
         factory.get(profileId, FEATURE)
 
-    private val enabledKey = booleanPreferencesKey("debrid_enabled")
     private val cloudLibraryEnabledKey = booleanPreferencesKey("cloud_library_enabled")
+    private val cloudDeleteAfterPlaybackKey = booleanPreferencesKey("cloud_delete_after_playback")
     private val torboxApiKeyKey = stringPreferencesKey("torbox_api_key")
     private val premiumizeApiKeyKey = stringPreferencesKey("premiumize_api_key")
     private val realDebridApiKeyKey = stringPreferencesKey("real_debrid_api_key")
@@ -92,8 +92,9 @@ class DebridSettingsDataStore @Inject constructor(
                 )
             val streamSortMode = legacyModeForSortCriteria(streamPreferences.sortCriteria)
             DebridSettings(
-                enabled = prefs[enabledKey] ?: false,
+                enabled = true,
                 cloudLibraryEnabled = prefs[cloudLibraryEnabledKey] ?: true,
+                cloudDeleteAfterPlayback = prefs[cloudDeleteAfterPlaybackKey] == true,
                 torboxApiKey = keys[DebridProviders.TORBOX_ID].orEmpty(),
                 premiumizeApiKey = keys[DebridProviders.PREMIUMIZE_ID].orEmpty(),
                 realDebridApiKey = keys[DebridProviders.REAL_DEBRID_ID].orEmpty(),
@@ -136,12 +137,21 @@ class DebridSettingsDataStore @Inject constructor(
         }
     }
 
-    suspend fun setEnabled(enabled: Boolean) {
-        store().edit { it[enabledKey] = enabled }
-    }
-
     suspend fun setCloudLibraryEnabled(enabled: Boolean) {
         store().edit { it[cloudLibraryEnabledKey] = enabled }
+    }
+
+    suspend fun setCloudDeleteAfterPlayback(profileId: Int, enabled: Boolean) {
+        store(profileId).edit { it[cloudDeleteAfterPlaybackKey] = enabled }
+    }
+
+    suspend fun cloudDeleteAfterPlaybackEnabledForProfile(profileId: Int): Boolean =
+        store(profileId).data.first()[cloudDeleteAfterPlaybackKey] == true
+
+    internal suspend fun isCloudCleanupAuthorizedForProfile(profileId: Int, providerId: String, apiKey: String): Boolean {
+        val preferences = store(profileId).data.first()
+        return preferences[cloudDeleteAfterPlaybackKey] == true &&
+            readCredential(preferences, profileId, providerId).trim() == apiKey
     }
 
     suspend fun setPreferredResolverProviderId(providerId: String) {
@@ -213,7 +223,6 @@ class DebridSettingsDataStore @Inject constructor(
                 if (encryptedOAuth == null) prefs.remove(realDebridOAuthKey) else prefs[realDebridOAuthKey] = encryptedOAuth
             }
             val keys = DebridProviders.all().associate { it.id to readCredential(prefs, pid, it.id) }
-            if (keys.values.all { it.isBlank() }) prefs[enabledKey] = false
             prefs[preferredResolverProviderIdKey] = preferredResolverProviderId(
                 stored = prefs[preferredResolverProviderIdKey],
                 torboxApiKey = keys[DebridProviders.TORBOX_ID].orEmpty(),

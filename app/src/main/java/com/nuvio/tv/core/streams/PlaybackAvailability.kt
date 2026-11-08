@@ -23,9 +23,15 @@ internal data class PlaybackAvailability(
     val addons: List<Addon> = emptyList(),
     val scrapers: List<ScraperInfo> = emptyList(),
     val isLoaded: Boolean = false,
+    private val hasEnabledMediaServer: Boolean? = false,
     private val cachedMeta: (String, String) -> Meta? = { _, _ -> null },
     private val serverStreams: (String, String) -> Boolean = { _, _ -> false }
 ) {
+    val needsPlaybackSetup: Boolean
+        get() = isLoaded && hasEnabledMediaServer == false &&
+            addons.none { addon -> addon.enabled && addon.resources.any { it.name == "stream" } } &&
+            scrapers.none { it.enabled }
+
     fun canStream(
         type: String,
         videoId: String,

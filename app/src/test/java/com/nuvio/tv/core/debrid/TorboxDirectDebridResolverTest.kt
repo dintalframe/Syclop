@@ -301,6 +301,22 @@ class TorboxDirectDebridResolverTest {
             return Response.success(TorboxEnvelopeDto(success = true, data = emptyList()))
         }
 
+        override suspend fun getCloudItemForDeletion(
+            authorization: String,
+            section: String,
+            id: Long,
+            bypassCache: Boolean
+        ): Response<TorboxEnvelopeDto<TorboxCloudItemDto>> =
+            error("Normal TorBox playback must not look up an item for deletion")
+
+        override suspend fun deleteCloudItem(
+            authorization: String,
+            section: String,
+            action: String,
+            payload: Map<String, Any>
+        ): Response<TorboxEnvelopeDto<Any>> =
+            error("Normal TorBox playback must not delete a cloud item")
+
         override suspend fun requestCloudTorrentDownloadLink(
             authorization: String,
             token: String,

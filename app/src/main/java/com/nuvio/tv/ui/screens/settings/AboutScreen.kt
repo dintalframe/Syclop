@@ -4,8 +4,6 @@ package com.nuvio.tv.ui.screens.settings
 
 import com.nuvio.tv.ui.theme.NuvioTheme
 
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
@@ -17,12 +15,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -34,8 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -45,7 +39,6 @@ import androidx.tv.material3.Text
 import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
 import com.nuvio.tv.core.build.AppFeaturePolicy
-import com.nuvio.tv.ui.components.MemberBrandWordmark
 
 @Composable
 fun AboutScreen(
@@ -70,12 +63,14 @@ fun AboutScreen(
 fun AboutSettingsContent(
     onNavigateToSupportersContributors: () -> Unit = {},
     onNavigateToLicensesAttributions: () -> Unit = {},
-    initialFocusRequester: FocusRequester? = null
+    initialFocusRequester: FocusRequester? = null,
+    showAppControls: Boolean = true
 ) {
-    val context = LocalContext.current
     val aboutScrollState = rememberScrollState()
     var firstRowFocused by remember { mutableStateOf(false) }
-    val firstRowModifier = Modifier.onFocusChanged { firstRowFocused = it.isFocused }
+    val firstRowModifier = Modifier
+        .onFocusChanged { firstRowFocused = it.isFocused }
+        .then(if (initialFocusRequester != null) Modifier.focusRequester(initialFocusRequester) else Modifier)
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
     val aboutBringIntoViewSpec = remember(aboutScrollState, defaultBringIntoViewSpec) {
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
@@ -119,15 +114,10 @@ fun AboutSettingsContent(
                         CompositionLocalProvider(LocalBringIntoViewSpec provides defaultBringIntoViewSpec) {
                             Spacer(modifier = Modifier.height(NuvioTheme.spacing.xs))
 
-                            MemberBrandWordmark(
-                                height = 40.dp,
-                                contentDescription = stringResource(R.string.cd_nuvio_logo)
-                            )
-
                             Text(
-                                text = stringResource(R.string.about_made_with_love),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = NuvioTheme.colors.TextSecondary,
+                                text = stringResource(R.string.app_name),
+                                style = MaterialTheme.typography.headlineLarge,
+                                color = NuvioTheme.colors.TextPrimary,
                                 textAlign = TextAlign.Center
                             )
 
@@ -140,33 +130,18 @@ fun AboutSettingsContent(
 
                             Spacer(modifier = Modifier.height(NuvioTheme.spacing.xxs))
 
-                            AppRestartSettingsAction(
-                                modifier = firstRowModifier.then(
-                                    if (initialFocusRequester != null) Modifier.focusRequester(initialFocusRequester)
-                                    else Modifier
-                                )
-                            )
-
-                            if (AppFeaturePolicy.inAppUpdatesEnabled) {
-                                UpdateChannelSettings(initialFocusRequester = null)
-                            }
-
-                            SettingsActionRow(
-                                title = stringResource(R.string.about_privacy_policy),
-                                subtitle = stringResource(R.string.about_privacy_policy_subtitle),
-                                trailingIcon = Icons.Default.OpenInNew,
-                                onClick = {
-                                    val intent = Intent(
-                                        Intent.ACTION_VIEW,
-                                        Uri.parse("https://nuvio.tv/privacy-policy")
-                                    )
-                                    context.startActivity(intent)
+                            if (showAppControls) {
+                                AppRestartSettingsAction(modifier = firstRowModifier)
+                                if (AppFeaturePolicy.inAppUpdatesEnabled) {
+                                    UpdateChannelSettings(initialFocusRequester = null)
                                 }
-                            )
+                            } else if (AppFeaturePolicy.inAppUpdatesEnabled) {
+                                CheckForUpdatesSettingsAction(modifier = firstRowModifier)
+                            }
 
                             if (AppFeaturePolicy.supportNuvioEnabled) {
                                 SettingsActionRow(
-                                    title = stringResource(R.string.support_nuvio_name),
+                                    title = stringResource(R.string.settings_menu_supporters),
                                     subtitle = stringResource(R.string.about_supporters_contributors_subtitle),
                                     trailingIcon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                     onClick = onNavigateToSupportersContributors
@@ -177,6 +152,8 @@ fun AboutSettingsContent(
                                 title = stringResource(R.string.about_licenses_attributions),
                                 subtitle = stringResource(R.string.about_licenses_attributions_subtitle),
                                 trailingIcon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                modifier = firstRowModifier.takeIf { !showAppControls && !AppFeaturePolicy.inAppUpdatesEnabled }
+                                    ?: Modifier,
                                 onClick = onNavigateToLicensesAttributions
                             )
                         }

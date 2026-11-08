@@ -45,11 +45,13 @@ internal class PlaybackAvailabilityViewModel @Inject constructor(
         addonRepository.getInstalledAddons(),
         enabledScrapers,
         serverRepository.uiState
-    ) { addons, scrapers, _ ->
+    ) { addons, scrapers, servers ->
         PlaybackAvailability(
             addons,
             scrapers,
             isLoaded = true,
+            // Revision zero is the initial placeholder before the active profile's servers load.
+            hasEnabledMediaServer = servers.takeIf { it.revision > 0 }?.enabledConnections?.isNotEmpty(),
             cachedMeta = metaRepository::getCachedMeta,
             serverStreams = serverStreams::canServe
         )

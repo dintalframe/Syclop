@@ -21,11 +21,4 @@ fun shouldShowStartupSplash(
     enabled: Boolean,
     complete: Boolean,
     destination: StartupDestination
-): Boolean = enabled && !complete &&
-    (destination == StartupDestination.Loading || destination == StartupDestination.Home)
-
-fun shouldShowHomeStartupLoader(
-    loading: Boolean,
-    sharedSplashEnabled: Boolean,
-    startupComplete: Boolean
-): Boolean = loading && (!sharedSplashEnabled || startupComplete)
+): Boolean = enabled && !complete && destination == StartupDestination.Loading

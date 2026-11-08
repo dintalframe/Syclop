@@ -151,6 +151,7 @@ ${tabButtons}
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+${LocalConfigSession.browserScript("syclop-addon-pairing", context.getString(R.string.web_addon_pairing_required))}
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>${context.getString(R.string.app_name)} - $pageTitle</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -1080,7 +1081,7 @@ ${tabButtons}
 <body>
 <div class="page">
   <div class="header">
-    <img src="/logo.png" alt="NuvioTV" class="header-logo">
+    <img src="/logo.png" alt="Syclop" class="header-logo">
     <p>$pageSubtitle</p>
   </div>
 
@@ -1603,7 +1604,7 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   try {
     var opts = options || {};
     opts.signal = controller.signal;
-    return await fetch(url, opts);
+    return await localConfigFetch(url, opts);
   } finally {
     clearTimeout(timer);
   }
@@ -3048,7 +3049,7 @@ function renderCollections() {
             '<span style="font-size:0.7rem;color:rgba(130,200,130,0.85);flex-shrink:0">' + escapeHtml(i18n.added) + '</span>' +
           '</div>';
         } else {
-          sourceListHtml += '<div class="source-item" data-label="' + escapeAttr(label) + '" style="cursor:pointer;padding:0.4rem 0.75rem" onclick="addCatalogSourceByVal(' + ci + ',' + fi + ',\'' + escapeAttr(val) + '\')">' +
+          sourceListHtml += '<div class="source-item" data-label="' + escapeAttr(label) + '" style="cursor:pointer;padding:0.4rem 0.75rem" onclick="addCatalogSourceByVal(' + ci + ',' + fi + ',\'' + escapeJsSingle(val) + '\')">' +
             '<span class="source-label" style="color:rgba(255,255,255,0.45)">' + escapeHtml(label) + '</span>' +
             '<span style="font-size:0.7rem;color:rgba(255,255,255,0.2);flex-shrink:0">' + escapeHtml(i18n.add) + '</span>' +
           '</div>';
@@ -3208,7 +3209,7 @@ function exportCollections() {
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
-  a.download = 'nuvio-collections.json';
+  a.download = 'syclop-collections.json';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

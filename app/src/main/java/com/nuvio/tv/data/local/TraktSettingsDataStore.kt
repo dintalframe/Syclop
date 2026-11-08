@@ -23,6 +23,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 enum class WatchProgressSource {
+    AUTO,
     TRAKT,
     SIMKL,
     MDBLIST,
@@ -30,7 +31,7 @@ enum class WatchProgressSource {
 
     companion object {
         fun fromStorage(value: String?): WatchProgressSource {
-            return entries.firstOrNull { it.name == value } ?: TRAKT
+            return entries.firstOrNull { it.name == value } ?: AUTO
         }
     }
 }
@@ -53,8 +54,8 @@ class TraktSettingsDataStore @Inject constructor(
         const val DEFAULT_CONTINUE_WATCHING_DAYS_CAP = 60
         const val DEFAULT_SHOW_UNAIRED_NEXT_UP = true
         const val DEFAULT_SHOW_META_COMMENTS = true
-        val DEFAULT_WATCH_PROGRESS_SOURCE = WatchProgressSource.TRAKT
-        val DEFAULT_LIBRARY_SOURCE_MODE = LibrarySourceMode.TRAKT
+        val DEFAULT_WATCH_PROGRESS_SOURCE = WatchProgressSource.AUTO
+        val DEFAULT_LIBRARY_SOURCE_MODE = LibrarySourceMode.AUTO
         val DEFAULT_MORE_LIKE_THIS_SOURCE = MoreLikeThisSourcePreference.TRAKT
         const val MIN_CONTINUE_WATCHING_DAYS_CAP = 7
         const val MAX_CONTINUE_WATCHING_DAYS_CAP = 365

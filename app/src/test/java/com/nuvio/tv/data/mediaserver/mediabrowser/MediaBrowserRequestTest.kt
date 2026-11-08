@@ -140,7 +140,7 @@ class MediaBrowserRequestTest {
                 else -> error("Unexpected ${request.url}")
             }
         }
-        val signIn = EmbyProvider(http.client, testIdentity).signIn("http://den.local:8096/emby/web/index.html", "viewer", "pw")
+        val signIn = EmbyProvider(http.client, testIdentity).signIn("http://den.local:8096/emby/web/index.html", "viewer", "pw", localHttpApproved = true)
 
         assertEquals("http://den.local:8096", signIn.address)
         assertEquals("Den", signIn.serverName)
@@ -160,7 +160,7 @@ class MediaBrowserRequestTest {
     fun embyRejectsJellyfinServers() = runTest {
         val http = TestHttp { """{"ServerName": "Den", "Version": "10.10.7", "ProductName": "Jellyfin Server", "Id": "srv"}""" }
         val error = runCatching {
-            EmbyProvider(http.client, testIdentity).signIn("http://den.local:8096", "viewer", "pw")
+            EmbyProvider(http.client, testIdentity).signIn("http://den.local:8096", "viewer", "pw", localHttpApproved = true)
         }.exceptionOrNull() as ServerException
         assertEquals(ServerFailure.UNSUPPORTED, error.failure)
         assertEquals(1, http.requests.size)

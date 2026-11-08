@@ -443,7 +443,7 @@ internal fun TrackingDeviceAuthContent(
         )
         if (!isLoading && userCode.isNullOrBlank()) {
             SettingsDialogActionButton(
-                text = stringResource(R.string.action_retry),
+                text = stringResource(if (errorMessage == null) R.string.settings_get_sign_in_code else R.string.action_retry),
                 onClick = onStartConnection,
                 primary = true,
                 enabled = credentialsConfigured

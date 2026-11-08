@@ -2,7 +2,10 @@ package com.nuvio.tv.data.repository
 
 import com.nuvio.tv.core.initialization.InitializationProvider
 import com.nuvio.tv.core.initialization.InitializationReadScope
+import com.nuvio.tv.core.initialization.InitializationFailure
+import com.nuvio.tv.core.initialization.InitializationReadException
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.withContext
 
 import android.content.Context
 import android.util.Log
@@ -26,6 +29,7 @@ import kotlinx.coroutines.sync.withLock
 import retrofit2.Response
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
+import com.nuvio.tv.core.tracking.*
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -346,6 +350,62 @@ class TraktAuthService @Inject constructor(
         return username.takeIf { saved }
     }
 
+    /** Repair a saved grant's missing account identity before its first import, without starting a new login. */
+    suspend fun hydrateInitializationIdentity(expected: InitializationReadScope): TraktAuthState {
+        require(expected.provider == InitializationProvider.TRAKT)
+        expected.checkpoint()
+        val binding = captureRequestBinding()
+        fun current() = expected.isCurrent() && bindingCurrent(binding)
+        suspend fun checkpoint() {
+            expected.checkpoint()
+            if (!current()) throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
+        }
+        val account = traktAuthDataStore.getCurrentState(binding.selection.first)
+        checkpoint()
+        if (!account.isAuthenticated) throw InitializationReadException(InitializationFailure.UNAVAILABLE)
+        if (initializationIdentityPart(account.userSlug) != null || initializationIdentityPart(account.username) != null)
+            return account
+        if (!binding.registration.isConfigured) throw InitializationReadException(InitializationFailure.UNAVAILABLE)
+
+        // The normal authorized transport owns token rotation, bounded retry and rate-limit handling.
+        // Inherit the original import owner so a late response cannot hydrate a replacement profile/grant.
+        val response = withContext(expected) {
+            executeAuthorizedBoundRequest(binding) { authHeader ->
+                traktApi.getUserSettings(authorization = authHeader)
+            }
+        }
+        checkpoint()
+        if (response == null) throw InitializationReadException(
+            if (isCircuitOpen()) InitializationFailure.UNAVAILABLE else InitializationFailure.NETWORK)
+        if (!response.isSuccessful) {
+            val code = response.code()
+            response.errorBody()?.close()
+            // Fixed status only: never log account names, tokens, response bodies or request URLs.
+            Log.w("TraktAuthService", "Account identity read failed: HTTP $code")
+            throw InitializationReadException(
+                if (code == 429 || code >= 500) InitializationFailure.NETWORK else InitializationFailure.UNAVAILABLE)
+        }
+        val user = response.body()?.user
+        val username = initializationIdentityPart(user?.username)
+        val slug = initializationIdentityPart(user?.ids?.slug)
+        if (username == null && slug == null) throw InitializationReadException(InitializationFailure.INCOMPLETE)
+        checkpoint()
+        val saved = traktAuthDataStore.saveUserIfCurrent(username, slug, binding.selection.first,
+            binding.grantRevision, ::current)
+        checkpoint()
+        if (!saved) throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
+        val hydrated = traktAuthDataStore.getCurrentState(binding.selection.first)
+        checkpoint()
+        if (!hydrated.isAuthenticated ||
+            (initializationIdentityPart(hydrated.userSlug) == null && initializationIdentityPart(hydrated.username) == null))
+            throw InitializationReadException(InitializationFailure.INCOMPLETE)
+        return hydrated
+    }
+
+    private fun initializationIdentityPart(value: String?): String? = value?.trim()?.takeIf {
+        it.isNotEmpty() && it.length <= 507 && it.none(Char::isISOControl)
+    }
+
     private data class AuthorizedRequestBinding(val selection: Pair<Int, Long>,
         val registration: com.nuvio.tv.core.trakt.TraktAppRegistration, val grantRevision: Long)
     private fun captureRequestBinding(): AuthorizedRequestBinding {
@@ -355,6 +415,22 @@ class TraktAuthService @Inject constructor(
     private fun bindingCurrent(binding: AuthorizedRequestBinding) = binding.grantRevision >= 0L &&
         currentSelection() == binding.selection && appRegistrationStore.current() == binding.registration &&
         traktAuthDataStore.grantRevision(binding.selection.first) == binding.grantRevision
+
+    fun preparePlaybackGrant(profileId: Int): TrackingPlaybackGrantCapture? {
+        val binding = captureRequestBinding()
+        if (binding.selection.first != profileId || !binding.registration.isConfigured) return null
+        return TrackingPlaybackGrantCapture {
+            val id = traktAuthDataStore.capturePlaybackGrantId(profileId) ?: return@TrackingPlaybackGrantCapture null
+            TrackingPlaybackGrant(TrackingProviderId.TRAKT, profileId, id, {
+                bindingCurrent(binding) && traktAuthDataStore.isPlaybackGrantCurrent(profileId, id)
+            })
+        }
+    }
+
+    suspend fun recoverPlaybackGrant(profileId: Int, grantId: String): TrackingPlaybackGrant? =
+        recoverTrackingPlaybackGrant(profileId, grantId, { traktAuthDataStore.activeProfileId }) {
+            preparePlaybackGrant(profileId)
+        }
 
     /** One batch owner, independent from access-token rotation. No credential is exported. */
     suspend fun captureInitializationReadScope(): InitializationReadScope {
@@ -374,12 +450,16 @@ class TraktAuthService @Inject constructor(
         val selection = binding.selection
         val registration = binding.registration
         val revision = binding.grantRevision
+        val playbackScope = currentCoroutineContext()[TrackingPlaybackGrant]
+            ?.takeIf { it.providerId == TrackingProviderId.TRAKT }
+        playbackScope?.checkpoint()
         val importScope = currentCoroutineContext()[InitializationReadScope]
             ?.takeIf { it.provider == InitializationProvider.TRAKT }
         importScope?.checkpoint()
         fun requestCurrent() = revision >= 0L && currentSelection() == selection &&
             appRegistrationStore.current() == registration && traktAuthDataStore.grantRevision(selection.first) == revision &&
-            (importScope == null || importScope.isCurrent())
+            (importScope == null || importScope.isCurrent()) &&
+            (playbackScope == null || playbackScope.isCurrent())
         if (!requestCurrent()) return null
         if (isCircuitOpen()) {
             trace("authorized request: circuit breaker is OPEN, skipping request")

@@ -22,6 +22,25 @@ class PlaybackAvailabilityTest {
     }
 
     @Test
+    fun `setup waits for configuration and excludes configured sources even for an unsupported title`() {
+        val metadataOnly = addon().copy(resources = listOf(AddonResource("meta", listOf("movie"), null)))
+        val unconfigured = PlaybackAvailability(
+            addons = listOf(metadataOnly, addon().copy(enabled = false)),
+            scrapers = listOf(scraper().copy(enabled = false))
+        )
+        assertFalse(unconfigured.needsPlaybackSetup)
+        val loaded = unconfigured.copy(isLoaded = true)
+        assertTrue(loaded.needsPlaybackSetup)
+        assertFalse(loaded.copy(hasEnabledMediaServer = null).needsPlaybackSetup)
+
+        val addonConfigured = loaded.copy(addons = listOf(addon()))
+        assertFalse(addonConfigured.canStream("series", "tt123:1:1"))
+        assertFalse(addonConfigured.needsPlaybackSetup)
+        assertFalse(loaded.copy(scrapers = listOf(scraper())).needsPlaybackSetup)
+        assertFalse(loaded.copy(hasEnabledMediaServer = true).needsPlaybackSetup)
+    }
+
+    @Test
     fun `addon must be enabled and match the type and video prefix`() {
         val available = PlaybackAvailability(addons = listOf(addon()))
         assertTrue(available.canStream("movie", "tt123"))

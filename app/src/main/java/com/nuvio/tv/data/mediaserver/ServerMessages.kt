@@ -9,6 +9,7 @@ fun ServerFailure.messageRes(): Int = when (this) {
     ServerFailure.UNREACHABLE -> R.string.servers_failure_unreachable
     ServerFailure.NOT_FOUND -> R.string.servers_failure_not_found
     ServerFailure.INCOMPLETE -> R.string.servers_failure_incomplete
+    ServerFailure.INSECURE_CONNECTION -> R.string.servers_error_insecure_connection
     ServerFailure.FORBIDDEN -> R.string.servers_error_forbidden
     ServerFailure.UNSUPPORTED -> R.string.servers_failure_unsupported
     ServerFailure.FAILED -> R.string.servers_error_failed

@@ -135,6 +135,8 @@ internal fun ServerConnection.statusText(providerName: String, failure: ServerFa
 @Composable
 internal fun ServerConnection.statusLabel(failure: ServerFailure?): String? = when {
     !enabled -> stringResource(R.string.servers_status_disabled)
+    !com.nuvio.tv.data.mediaserver.ServerTransportPolicy.allowsCredentials(address, localHttpApproved) ->
+        stringResource(R.string.servers_status_review_connection)
     failure == ServerFailure.AUTH_REQUIRED -> stringResource(R.string.servers_status_auth)
     failure == ServerFailure.UNREACHABLE -> stringResource(R.string.servers_status_unreachable)
     else -> null

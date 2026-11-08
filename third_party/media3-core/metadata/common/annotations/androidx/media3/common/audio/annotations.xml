@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.common.audio.AudioFocusRequestCompat focusGain">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_NONE, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioFocusRequestCompat.Builder Builder(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_NONE, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioFocusRequestCompat.Builder androidx.media3.common.audio.AudioFocusRequestCompat.Builder setFocusGain(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_NONE, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioFocusRequestCompat.Builder boolean isValidFocusGain(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_NONE, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioFocusRequestCompat.Builder focusGain">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_NONE, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioManagerCompat boolean isStreamMute(android.media.AudioManager, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.C.STREAM_TYPE_ALARM, androidx.media3.common.C.STREAM_TYPE_DTMF, androidx.media3.common.C.STREAM_TYPE_MUSIC, androidx.media3.common.C.STREAM_TYPE_NOTIFICATION, androidx.media3.common.C.STREAM_TYPE_RING, androidx.media3.common.C.STREAM_TYPE_SYSTEM, androidx.media3.common.C.STREAM_TYPE_VOICE_CALL, androidx.media3.common.C.STREAM_TYPE_ACCESSIBILITY, androidx.media3.common.C.STREAM_TYPE_DEFAULT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioManagerCompat int getStreamMaxVolume(android.media.AudioManager, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.C.STREAM_TYPE_ALARM, androidx.media3.common.C.STREAM_TYPE_DTMF, androidx.media3.common.C.STREAM_TYPE_MUSIC, androidx.media3.common.C.STREAM_TYPE_NOTIFICATION, androidx.media3.common.C.STREAM_TYPE_RING, androidx.media3.common.C.STREAM_TYPE_SYSTEM, androidx.media3.common.C.STREAM_TYPE_VOICE_CALL, androidx.media3.common.C.STREAM_TYPE_ACCESSIBILITY, androidx.media3.common.C.STREAM_TYPE_DEFAULT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioManagerCompat int getStreamMinVolume(android.media.AudioManager, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.C.STREAM_TYPE_ALARM, androidx.media3.common.C.STREAM_TYPE_DTMF, androidx.media3.common.C.STREAM_TYPE_MUSIC, androidx.media3.common.C.STREAM_TYPE_NOTIFICATION, androidx.media3.common.C.STREAM_TYPE_RING, androidx.media3.common.C.STREAM_TYPE_SYSTEM, androidx.media3.common.C.STREAM_TYPE_VOICE_CALL, androidx.media3.common.C.STREAM_TYPE_ACCESSIBILITY, androidx.media3.common.C.STREAM_TYPE_DEFAULT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioManagerCompat int getStreamVolume(android.media.AudioManager, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.C.STREAM_TYPE_ALARM, androidx.media3.common.C.STREAM_TYPE_DTMF, androidx.media3.common.C.STREAM_TYPE_MUSIC, androidx.media3.common.C.STREAM_TYPE_NOTIFICATION, androidx.media3.common.C.STREAM_TYPE_RING, androidx.media3.common.C.STREAM_TYPE_SYSTEM, androidx.media3.common.C.STREAM_TYPE_VOICE_CALL, androidx.media3.common.C.STREAM_TYPE_ACCESSIBILITY, androidx.media3.common.C.STREAM_TYPE_DEFAULT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioManagerCompat.AudioFocusGain">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_NONE, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK, androidx.media3.common.audio.AudioManagerCompat.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioProcessor.AudioFormat AudioFormat(int, int, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.Format.NO_VALUE, androidx.media3.common.C.ENCODING_INVALID, androidx.media3.common.C.ENCODING_PCM_8BIT, androidx.media3.common.C.ENCODING_PCM_16BIT, androidx.media3.common.C.ENCODING_PCM_16BIT_BIG_ENDIAN, androidx.media3.common.C.ENCODING_PCM_24BIT, androidx.media3.common.C.ENCODING_PCM_24BIT_BIG_ENDIAN, androidx.media3.common.C.ENCODING_PCM_32BIT, androidx.media3.common.C.ENCODING_PCM_32BIT_BIG_ENDIAN, androidx.media3.common.C.ENCODING_PCM_FLOAT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.audio.AudioProcessor.AudioFormat encoding">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.Format.NO_VALUE, androidx.media3.common.C.ENCODING_INVALID, androidx.media3.common.C.ENCODING_PCM_8BIT, androidx.media3.common.C.ENCODING_PCM_16BIT, androidx.media3.common.C.ENCODING_PCM_16BIT_BIG_ENDIAN, androidx.media3.common.C.ENCODING_PCM_24BIT, androidx.media3.common.C.ENCODING_PCM_24BIT_BIG_ENDIAN, androidx.media3.common.C.ENCODING_PCM_32BIT, androidx.media3.common.C.ENCODING_PCM_32BIT_BIG_ENDIAN, androidx.media3.common.C.ENCODING_PCM_FLOAT}" />
+    </annotation>
+  </item>
+</root>
+

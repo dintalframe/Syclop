@@ -33,6 +33,15 @@ class UpdateBannerPolicyTest {
     }
 
     @Test
+    fun `later hides the same release until the deferral expires`() {
+        val until = UpdateBannerPolicy.DEFER_MS
+        assertFalse(UpdateBannerPolicy.shouldShow(true, false, true, "v1.2.0", "v1.2.0", until, until - 1))
+        assertTrue(UpdateBannerPolicy.shouldShow(true, false, true, "v1.2.0", "v1.2.0", until, until))
+        assertFalse(UpdateBannerPolicy.canCheckAutomatically(nowMs = 10_000L, lastCheckMs = 9_000L))
+        assertTrue(UpdateBannerPolicy.canCheckAutomatically(nowMs = until, lastCheckMs = 9_000L))
+    }
+
+    @Test
     fun `a newer tag is shown after the previous update was dismissed`() {
         assertTrue(
             UpdateBannerPolicy.shouldShow(

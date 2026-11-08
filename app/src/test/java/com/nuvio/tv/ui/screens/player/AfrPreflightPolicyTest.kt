@@ -13,29 +13,20 @@ import org.junit.Test
  *
  * These encode the contracts used by [runAfrPreflightIfEnabled]:
  * - OFF short-circuits
- * - header split for NextLib vs extractor
+ * - safe probe headers
  * - cache lookup key ingredients
  * - timeout constants (documenting the 0.7.10 → current change)
  */
 class AfrPreflightPolicyTest {
 
-    private companion object {
-        // Documented 0.7.10-beta values for regression comparison only.
-        const val LEGACY_0_7_10_NEXTLIB_TIMEOUT_MS = 30_000L
-        const val LEGACY_0_7_10_FALLBACK_TIMEOUT_MS = 5_500L
-    }
-
     @Test
     fun `preflight budgets stay short and prefer OkHttp with remaining-time fallbacks`() {
         assertEquals(15_000L, AFR_PREFLIGHT_OKHTTP_TIMEOUT_MS)
-        assertEquals(10_000L, AFR_PREFLIGHT_NEXTLIB_TIMEOUT_MS)
         assertEquals(5_000L, AFR_PREFLIGHT_FALLBACK_TIMEOUT_MS)
         assertEquals(18_000L, AFR_PREFLIGHT_TOTAL_TIMEOUT_MS)
         assertEquals(2_000L, AFR_PREFLIGHT_MIN_STAGE_MS)
         // User-facing await must not grow with cold-CDN retries; warmup is inside OkHttp.
         assertTrue(AFR_PREFLIGHT_TOTAL_TIMEOUT_MS >= AFR_PREFLIGHT_OKHTTP_TIMEOUT_MS)
-        assertTrue(AFR_PREFLIGHT_NEXTLIB_TIMEOUT_MS < LEGACY_0_7_10_NEXTLIB_TIMEOUT_MS)
-        assertTrue(AFR_PREFLIGHT_FALLBACK_TIMEOUT_MS < LEGACY_0_7_10_FALLBACK_TIMEOUT_MS)
         assertEquals(262_144L, FrameRateUtils.AFR_CDN_WARMUP_MAX_BYTES)
     }
 
@@ -64,47 +55,25 @@ class AfrPreflightPolicyTest {
     }
 
     @Test
-    fun `preflight header pipeline matches NextLib and extractor contracts`() {
+    fun `extractor keeps stream credentials and cannot re-enable cross-host or protocol redirects`() {
         val incoming = mapOf(
             "User-Agent" to "NuvioTV/0.7",
             "Range" to "bytes=0-65535",
-            "Authorization" to "Bearer debrid-token"
+            "Authorization" to "Bearer fixture",
+            "connection" to "keep-alive",
+            "Android-Allow-Cross-Domain-Redirect" to "1"
         )
-
         val streamHeaders = FrameRateUtils.streamHeadersForAfrProbe(incoming)
         val probeHeaders = FrameRateUtils.extractorProbeHeaders(incoming)
 
-        // NextLib path
-        assertFalse(
-            "Range must never reach NextLib bypass decision",
-            streamHeaders.keys.any { it.equals("Range", ignoreCase = true) }
-        )
-        assertFalse(
-            "Auth streams must skip NextLib",
-            FrameRateUtils.shouldUseNextLibProbe(
-                "https://download.real-debrid.com/d/ABC/movie.mkv",
-                streamHeaders
-            )
-        )
-
-        // Extractor path keeps auth + Connection: close
-        assertEquals("Bearer debrid-token", probeHeaders["Authorization"])
-        assertEquals("close", probeHeaders["Connection"])
+        assertFalse(streamHeaders.keys.any { it.equals("Range", ignoreCase = true) })
+        assertFalse(probeHeaders.keys.any { it.equals("Range", ignoreCase = true) })
+        assertEquals("Bearer fixture", probeHeaders["Authorization"])
         assertEquals("NuvioTV/0.7", probeHeaders["User-Agent"])
-    }
-
-    @Test
-    fun `public stream preflight still enables NextLib after UA injection`() {
-        val incoming = mapOf(
-            "User-Agent" to "Mozilla/5.0",
-            "Range" to "bytes=0-"
-        )
-        val streamHeaders = FrameRateUtils.streamHeadersForAfrProbe(incoming)
-        assertTrue(
-            FrameRateUtils.shouldUseNextLibProbe(
-                "https://public.cdn.example.com/releases/film.mkv",
-                streamHeaders
-            )
+        assertEquals(listOf("close"), probeHeaders.filterKeys { it.equals("Connection", true) }.values.toList())
+        assertEquals(
+            listOf("0"),
+            probeHeaders.filterKeys { it.equals("android-allow-cross-domain-redirect", true) }.values.toList()
         )
     }
 

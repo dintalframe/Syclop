@@ -3,6 +3,9 @@ package com.nuvio.tv.core.sync
 import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.tracking.TrackingProgressProviderRegistry
+import com.nuvio.tv.core.tracking.TrackingProgressProvider
+import com.nuvio.tv.core.tracking.TrackingProviderId
+import com.nuvio.tv.data.local.WatchProgressSource
 import com.nuvio.tv.data.local.TraktSettingsDataStore
 import com.nuvio.tv.data.local.WatchProgressPreferences
 import com.nuvio.tv.data.local.WatchedItemsPreferences
@@ -16,6 +19,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
@@ -23,10 +27,75 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WatchStateSyncServiceTest {
+    @Test
+    fun `automatic source prevents local snapshot sync while a tracking provider is connected`() = runTest {
+        val authenticated = MutableStateFlow(true)
+        var selected = WatchProgressSource.AUTO
+        val provider = mockk<TrackingProgressProvider> {
+            every { providerId } returns TrackingProviderId.TRAKT
+            every { isAuthenticated } returns authenticated
+        }
+        val settings = mockk<TraktSettingsDataStore> {
+            coEvery { getWatchProgressSource(1) } answers { selected }
+        }
+        val service = progressService(mockk(), mockk(relaxed = true), mockk(relaxed = true),
+            providers = TrackingProgressProviderRegistry(setOf(provider)), settings = settings)
+        assertFalse(service.shouldUseSupabaseWatchProgressSync(1))
+        authenticated.value = false
+        assertTrue(service.shouldUseSupabaseWatchProgressSync(1))
+        authenticated.value = true
+        selected = WatchProgressSource.NUVIO_SYNC
+        assertTrue(service.shouldUseSupabaseWatchProgressSync(1))
+    }
+
+    @Test
+    fun `manual local and Trakt selections never read an unrelated failing authentication flow`() = runTest {
+        var selected = WatchProgressSource.NUVIO_SYNC
+        val trakt = mockk<TrackingProgressProvider> {
+            every { providerId } returns TrackingProviderId.TRAKT
+            every { isAuthenticated } returns MutableStateFlow(true)
+        }
+        val unrelated = mockk<TrackingProgressProvider> {
+            every { providerId } returns TrackingProviderId.SIMKL
+            every { isAuthenticated } returns flow { error("unrelated provider must not be read") }
+        }
+        val settings = mockk<TraktSettingsDataStore> {
+            coEvery { getWatchProgressSource(1) } answers { selected }
+        }
+        val service = progressService(mockk(), mockk(relaxed = true), mockk(relaxed = true),
+            providers = TrackingProgressProviderRegistry(setOf(trakt, unrelated)), settings = settings)
+        assertTrue(service.shouldUseSupabaseWatchProgressSync(1))
+        selected = WatchProgressSource.TRAKT
+        assertFalse(service.shouldUseSupabaseWatchProgressSync(1))
+        selected = WatchProgressSource.AUTO
+        assertFalse(service.shouldUseSupabaseWatchProgressSync(1))
+    }
+
+    @Test
+    fun `automatic watched source skips remote local replacement without clearing saved data`() = runTest {
+        val postgrest = mockk<Postgrest>()
+        val preferences = mockk<WatchedItemsPreferences>(relaxed = true)
+        val provider = mockk<TrackingProgressProvider> {
+            every { providerId } returns TrackingProviderId.SIMKL
+            every { isAuthenticated } returns MutableStateFlow(true)
+        }
+        val settings = mockk<TraktSettingsDataStore> {
+            coEvery { getWatchProgressSource(1) } returns WatchProgressSource.AUTO
+        }
+        val result = watchedService(postgrest, preferences, mockk(relaxed = true),
+            providers = TrackingProgressProviderRegistry(setOf(provider)), settings = settings)
+            .syncSnapshotFromRemote(1).getOrThrow()
+        assertEquals(0, result.upsertedItems)
+        assertFalse(result.usedSnapshot)
+        coVerify(exactly = 0) { postgrest.rpc(any(), any<JsonObject>()) }
+        coVerify(exactly = 0) { preferences.clearAll(any()) }
+    }
+
     @Test
     fun `progress push sends only pending mutations to the requested profile`() = runTest {
         val postgrest = mockk<Postgrest>()
@@ -138,7 +207,9 @@ class WatchStateSyncServiceTest {
         postgrest: Postgrest,
         preferences: WatchProgressPreferences,
         mutationStore: WatchStateMutationStore,
-        canRefreshJwt: Boolean = false
+        canRefreshJwt: Boolean = false,
+        providers: TrackingProgressProviderRegistry = TrackingProgressProviderRegistry(emptySet()),
+        settings: TraktSettingsDataStore = mockk(relaxed = true)
     ): WatchProgressSyncService {
         val authManager = mockk<AuthManager>(relaxed = true)
         coEvery { authManager.refreshSessionIfJwtExpired(any()) } returns canRefreshJwt
@@ -146,8 +217,8 @@ class WatchStateSyncServiceTest {
             authManager = authManager,
             postgrest = postgrest,
             watchProgressPreferences = preferences,
-            trackingProviderRegistry = TrackingProgressProviderRegistry(emptySet()),
-            traktSettingsDataStore = mockk(relaxed = true),
+            trackingProviderRegistry = providers,
+            traktSettingsDataStore = settings,
             profileManager = profileManager(),
             syncClientIdentity = syncClientIdentity(),
             mutationStore = mutationStore
@@ -157,7 +228,9 @@ class WatchStateSyncServiceTest {
     private fun watchedService(
         postgrest: Postgrest,
         preferences: WatchedItemsPreferences,
-        mutationStore: WatchStateMutationStore
+        mutationStore: WatchStateMutationStore,
+        providers: TrackingProgressProviderRegistry = TrackingProgressProviderRegistry(emptySet()),
+        settings: TraktSettingsDataStore = mockk(relaxed = true)
     ): WatchedItemsSyncService {
         val authManager = mockk<AuthManager>(relaxed = true)
         coEvery { authManager.refreshSessionIfJwtExpired(any()) } returns false
@@ -165,8 +238,8 @@ class WatchStateSyncServiceTest {
             authManager = authManager,
             postgrest = postgrest,
             watchedItemsPreferences = preferences,
-            trackingProviderRegistry = TrackingProgressProviderRegistry(emptySet()),
-            traktSettingsDataStore = mockk(relaxed = true),
+            trackingProviderRegistry = providers,
+            traktSettingsDataStore = settings,
             profileManager = profileManager(),
             syncClientIdentity = syncClientIdentity(),
             mutationStore = mutationStore

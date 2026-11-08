@@ -20,10 +20,10 @@ class MalCatalogTest {
     private val catalog = MalCatalog(auth, api, repository)
 
     @Test fun `only configured native catalogs are advertised and list rows require account`() = runTest {
-        assertEquals(listOf("ranking", "search"), catalog.addon.first()!!.catalogs.map { it.id })
+        assertEquals(listOf("popular", "ranking", "search"), catalog.addon.first()!!.catalogs.map { it.id })
         account.value = account.value.copy(connected = true)
         val connected = catalog.addon.first()!!
-        assertEquals(7, connected.catalogs.size)
+        assertEquals(8, connected.catalogs.size)
         assertTrue(connected.catalogs.filter { it.id != "search" }.all { it.showInHome })
         assertTrue(connected.catalogs.last().isSearchOnlyCatalog())
         account.value = account.value.copy(configuration = MalConfiguration())
@@ -38,6 +38,40 @@ class MalCatalogTest {
         assertEquals(101, row.nextSkip)
         assertTrue(row.hasMore)
         coVerify(exactly = 1) { api.ranking(100, "syclop-test-client") }
+    }
+
+    @Test fun `popular discovery is public and preserves MAL IDs media type and cursor`() = runTest {
+        assertFalse(account.value.connected)
+        coEvery { api.popular(100, "syclop-test-client") } returns MalPage(listOf(
+            MalAnime(5114, "Series", mediaType = "tv"), MalAnime(40028, "Movie", mediaType = "movie")), true)
+        val row = catalog.catalog("popular", 100, emptyMap())
+        assertEquals("popular", row.catalogId)
+        assertEquals("MAL · Popular anime", row.catalogName)
+        assertEquals(listOf("mal:5114", "mal:40028"), row.items.map { it.id })
+        assertEquals(listOf("series", "movie"), row.items.map { it.apiType })
+        assertTrue(row.items.all { it.sourceAddonBaseUrl == MalCatalog.BASE_URL })
+        assertEquals(1, row.currentPage)
+        assertEquals(102, row.nextSkip)
+        assertEquals(100, row.skipStep)
+        assertTrue(row.hasMore && row.supportsSkip)
+        coVerify(exactly = 1) { api.popular(100, "syclop-test-client") }
+        coVerify(exactly = 0) { api.ranking(any(), any()) }
+    }
+
+    @Test fun `late popular response cannot publish into another profile or registration`() = runTest {
+        val original = account.value
+        for (changed in listOf(original.copy(scope = MalScope(2, 1)),
+            original.copy(configuration = MalConfiguration("different-test-client", "https://example.test/mal")))) {
+            account.value = original
+            coEvery { api.popular(0, "syclop-test-client") } coAnswers {
+                account.value = changed
+                MalPage(listOf(MalAnime(5114, "Late result")), false)
+            }
+            try {
+                catalog.catalog("popular", 0, emptyMap())
+                fail("Late public catalog response crossed the captured account scope")
+            } catch (_: IllegalArgumentException) { }
+        }
     }
 
     @Test fun `short queries never issue a remote search`() = runTest {

@@ -2,7 +2,10 @@ package com.nuvio.tv.data.mediaserver.mediabrowser
 
 import com.nuvio.tv.data.mediaserver.ServerException
 import com.nuvio.tv.data.mediaserver.ServerFailure
+import com.nuvio.tv.data.mediaserver.ServerTransportPolicy
 import java.io.IOException
+import java.net.Proxy
+import java.net.UnknownHostException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
@@ -36,6 +39,17 @@ internal class MediaBrowserClient(
         .followRedirects(false)
         .followSslRedirects(false)
         .build()
+    // Approved LAN names must still resolve locally when a connection is opened.
+    private val localHttp = this.http.newBuilder()
+        .proxy(Proxy.NO_PROXY)
+        .dns { host ->
+            this.http.dns.lookup(host).also { addresses ->
+                if (addresses.isEmpty() || addresses.any { !ServerTransportPolicy.isLocalAddress(it) }) {
+                    throw UnsafeServerAddressException()
+                }
+            }
+        }
+        .build()
 
     val json = Json {
         ignoreUnknownKeys = true
@@ -63,6 +77,9 @@ internal class MediaBrowserClient(
         body: String? = null,
         allowRedirect: Boolean = false
     ): ApiResponse {
+        if (!ServerTransportPolicy.allowsCredentials(baseUrl, localHttpApproved = true)) {
+            throw ServerException(ServerFailure.INSECURE_CONNECTION)
+        }
         val request = try {
             Request.Builder()
                 .url(buildUrl(baseUrl, path, query))
@@ -80,6 +97,8 @@ internal class MediaBrowserClient(
             send(request)
         } catch (error: CancellationException) {
             throw error
+        } catch (_: UnsafeServerAddressException) {
+            throw ServerException(ServerFailure.INSECURE_CONNECTION)
         } catch (_: Exception) {
             throw ServerException(ServerFailure.UNREACHABLE)
         }
@@ -104,7 +123,7 @@ internal class MediaBrowserClient(
     }
 
     private suspend fun send(request: Request): ApiResponse = suspendCancellableCoroutine { continuation ->
-        val call = http.newCall(request)
+        val call = (if (request.url.isHttps) http else localHttp).newCall(request)
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
@@ -142,6 +161,8 @@ internal class MediaBrowserClient(
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
     }
 }
+
+private class UnsafeServerAddressException : UnknownHostException("Unencrypted media-server connections require a local network address.")
 
 internal class ApiResponse(
     val status: Int,

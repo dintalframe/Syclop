@@ -31,6 +31,7 @@ import com.nuvio.tv.data.local.ImagePerformancePreferences
 import com.nuvio.tv.data.local.SentrySettingsDataStore
 import com.nuvio.tv.data.mediaserver.ServerUserStateProjection
 import com.nuvio.tv.data.simkl.SimklAnimeIdPreferenceHolder
+import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -45,7 +46,7 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
 
     @Inject lateinit var startupSyncService: StartupSyncService
     @Inject lateinit var androidTvChannelSyncService: AndroidTvChannelSyncService
-    @Inject lateinit var sentrySettingsDataStore: SentrySettingsDataStore
+    @Inject lateinit var sentrySettingsDataStore: Lazy<SentrySettingsDataStore>
     @Inject lateinit var imagePerformancePreferences: ImagePerformancePreferences
     @Inject lateinit var simklAnimeIdPreferenceHolder: SimklAnimeIdPreferenceHolder
     @Inject lateinit var serverUserStateProjection: ServerUserStateProjection
@@ -88,9 +89,11 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
-        com.nuvio.tv.updater.SelfUpdatePolicy.cancelIfDisabled(this)
+        com.nuvio.tv.updater.SelfUpdatePolicy.cancelLegacyJobs(this)
         com.nuvio.tv.core.providers.ProviderUpdateJobService.schedule(this)
-        SentryInitializer.start(this, sentrySettingsDataStore)
+        if (BuildConfig.SENTRY_DSN.isNotBlank()) {
+            SentryInitializer.start(this, sentrySettingsDataStore.get())
+        }
         PluginRuntimeHooks.onApplicationCreate(this)
         androidTvChannelSyncService.start()
         serverUserStateProjection.start()

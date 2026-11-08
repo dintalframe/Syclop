@@ -2,6 +2,7 @@ package com.nuvio.tv.core.tracking
 
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.model.WatchedItem
+import com.nuvio.tv.domain.model.WatchedHistoryItem
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -33,6 +34,8 @@ interface TrackingProgressProvider {
     val clearsLocalProgressOnSelection: Boolean
         get() = false
     val watchedItems: Flow<List<WatchedItem>>
+        get() = flowOf(emptyList())
+    val watchedHistory: Flow<List<WatchedHistoryItem>>
         get() = flowOf(emptyList())
 
     fun episodeProgress(contentId: String): Flow<Map<Pair<Int, Int>, WatchProgress>>

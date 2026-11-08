@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.image.ImageRenderer decoderReinitializationState">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.image.ImageRenderer.REINITIALIZATION_STATE_NONE, androidx.media3.exoplayer.image.ImageRenderer.REINITIALIZATION_STATE_SIGNAL_END_OF_STREAM_THEN_WAIT, androidx.media3.exoplayer.image.ImageRenderer.REINITIALIZATION_STATE_WAIT_END_OF_STREAM}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.image.ImageRenderer void handleMessage(int, java.lang.Object) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+</root>
+

@@ -22,6 +22,7 @@ import com.nuvio.tv.data.mediaserver.ServerSignIn
 import com.nuvio.tv.data.mediaserver.ServerTitle
 import com.nuvio.tv.data.mediaserver.ServerTitleQuery
 import com.nuvio.tv.data.mediaserver.ServerTrack
+import com.nuvio.tv.data.mediaserver.ServerTransportPolicy
 import com.nuvio.tv.data.mediaserver.verifiedTitleMatches
 import com.nuvio.tv.domain.model.Subtitle
 import java.net.URLDecoder
@@ -63,8 +64,11 @@ internal abstract class MediaBrowserProvider(
 
     internal open fun isSupported(info: PublicInfo): Boolean = isSupportedVersion(info.version)
 
-    override suspend fun signIn(address: String, username: String, password: String): ServerSignIn {
+    override suspend fun signIn(address: String, username: String, password: String, localHttpApproved: Boolean): ServerSignIn {
         val normalized = normalizeServerAddress(address, apiPath) ?: throw ServerException(ServerFailure.NOT_FOUND)
+        if (!ServerTransportPolicy.allowsCredentials(normalized, localHttpApproved)) {
+            throw ServerException(ServerFailure.INSECURE_CONNECTION)
+        }
         val (baseUrl, info) = publicInfo(normalized)
         if (!isSupported(info)) throw ServerException(ServerFailure.UNSUPPORTED)
         val response = client.execute(
@@ -92,9 +96,12 @@ internal abstract class MediaBrowserProvider(
         val path = "/System/Info/Public"
         val response = client.execute("GET", baseUrl + apiPath, path, token = null, allowRedirect = true)
         if (response.status in 300..399) {
-            val redirected = response.location
-                ?.substringBefore(apiPath + path)
-                ?.let { normalizeServerAddress(it, apiPath) }
+            val original = buildUrl(baseUrl + apiPath, path).toHttpUrl()
+            val target = response.location?.let(original::resolve)
+                ?.takeIf { it.scheme == original.scheme && it.host == original.host && it.port == original.port }
+                ?: throw ServerException(ServerFailure.INSECURE_CONNECTION)
+            val redirected = target.toString().substringBefore(apiPath + path)
+                .let { normalizeServerAddress(it, apiPath) }
                 ?.takeIf { it != baseUrl }
                 ?: throw ServerException(ServerFailure.FAILED)
             val retried = client.execute("GET", redirected + apiPath, path, token = null)

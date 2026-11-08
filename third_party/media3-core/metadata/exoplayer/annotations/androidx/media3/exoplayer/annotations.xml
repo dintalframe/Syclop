@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.AudioFocusManager audioFocusState">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.AudioFocusManager.AUDIO_FOCUS_STATE_NOT_REQUESTED, androidx.media3.exoplayer.AudioFocusManager.AUDIO_FOCUS_STATE_NO_FOCUS, androidx.media3.exoplayer.AudioFocusManager.AUDIO_FOCUS_STATE_HAVE_FOCUS, androidx.media3.exoplayer.AudioFocusManager.AUDIO_FOCUS_STATE_LOSS_TRANSIENT, androidx.media3.exoplayer.AudioFocusManager.AUDIO_FOCUS_STATE_LOSS_TRANSIENT_DUCK}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.AudioFocusManager void executePlayerCommand(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.AudioFocusManager void setAudioFocusState(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.AudioFocusManager.AUDIO_FOCUS_STATE_NOT_REQUESTED, androidx.media3.exoplayer.AudioFocusManager.AUDIO_FOCUS_STATE_NO_FOCUS, androidx.media3.exoplayer.AudioFocusManager.AUDIO_FOCUS_STATE_HAVE_FOCUS, androidx.media3.exoplayer.AudioFocusManager.AUDIO_FOCUS_STATE_LOSS_TRANSIENT, androidx.media3.exoplayer.AudioFocusManager.AUDIO_FOCUS_STATE_LOSS_TRANSIENT_DUCK}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.AudioFocusManager.PlayerCommand">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.AudioFocusManager.PlayerControl void executePlayerCommand(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.BaseRenderer int readSource(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.BaseRenderer void handleMessage(int, java.lang.Object) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DecoderReuseEvaluation DecoderReuseEvaluation(java.lang.String, androidx.media3.common.Format, androidx.media3.common.Format, int, int) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_NO, androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_YES_WITH_FLUSH, androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_YES_WITH_RECONFIGURATION, androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_YES_WITHOUT_RECONFIGURATION}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DecoderReuseEvaluation DecoderReuseEvaluation(java.lang.String, androidx.media3.common.Format, androidx.media3.common.Format, int, int) 4">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_REUSE_NOT_IMPLEMENTED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_WORKAROUND, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_APP_OVERRIDE, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_MIME_TYPE_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_OPERATING_RATE_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_INITIALIZATION_DATA_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_DRM_SESSION_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_MAX_INPUT_SIZE_EXCEEDED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_MAX_RESOLUTION_EXCEEDED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_RESOLUTION_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_ROTATION_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_COLOR_INFO_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_CHANNEL_COUNT_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_SAMPLE_RATE_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_ENCODING_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_BYPASS_POSSIBLE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DecoderReuseEvaluation discardReasons">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_REUSE_NOT_IMPLEMENTED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_WORKAROUND, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_APP_OVERRIDE, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_MIME_TYPE_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_OPERATING_RATE_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_INITIALIZATION_DATA_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_DRM_SESSION_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_MAX_INPUT_SIZE_EXCEEDED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_MAX_RESOLUTION_EXCEEDED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_RESOLUTION_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_ROTATION_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_COLOR_INFO_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_CHANNEL_COUNT_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_SAMPLE_RATE_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_ENCODING_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_BYPASS_POSSIBLE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DecoderReuseEvaluation result">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_NO, androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_YES_WITH_FLUSH, androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_YES_WITH_RECONFIGURATION, androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_YES_WITHOUT_RECONFIGURATION}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DecoderReuseEvaluation.DecoderDiscardReasons">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_REUSE_NOT_IMPLEMENTED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_WORKAROUND, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_APP_OVERRIDE, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_MIME_TYPE_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_OPERATING_RATE_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_INITIALIZATION_DATA_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_DRM_SESSION_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_MAX_INPUT_SIZE_EXCEEDED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_MAX_RESOLUTION_EXCEEDED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_RESOLUTION_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_ROTATION_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_VIDEO_COLOR_INFO_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_CHANNEL_COUNT_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_SAMPLE_RATE_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_ENCODING_CHANGED, androidx.media3.exoplayer.DecoderReuseEvaluation.DISCARD_REASON_AUDIO_BYPASS_POSSIBLE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DecoderReuseEvaluation.DecoderReuseResult">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_NO, androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_YES_WITH_FLUSH, androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_YES_WITH_RECONFIGURATION, androidx.media3.exoplayer.DecoderReuseEvaluation.REUSE_RESULT_YES_WITHOUT_RECONFIGURATION}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DefaultRenderersFactory androidx.media3.exoplayer.DefaultRenderersFactory setExtensionRendererMode(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DefaultRenderersFactory androidx.media3.exoplayer.Renderer buildSecondaryVideoRenderer(androidx.media3.exoplayer.Renderer, android.content.Context, int, androidx.media3.exoplayer.mediacodec.MediaCodecSelector, boolean, android.os.Handler, androidx.media3.exoplayer.video.VideoRendererEventListener, long) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DefaultRenderersFactory extensionRendererMode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DefaultRenderersFactory void buildAudioRenderers(android.content.Context, int, androidx.media3.exoplayer.mediacodec.MediaCodecSelector, boolean, androidx.media3.exoplayer.audio.AudioSink, android.os.Handler, androidx.media3.exoplayer.audio.AudioRendererEventListener, java.util.ArrayList&lt;androidx.media3.exoplayer.Renderer&gt;) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DefaultRenderersFactory void buildCameraMotionRenderers(android.content.Context, int, java.util.ArrayList&lt;androidx.media3.exoplayer.Renderer&gt;) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DefaultRenderersFactory void buildMetadataRenderers(android.content.Context, androidx.media3.exoplayer.metadata.MetadataOutput, android.os.Looper, int, java.util.ArrayList&lt;androidx.media3.exoplayer.Renderer&gt;) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DefaultRenderersFactory void buildMiscellaneousRenderers(android.content.Context, android.os.Handler, int, java.util.ArrayList&lt;androidx.media3.exoplayer.Renderer&gt;) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DefaultRenderersFactory void buildTextRenderers(android.content.Context, androidx.media3.exoplayer.text.TextOutput, android.os.Looper, int, java.util.ArrayList&lt;androidx.media3.exoplayer.Renderer&gt;) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DefaultRenderersFactory void buildVideoRenderers(android.content.Context, int, androidx.media3.exoplayer.mediacodec.MediaCodecSelector, boolean, android.os.Handler, androidx.media3.exoplayer.video.VideoRendererEventListener, long, java.util.ArrayList&lt;androidx.media3.exoplayer.Renderer&gt;) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.DefaultRenderersFactory.ExtensionRendererMode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlaybackException ExoPlaybackException(int, java.lang.Throwable, int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.ExoPlaybackException.TYPE_SOURCE, androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER, androidx.media3.exoplayer.ExoPlaybackException.TYPE_UNEXPECTED, androidx.media3.exoplayer.ExoPlaybackException.TYPE_REMOTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlaybackException ExoPlaybackException(int, java.lang.Throwable, java.lang.String, int, java.lang.String, int, androidx.media3.common.Format, int, androidx.media3.exoplayer.source.MediaSource.MediaPeriodId, boolean) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.ExoPlaybackException.TYPE_SOURCE, androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER, androidx.media3.exoplayer.ExoPlaybackException.TYPE_UNEXPECTED, androidx.media3.exoplayer.ExoPlaybackException.TYPE_REMOTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlaybackException ExoPlaybackException(java.lang.String, java.lang.Throwable, int, int, java.lang.String, int, androidx.media3.common.Format, int, androidx.media3.exoplayer.source.MediaSource.MediaPeriodId, long, boolean) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.ExoPlaybackException.TYPE_SOURCE, androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER, androidx.media3.exoplayer.ExoPlaybackException.TYPE_UNEXPECTED, androidx.media3.exoplayer.ExoPlaybackException.TYPE_REMOTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlaybackException java.lang.String deriveMessage(int, java.lang.String, java.lang.String, int, androidx.media3.common.Format, int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.ExoPlaybackException.TYPE_SOURCE, androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER, androidx.media3.exoplayer.ExoPlaybackException.TYPE_UNEXPECTED, androidx.media3.exoplayer.ExoPlaybackException.TYPE_REMOTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlaybackException type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.ExoPlaybackException.TYPE_SOURCE, androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER, androidx.media3.exoplayer.ExoPlaybackException.TYPE_UNEXPECTED, androidx.media3.exoplayer.ExoPlaybackException.TYPE_REMOTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlaybackException.Type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.ExoPlaybackException.TYPE_SOURCE, androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER, androidx.media3.exoplayer.ExoPlaybackException.TYPE_UNEXPECTED, androidx.media3.exoplayer.ExoPlaybackException.TYPE_REMOTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlayerImpl.FrameMetadataListener MSG_SET_CAMERA_MOTION_LISTENER">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlayerImpl.FrameMetadataListener MSG_SET_SPHERICAL_SURFACE_VIEW">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlayerImpl.FrameMetadataListener MSG_SET_VIDEO_FRAME_METADATA_LISTENER">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlayerImpl.FrameMetadataListener void handleMessage(int, java.lang.Object) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlayerImplInternal int updatePlayWhenReadyChangeReason(int, int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlayerImplInternal int updatePlaybackSuppressionReason(int, int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlayerImplInternal void executePlayerCommand(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlayerImplInternal void handleAudioFocusPlayerCommandInternal(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoPlayerImplInternal void updatePlayWhenReadyWithAudioFocus(boolean, int, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_DO_NOT_PLAY, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_WAIT_FOR_CALLBACK, androidx.media3.exoplayer.AudioFocusManager.PLAYER_COMMAND_PLAY_WHEN_READY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoTimeoutException ExoTimeoutException(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_UNDEFINED, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_RELEASE, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_SET_FOREGROUND_MODE, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_DETACH_SURFACE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoTimeoutException java.lang.String getErrorMessage(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_UNDEFINED, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_RELEASE, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_SET_FOREGROUND_MODE, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_DETACH_SURFACE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoTimeoutException timeoutOperation">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_UNDEFINED, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_RELEASE, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_SET_FOREGROUND_MODE, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_DETACH_SURFACE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ExoTimeoutException.TimeoutOperation">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_UNDEFINED, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_RELEASE, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_SET_FOREGROUND_MODE, androidx.media3.exoplayer.ExoTimeoutException.TIMEOUT_OPERATION_DETACH_SURFACE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.ForwardingRenderer void handleMessage(int, java.lang.Object) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.MediaExtractorCompat void seekTo(long, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.MediaExtractorCompat.SEEK_TO_PREVIOUS_SYNC, androidx.media3.exoplayer.MediaExtractorCompat.SEEK_TO_NEXT_SYNC, androidx.media3.exoplayer.MediaExtractorCompat.SEEK_TO_CLOSEST_SYNC}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.MediaExtractorCompat.SeekMode">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.MediaExtractorCompat.SEEK_TO_PREVIOUS_SYNC, androidx.media3.exoplayer.MediaExtractorCompat.SEEK_TO_NEXT_SYNC, androidx.media3.exoplayer.MediaExtractorCompat.SEEK_TO_CLOSEST_SYNC}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.MediaSourceList.ForwardingEventListener void onDrmSessionAcquired(int, androidx.media3.exoplayer.source.MediaSource.MediaPeriodId, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmSession.STATE_RELEASED, androidx.media3.exoplayer.drm.DrmSession.STATE_ERROR, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENING, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED_WITH_KEYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.NoSampleRenderer void handleMessage(int, java.lang.Object) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.PlayerMessage.Target void handleMessage(int, java.lang.Object) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.Renderer.MessageType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.Renderer.State">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.STATE_DISABLED, androidx.media3.exoplayer.Renderer.STATE_ENABLED, androidx.media3.exoplayer.Renderer.STATE_STARTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities boolean isFormatSupported(int, boolean) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.TUNNELING_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.TUNNELING_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.TUNNELING_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.TUNNELING_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_SPEED_CHANGE_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_GAPLESS_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.TUNNELING_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.TUNNELING_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int, int) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.HARDWARE_ACCELERATION_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.HARDWARE_ACCELERATION_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int, int) 4">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.DECODER_SUPPORT_FALLBACK_MIMETYPE, androidx.media3.exoplayer.RendererCapabilities.DECODER_SUPPORT_PRIMARY, androidx.media3.exoplayer.RendererCapabilities.DECODER_SUPPORT_FALLBACK}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int, int, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.TUNNELING_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.TUNNELING_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int, int, int) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.HARDWARE_ACCELERATION_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.HARDWARE_ACCELERATION_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int, int, int) 4">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.DECODER_SUPPORT_FALLBACK_MIMETYPE, androidx.media3.exoplayer.RendererCapabilities.DECODER_SUPPORT_PRIMARY, androidx.media3.exoplayer.RendererCapabilities.DECODER_SUPPORT_FALLBACK}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int create(int, int, int, int, int, int) 5">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_SPEED_CHANGE_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_GAPLESS_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int getAdaptiveSupport(int) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int getAudioOffloadSupport(int) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int getDecoderSupport(int) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int getFormatSupport(int) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int getHardwareAccelerationSupport(int) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities int getTunnelingSupport(int) 0">
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities.AdaptiveSupport">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SEAMLESS, androidx.media3.exoplayer.RendererCapabilities.ADAPTIVE_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities.AudioOffloadSupport">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_SPEED_CHANGE_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_GAPLESS_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.AUDIO_OFFLOAD_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities.Capabilities">
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities.DecoderSupport">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.DECODER_SUPPORT_FALLBACK_MIMETYPE, androidx.media3.exoplayer.RendererCapabilities.DECODER_SUPPORT_PRIMARY, androidx.media3.exoplayer.RendererCapabilities.DECODER_SUPPORT_FALLBACK}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities.HardwareAccelerationSupport">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.HARDWARE_ACCELERATION_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.HARDWARE_ACCELERATION_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererCapabilities.TunnelingSupport">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererCapabilities.TUNNELING_SUPPORTED, androidx.media3.exoplayer.RendererCapabilities.TUNNELING_NOT_SUPPORTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererConfiguration RendererConfiguration(int, boolean) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.audio.AudioSink.OFFLOAD_MODE_DISABLED, androidx.media3.exoplayer.audio.AudioSink.OFFLOAD_MODE_ENABLED_GAPLESS_REQUIRED, androidx.media3.exoplayer.audio.AudioSink.OFFLOAD_MODE_ENABLED_GAPLESS_NOT_REQUIRED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererConfiguration offloadModePreferred">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.audio.AudioSink.OFFLOAD_MODE_DISABLED, androidx.media3.exoplayer.audio.AudioSink.OFFLOAD_MODE_ENABLED_GAPLESS_REQUIRED, androidx.media3.exoplayer.audio.AudioSink.OFFLOAD_MODE_ENABLED_GAPLESS_NOT_REQUIRED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererHolder prewarmingState">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.RendererHolder.RENDERER_PREWARMING_STATE_NOT_PREWARMING_USING_PRIMARY, androidx.media3.exoplayer.RendererHolder.RENDERER_PREWARMING_STATE_NOT_PREWARMING_USING_SECONDARY, androidx.media3.exoplayer.RendererHolder.RENDERER_PREWARMING_STATE_PREWARMING_PRIMARY, androidx.media3.exoplayer.RendererHolder.RENDERER_PREWARMING_STATE_TRANSITIONING_TO_SECONDARY, androidx.media3.exoplayer.RendererHolder.RENDERER_PREWARMING_STATE_TRANSITIONING_TO_PRIMARY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.RendererHolder void handleMessage(int, java.lang.Object, androidx.media3.exoplayer.MediaPeriodHolder) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="open" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_VOLUME, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_ATTRIBUTES, androidx.media3.exoplayer.Renderer.MSG_SET_SCALING_MODE, androidx.media3.exoplayer.Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY, androidx.media3.exoplayer.Renderer.MSG_SET_AUX_EFFECT_INFO, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_FRAME_METADATA_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_CAMERA_MOTION_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_SKIP_SILENCE_ENABLED, androidx.media3.exoplayer.Renderer.MSG_SET_AUDIO_SESSION_ID, androidx.media3.exoplayer.Renderer.MSG_SET_WAKEUP_LISTENER, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_EFFECTS, androidx.media3.exoplayer.Renderer.MSG_SET_VIDEO_OUTPUT_RESOLUTION, androidx.media3.exoplayer.Renderer.MSG_SET_IMAGE_OUTPUT, androidx.media3.exoplayer.Renderer.MSG_SET_PRIORITY, androidx.media3.exoplayer.Renderer.MSG_TRANSFER_RESOURCES, androidx.media3.exoplayer.Renderer.MSG_SET_SCRUBBING_MODE}" />
+    </annotation>
+  </item>
+</root>
+

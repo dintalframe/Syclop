@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.text.ssa.SsaParser android.text.Layout.Alignment toTextAlignment(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaParser int toLineAnchor(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaParser int toPositionAnchor(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaStyle SsaStyle(java.lang.String, int, java.lang.Integer, java.lang.Integer, float, boolean, boolean, boolean, boolean, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaStyle SsaStyle(java.lang.String, int, java.lang.Integer, java.lang.Integer, float, boolean, boolean, boolean, boolean, int) 9">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_OUTLINE, androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_BOX}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaStyle alignment">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaStyle boolean isValidAlignment(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaStyle boolean isValidBorderStyle(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_OUTLINE, androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_BOX}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaStyle borderStyle">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_OUTLINE, androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_BOX}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaStyle.Overrides Overrides(int, android.graphics.PointF) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaStyle.Overrides alignment">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaStyle.SsaAlignment">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_BOTTOM_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_MIDDLE_RIGHT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_LEFT, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_CENTER, androidx.media3.extractor.text.ssa.SsaStyle.SSA_ALIGNMENT_TOP_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.ssa.SsaStyle.SsaBorderStyle">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_UNKNOWN, androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_OUTLINE, androidx.media3.extractor.text.ssa.SsaStyle.SSA_BORDER_STYLE_BOX}" />
+    </annotation>
+  </item>
+</root>
+

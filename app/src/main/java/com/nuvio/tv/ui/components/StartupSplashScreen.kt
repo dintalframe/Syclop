@@ -1,5 +1,6 @@
 package com.nuvio.tv.ui.components
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,7 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.tv.material3.Text
 import androidx.tv.material3.MaterialTheme
@@ -17,6 +19,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
@@ -28,6 +34,7 @@ import com.nuvio.tv.ui.theme.NuvioTheme
 fun StartupSplashScreen(
     profileColorHex: String?,
     profileBackgroundUrl: String?,
+    @StringRes statusText: Int,
     backgroundCacheKey: String? = null,
     skipGradient: Boolean = false,
     brandWordmarkRes: Int? = null,
@@ -61,9 +68,21 @@ fun StartupSplashScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("Syclop", style = MaterialTheme.typography.displaySmall, color = Color.White)
+            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.displaySmall, color = Color.White)
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.xxl))
             SyclopBrandAnimation(SyclopBrandState.Loading, size = 96.dp)
+            Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
+            Text(
+                text = stringResource(statusText),
+                modifier = Modifier
+                    .padding(horizontal = 32.dp)
+                    .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White
+            )
         }
     }
 }

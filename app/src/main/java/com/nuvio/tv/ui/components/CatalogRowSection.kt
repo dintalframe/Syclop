@@ -409,7 +409,7 @@ fun CatalogRowSection(
                 }
                 val cardFocusRequester = itemFocusRequestersByKey.getOrPut(
                     rowItemFocusKey(index, item)
-                ) { FocusRequester() }
+                ) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
 
                 val isPlaceholder = item.id.startsWith("__placeholder_")
                 val isNonFirstPlaceholder = isPlaceholder && index > 0

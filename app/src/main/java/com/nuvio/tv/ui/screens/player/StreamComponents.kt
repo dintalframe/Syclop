@@ -93,12 +93,14 @@ internal fun StreamItem(
     val context = LocalContext.current
     val density = LocalDensity.current
     val unknownStreamLabel = stringResource(R.string.stream_unknown)
-    val streamName = remember(stream, unknownStreamLabel) {
-        NativeDebridSourceCards.displayText(stream.getDisplayNameOrNull()) ?: unknownStreamLabel
+    val compactDisplay = remember(stream, showFileSizeBadges) {
+        NativeDebridSourceCards.compactDisplay(stream,
+            fileSizeShownInBadges = showFileSizeBadges && stream.behaviorHints?.videoSize != null)
     }
-    val streamDescription = remember(stream) { NativeDebridSourceCards.displayDescription(stream) }
+    val streamName = compactDisplay.title ?: unknownStreamLabel
+    val streamDescription = compactDisplay.description
     val visibleBadges = remember(stream.badges) {
-        stream.badges.filterNot { NativeDebridSourceCards.isSeederBadge(it.name) }
+        NativeDebridSourceCards.compactBadges(stream.badges)
     }
     val hasBadges = visibleBadges.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints?.videoSize != null)
     // Pre-upscale: decode at 2× target pixels so the hardware compositor
@@ -154,7 +156,7 @@ internal fun StreamItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(NuvioTheme.spacing.lg),
+                .padding(horizontal = NuvioTheme.spacing.lg, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.lg)
         ) {
@@ -166,7 +168,8 @@ internal fun StreamItem(
                     StreamBadgeChips(
                         badges = visibleBadges,
                         fileSizeBytes = stream.behaviorHints?.videoSize,
-                        showFileSizeBadge = showFileSizeBadges
+                        showFileSizeBadge = showFileSizeBadges,
+                        maxRows = 2
                     )
                     Spacer(modifier = Modifier.height(NuvioTheme.spacing.xxs))
                 }
@@ -182,7 +185,9 @@ internal fun StreamItem(
                             style = MaterialTheme.typography.titleMedium.copy(
                                 textDirection = streamName.contentTextDirection()
                             ),
-                            color = NuvioTheme.colors.TextPrimary
+                            color = NuvioTheme.colors.TextPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
 
                         if (isCurrentStream) {
@@ -221,7 +226,7 @@ internal fun StreamItem(
                 val reportedBitrate = remember(stream) { ReportedStreamFacts.bitrateLabel(stream) }
                 if (nativeBitrate != null || reportedBitrate == null) {
                     Text(text = StreamBitrateFacts.label(stream), style = MaterialTheme.typography.labelSmall,
-                        color = NuvioTheme.extendedColors.textSecondary)
+                        color = NuvioTheme.extendedColors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 reportedBitrate?.let { reported ->
                     Text(text = reported, style = MaterialTheme.typography.labelSmall,
@@ -241,7 +246,9 @@ internal fun StreamItem(
                             style = MaterialTheme.typography.bodySmall.copy(
                                 textDirection = description.contentTextDirection()
                             ),
-                            color = NuvioTheme.extendedColors.textSecondary
+                            color = NuvioTheme.extendedColors.textSecondary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -251,12 +258,13 @@ internal fun StreamItem(
                         badges = visibleBadges,
                         fileSizeBytes = stream.behaviorHints?.videoSize,
                         showFileSizeBadge = showFileSizeBadges,
+                        maxRows = 2,
                         modifier = Modifier.padding(top = NuvioTheme.spacing.xxs)
                     )
                 }
             }
 
-            if (showAddonLogo) {
+            if (showAddonLogo && NativeDebridSourceCards.visibleAddonName(stream.addonName)) {
                 Column(
                     horizontalAlignment = Alignment.End
                 ) {

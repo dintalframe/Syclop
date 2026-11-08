@@ -6,6 +6,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.Callable
+import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -20,8 +22,8 @@ class DefaultAllocatorNativeStressTest {
 
         val executor = Executors.newFixedThreadPool(numThreads)
 
-        for (t in 0 until numThreads) {
-            executor.submit {
+        val workers = List(numThreads) {
+            Callable {
                 for (i in 0 until allocationsPerThread) {
                     val allocation = DefaultAllocatorNative.createAllocation(allocationSize)
                     assertNotNull("Stress allocation should succeed", allocation)
@@ -37,9 +39,11 @@ class DefaultAllocatorNativeStressTest {
             }
         }
 
-        executor.shutdown()
-        val finished = executor.awaitTermination(30, TimeUnit.SECONDS)
-        assertTrue("Stress test threads should terminate inside timeout", finished)
+        try {
+            executor.invokeAll(workers, 30, TimeUnit.SECONDS).forEach { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
 
         // Wait an additional 3.5 seconds to ensure all queued background native deallocations 
         // (which are scheduled with a 2-second delay) execute and complete successfully without crashing.
@@ -52,27 +56,33 @@ class DefaultAllocatorNativeStressTest {
         val allocationsPerThread = 200
         val segmentSize = 65536
         val allocator = DefaultAllocator(true, segmentSize, 0, true)
+        val poolSize = numThreads * allocationsPerThread * segmentSize
+        allocator.setTargetBufferSize(poolSize)
+        val reset = CyclicBarrier(numThreads) { allocator.reset() }
 
         val executor = Executors.newFixedThreadPool(numThreads)
 
-        for (t in 0 until numThreads) {
-            executor.submit {
+        val workers = List(numThreads) {
+            Callable {
                 val threadAllocations = mutableListOf<Allocation>()
                 for (i in 0 until allocationsPerThread) {
                     threadAllocations.add(allocator.allocate())
                 }
-                // Simulate player reset/stop target buffer size to 0
-                allocator.reset()
-                // Late release by loader/playback threads
+                // Keep all allocations live until the player resets its buffer target.
+                reset.await(20, TimeUnit.SECONDS)
                 threadAllocations.forEach { allocator.release(it) }
             }
         }
 
-        executor.shutdown()
-        val finished = executor.awaitTermination(30, TimeUnit.SECONDS)
-        assertTrue("Stress test threads should terminate inside timeout", finished)
+        try {
+            executor.invokeAll(workers, 30, TimeUnit.SECONDS).forEach { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
 
-        // Verify that everything trimmed down to 0 without leaking memory
-        assertEquals("Memory leak under concurrent late release!", 0, allocator.memoryFootprint)
+        assertEquals(0, allocator.totalBytesAllocated)
+        assertEquals(poolSize, allocator.availableBytes)
+        allocator.trim()
+        assertEquals(0, allocator.memoryFootprint)
     }
 }

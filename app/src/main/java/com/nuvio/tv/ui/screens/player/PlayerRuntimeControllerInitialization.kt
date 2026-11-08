@@ -21,6 +21,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.decoder.av1.Libgav1VideoRenderer
 import androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -992,7 +993,9 @@ internal fun PlayerRuntimeController.initializePlayer(
                     extractorsFactory = effectiveExtractorsFactory,
                     subtitleParserFactory = null
                 )
-                val playerDataSourceFactory = PlayerPlaybackNetworking.createDataSourceFactory(context, headers)
+                val playerDataSourceFactory = PlayerPlaybackNetworking.createDataSourceFactory(
+                    context, headers, credentialOriginUrl = url
+                )
                 ExoPlayer.Builder(context)
                     .setBandwidthMeter(bandwidthMeter)
                     .setTrackSelector(trackSelector!!)
@@ -1014,7 +1017,9 @@ internal fun PlayerRuntimeController.initializePlayer(
                 com.nuvio.tv.libass.media.AssHandler.setRenderScale(
                     playerSettings.libassRenderScale.scale
                 )
-                val playerDataSourceFactory = PlayerPlaybackNetworking.createDataSourceFactory(context, headers)
+                val playerDataSourceFactory = PlayerPlaybackNetworking.createDataSourceFactory(
+                    context, headers, credentialOriginUrl = url
+                )
                 ExoPlayer.Builder(context)
                     .setBandwidthMeter(bandwidthMeter)
                     .setLoadControl(loadControl)
@@ -1037,6 +1042,7 @@ internal fun PlayerRuntimeController.initializePlayer(
             libassPipelineSwitchInFlight = false
 
             _exoPlayer?.apply {
+                val badgePlayer = this
                 val audioAttributes = AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
@@ -1123,6 +1129,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                         reason: Int
                     ) {
                         if (isReleasingPlayer || reason != Player.DISCONTINUITY_REASON_SEEK) return
+                        if (_exoPlayer === this@apply) suppressPlaybackCleanupForSeek(newPosition.positionMs)
                         // Holding the seek button emits a discontinuity per step, and reading the
                         // span set on each one is real work on a cache holding thousands of spans.
                         val seekedToMs = newPosition.positionMs
@@ -1339,6 +1346,15 @@ internal fun PlayerRuntimeController.initializePlayer(
                         }
 
                         if (playbackState == Player.STATE_ENDED) {
+                            if (naturalEnded && _exoPlayer === this@apply &&
+                                this@apply.playbackState == Player.STATE_ENDED &&
+                                !isUsingMpvEngine() && playerError == null &&
+                                !isCurrentMediaItemLive && !isCurrentMediaItemDynamic && !isPlayingAd &&
+                                !exoEndOfStreamRecovery.hasSynthesizedEnd &&
+                                currentMediaItem?.localConfiguration?.uri?.toString() == currentStreamUrl
+                            ) {
+                                requestCleanupAfterRendererEof(currentPosition, maxOf(playerDuration, lastKnownDuration))
+                            }
                             // Re-persist diagnostics with the final rebuffer totals (the
                             // first-frame snapshot captured 0, since rebuffers accrue after).
                             Log.i(
@@ -1403,6 +1419,7 @@ internal fun PlayerRuntimeController.initializePlayer(
 
                     override fun onTracksChanged(tracks: Tracks) {
                         updateAvailableTracks(tracks)
+                        publishBadgeMediaInfo(badgePlayer)
                     }
 
                     override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -1743,6 +1760,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                         format: Format,
                         decoderReuseEvaluation: DecoderReuseEvaluation?
                     ) {
+                        publishBadgeMediaInfo(badgePlayer, video = format)
                         playbackAnalyticsDiagnostics.onVideoInputFormatChanged(
                             eventTime = eventTime,
                             format = format,
@@ -1800,6 +1818,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                         format: Format,
                         decoderReuseEvaluation: DecoderReuseEvaluation?
                     ) {
+                        publishBadgeMediaInfo(badgePlayer, audio = format)
                         playbackAnalyticsDiagnostics.onAudioInputFormatChanged(
                             eventTime = eventTime,
                             format = format,
@@ -2191,6 +2210,8 @@ private class SubtitleOffsetRenderersFactory(
                     .setMaxDroppedFramesToNotify(DefaultRenderersFactory.MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY)
                     .setMapDV7ToHevc(mapDv7ToHevc)
                 out.add(HardwareFirstVideoRenderer(builder))
+            } else if (renderer is Libgav1VideoRenderer) {
+                out.add(Av1SurfaceRenderer(renderer))
             } else {
                 out.add(renderer)
             }

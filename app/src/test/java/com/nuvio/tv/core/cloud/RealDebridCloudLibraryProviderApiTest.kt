@@ -8,6 +8,7 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
+import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*
@@ -128,16 +129,18 @@ class RealDebridCloudLibraryProviderApiTest {
         val api = mockk<RealDebridApi>()
         coEvery { api.getTorrentInfo(any(), any()) } throws CancellationException("cancelled")
         try {
-            RealDebridCloudLibraryProviderApi(api).resolvePlayback(TOKEN, item(), file())
+            RealDebridCloudLibraryProviderApi(api, mockk()).resolvePlayback(TOKEN, item(), file())
             fail("Expected cancellation")
         } catch (_: CancellationException) { }
     }
 
-    private fun provider(server: MockWebServer) = RealDebridCloudLibraryProviderApi(
-        Retrofit.Builder().baseUrl(server.url("/"))
+    private fun provider(server: MockWebServer): RealDebridCloudLibraryProviderApi {
+        val retrofit = Retrofit.Builder().baseUrl(server.url("/"))
             .addConverterFactory(MoshiConverterFactory.create(Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()))
-            .build().create(RealDebridApi::class.java)
-    )
+            .build()
+        val deletion = CloudLibraryDeletionTransport(OkHttpClient(), retrofit, retrofit, retrofit, retrofit)
+        return RealDebridCloudLibraryProviderApi(retrofit.create(RealDebridApi::class.java), deletion)
+    }
 
     private fun item() = CloudLibraryItem(providerId = DebridProviders.REAL_DEBRID_ID,
         providerName = "Real-Debrid", id = "job", type = CloudLibraryItemType.Torrent, name = "Show")

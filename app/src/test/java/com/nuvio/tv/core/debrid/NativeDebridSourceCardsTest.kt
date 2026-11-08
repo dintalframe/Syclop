@@ -17,7 +17,8 @@ class NativeDebridSourceCardsTest {
     }
     @Test fun `no connected native resolver means no eligible source cards`() {
         assertFalse(NativeDebridSourceCards.eligible(source(), DebridSettings()))
-        assertFalse(NativeDebridSourceCards.eligible(source(), settings.copy(enabled = false)))
+        // A legacy disabled flag cannot suppress sources when a resolver account is connected.
+        assertTrue(NativeDebridSourceCards.eligible(source(), settings.copy(enabled = false)))
     }
     @Test fun `raw direct plugin URL or torrent file cannot masquerade as native service file`() {
         for (url in listOf("https://addon.test/file.mkv", "https://addon.test/file.torrent", "torrent:invalid", "magnet:?xt=urn:btih:invalid")) {
@@ -50,10 +51,13 @@ class NativeDebridSourceCardsTest {
         val eligible = source()
         val direct = eligible.copy(url = "https://addon.test/file.mkv", infoHash = null, addonName = "Raw direct")
         val p2pOnly = eligible.copy(infoHash = "invalid", addonName = "P2P only")
-        val presentation = DebridStreamPresentation(mockk(), mockk(), DebridStreamFormatter(DebridStreamTemplateEngine()))
+        val presentation = DebridStreamPresentation(
+            dataStore = mockk(), streamBadgeSettingsDataStore = mockk(),
+            formatter = DebridStreamFormatter(DebridStreamTemplateEngine()),
+            nativeGrant = { false }, currentScope = { StreamAvailabilityScope(1, 2L, 3L) }, clock = { 1_000L })
         val groups = presentation.apply(listOf(AddonStreams("Sources", null, listOf(direct, p2pOnly, eligible))), settings)
-        assertEquals(listOf(eligible), groups.single().streams)
-        assertEquals(listOf(eligible), presentation.rankAll(listOf(direct, p2pOnly, eligible), settings))
+        assertEquals(listOf(eligible), groups.single().streams.map { it.copy(badges = emptyList()) })
+        assertEquals(listOf(eligible), presentation.rankAll(listOf(direct, p2pOnly, eligible), settings).map { it.copy(badges = emptyList()) })
     }
     @Test fun `native cloud grant remains eligible with unresolved resolver disabled`() {
         val cloud = source().copy(infoHash = null, url = "https://native-cloud.test/file.mkv")
@@ -67,8 +71,8 @@ class NativeDebridSourceCardsTest {
         val presentation = DebridStreamPresentation(mockk(), mockk(), DebridStreamFormatter(DebridStreamTemplateEngine())) { it == cloud.url }
         for (configured in listOf(settings, settings.copy(enabled = false, cloudLibraryEnabled = true))) {
             val groups = presentation.apply(listOf(AddonStreams("Cloud", null, listOf(ungranted, cloud))), configured)
-            assertEquals(listOf(cloud), groups.single().streams)
-            assertEquals(listOf(cloud), presentation.rankAll(listOf(ungranted, cloud), configured))
+            assertEquals(listOf(cloud), groups.single().streams.map { it.copy(badges = emptyList()) })
+            assertEquals(listOf(cloud), presentation.rankAll(listOf(ungranted, cloud), configured).map { it.copy(badges = emptyList()) })
         }
     }
     @Test fun `episode coordinates and folder totals forbid reported movie average even if runtime supplied`() {

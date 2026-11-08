@@ -173,6 +173,42 @@ class HomeBrowseViewModelTest {
         assertEquals(24, f.calls.size)
         assertEquals(1, f.calls.count { it.first == com.nuvio.tv.data.catalog.RatedKidsCatalog.BASE_URL })
     }
+    @Test fun `Movie first batch contains Popular Featured and real Trending before later distinct genre catalogs`() = runTest {
+        val f = fixture()
+        val public = f.addon.copy(id = "com.linvo.cinemeta", baseUrl = com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog.CINEMETA_URL,
+            catalogs = listOf(descriptor("top", ContentType.MOVIE), descriptor("imdbRating", ContentType.MOVIE)))
+        val native = f.addon.copy(id = com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog.ADDON_ID,
+            baseUrl = com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog.BASE_URL,
+            catalogs = listOf("movies-genre-action", "movies-genre-comedy", "movies-today", "movies-month", "movies-week")
+                .map { descriptor(it, ContentType.MOVIE) })
+        coEvery { f.preferences.enabledUrlsForProfile(any()) } returns listOf(public.baseUrl)
+        f.installed.value = listOf(public, native)
+        f.vm.select(HomeBrowseSection.MOVIES); advanceUntilIdle()
+        assertEquals(listOf("top", "movies-week", "imdbRating", "movies-month"), f.calls.map { it.second })
+        assertEquals(4, f.vm.state.value.rows.size)
+        assertTrue(f.vm.state.value.moreCatalogs)
+        f.vm.loadMoreCatalogs(); advanceUntilIdle()
+        assertEquals(listOf("movies-today", "movies-genre-action", "movies-genre-comedy"), f.calls.drop(4).map { it.second })
+        assertEquals(7, f.vm.state.value.rows.map { it.key }.distinct().size)
+        assertFalse(f.vm.state.value.moreCatalogs)
+    }
+    @Test fun `Documentary first batch uses documentary movie show and proven topic feeds instead of unrelated Trending`() = runTest {
+        val f = fixture(catalogs = (1..30).map { descriptor("generic$it", ContentType.MOVIE) })
+        val native = f.addon.copy(id = com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog.ADDON_ID,
+            baseUrl = com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog.BASE_URL,
+            catalogs = listOf("movies-week", "tv-week", "anime-week", "movies-genre-action",
+                "movies-genre-documentary", "tv-genre-documentary", "movies-genre-documentary-history", "tv-genre-documentary-travel")
+                .map { descriptor(it, if (it.startsWith("movies")) ContentType.MOVIE else ContentType.SERIES) })
+        f.installed.value = listOf(f.addon, native)
+        f.vm.select(HomeBrowseSection.DOCUMENTARY); advanceUntilIdle()
+        assertEquals(listOf("movies-genre-documentary", "tv-genre-documentary", "movies-genre-documentary-history", "tv-genre-documentary-travel"),
+            f.calls.map { it.second })
+        assertTrue(f.vm.state.value.moreCatalogs)
+        assertTrue(f.calls.all { it.first == native.baseUrl })
+        repeat(8) { f.vm.loadMoreCatalogs(); advanceUntilIdle() }
+        assertEquals(24, f.calls.size)
+        assertFalse(f.calls.any { it.second in setOf("movies-week", "tv-week", "anime-week", "movies-genre-action") })
+    }
     @Test fun `request order revision changes for deliberate catalog reorder not late completion`() = runTest {
         val slow = CompletableDeferred<Unit>()
         val f = fixture(catalogs = listOf(descriptor("slow", ContentType.MOVIE), descriptor("ready", ContentType.MOVIE)))

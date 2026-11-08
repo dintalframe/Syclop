@@ -42,6 +42,8 @@ internal object RatedKidsCatalogCodec {
         val rawSubgenres = subgenres.orEmpty().mapNotNull { it.safeText(80) }
         val tags = (rawGenres + rawSubgenres).mapTo(hashSetOf()) { it.lowercase(Locale.ROOT) }
         if (tags.any { it in mature }) return null
+        // A server may ignore a filter; a genre label needs an explicit fact on each item.
+        if (!tags.containsAll(descriptor.requiredGenres)) return null
         val documentary = "documentary" in tags || "documentaries" in tags || "docuseries" in tags
         val educational = tags.any { it in education }
         val scientific = (documentary || educational) && tags.any { it in science }

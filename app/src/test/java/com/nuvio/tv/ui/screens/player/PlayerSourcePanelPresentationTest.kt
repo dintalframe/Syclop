@@ -24,10 +24,12 @@ class PlayerSourcePanelPresentationTest {
             durationOrigin = StreamDurationOrigin.NATIVE_CONTAINER))
         val input = state(listOf(unknown, reported, native), pageSize = 2)
         val all = subject.apply(input, settings) { true }
-        assertEquals(listOf(native, reported, unknown), all.sourceAllStreams)
-        assertEquals(listOf(native, reported), all.sourceFilteredStreams)
+        assertSourcePayloads(listOf(native, reported, unknown), all.sourceAllStreams)
+        assertTrue(all.sourceAllStreams.all { stream -> stream.badges.any { it.name == "Resolve with: AllDebrid" } })
+        assertTrue(all.sourceAllStreams[1].badges.any { it.name == "1080p" })
+        assertSourcePayloads(listOf(native, reported), all.sourceFilteredStreams)
         val filtered = subject.apply(input.copy(sourceSelectedAddonFilter = "A"), settings) { true }
-        assertEquals(listOf(native, unknown), filtered.sourceFilteredStreams)
+        assertSourcePayloads(listOf(native, unknown), filtered.sourceFilteredStreams)
     }
 
     @Test fun `cached raw direct and invalid hash cannot consume visible page or episode list`() {
@@ -38,9 +40,9 @@ class PlayerSourcePanelPresentationTest {
             episodeAllStreams = listOf(hidden, eligible), episodeFilteredStreams = listOf(hidden),
             episodeAvailableAddons = listOf("Raw", "Native candidates"))
         val output = subject.apply(input, settings) { true }
-        assertEquals(listOf(eligible), output.sourceFilteredStreams)
+        assertSourcePayloads(listOf(eligible), output.sourceFilteredStreams)
         assertEquals(listOf("Native candidates"), output.sourceAvailableAddons)
-        assertEquals(listOf(eligible), output.episodeFilteredStreams)
+        assertSourcePayloads(listOf(eligible), output.episodeFilteredStreams)
         assertEquals(listOf("Native candidates"), output.episodeAvailableAddons)
     }
 
@@ -56,8 +58,8 @@ class PlayerSourcePanelPresentationTest {
             episodeStreamsSeason = 1, episodeStreamsEpisode = 2)
         val output = subject.apply(input, settings.copy(streamPreferences = DebridStreamPreferences(
             sortCriteria = DebridStreamSortCriterion.originalOrder))) { true }
-        assertEquals(listOf(first, second), output.sourceFilteredStreams)
-        assertSame(first, output.sourceFilteredStreams.first())
+        assertSourcePayloads(listOf(first, second), output.sourceFilteredStreams)
+        assertSame(first.clientResolve, output.sourceFilteredStreams.first().clientResolve)
         assertEquals("Seeds: 0", first.description)
         assertEquals(input.currentVideoId, output.currentVideoId)
         assertEquals(input.currentSeason, output.currentSeason)
@@ -93,10 +95,10 @@ class PlayerSourcePanelPresentationTest {
             episodeAllStreams = listOf(pack, episode), episodeFilteredStreams = listOf(pack),
             episodeAvailableAddons = listOf("Pack provider", "Episode provider"))
         val output = subject.apply(input, settings) { true }
-        assertEquals(listOf(episode), output.sourceFilteredStreams)
-        assertEquals(listOf(episode, unknown), output.sourceAllStreams)
+        assertSourcePayloads(listOf(episode), output.sourceFilteredStreams)
+        assertSourcePayloads(listOf(episode, unknown), output.sourceAllStreams)
         assertEquals(listOf("Episode provider"), output.sourceAvailableAddons)
-        assertEquals(listOf(episode), output.episodeFilteredStreams)
+        assertSourcePayloads(listOf(episode), output.episodeFilteredStreams)
         assertTrue(subject.apply(input.copy(sourceSelectedAddonFilter = "Pack provider"), settings) { true }
             .sourceFilteredStreams.isEmpty())
         // This is a display projection; the controller's playing source remains untouched.
@@ -108,10 +110,19 @@ class PlayerSourcePanelPresentationTest {
         val pack = source("Provider", "a").copy(title = "Show.Complete.Series")
         val input = state(listOf(pack), 1)
         val movie = subject.apply(input.copy(contentType = "movie", currentEpisode = 4), settings) { true }
-        assertEquals(listOf(pack), movie.sourceFilteredStreams)
+        assertSourcePayloads(listOf(pack), movie.sourceFilteredStreams)
         val episode = subject.apply(input.copy(contentType = "series", currentEpisode = 4), settings) { true }
         assertTrue(episode.sourceAllStreams.isEmpty())
         assertTrue(episode.sourceFilteredStreams.isEmpty())
+    }
+
+    /** Display badges may change; ranking must preserve the complete playable source payload. */
+    private fun assertSourcePayloads(expected: List<Stream>, actual: List<Stream>) {
+        assertEquals(expected.size, actual.size)
+        expected.zip(actual).forEach { (source, presented) ->
+            assertEquals(source, presented.copy(badges = source.badges))
+            assertTrue(presented.badges.containsAll(source.badges))
+        }
     }
 
     private fun source(addon: String, hash: String) = Stream(null, "Movie", null, null, null,

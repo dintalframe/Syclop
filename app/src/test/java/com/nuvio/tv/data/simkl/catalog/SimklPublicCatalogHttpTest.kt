@@ -66,6 +66,13 @@ class SimklPublicCatalogHttpTest {
             assertTrue(addon.catalogs.all { it.name.startsWith("Simkl Trending") })
             assertEquals(setOf("catalog"), addon.resources.map { it.name }.toSet())
             assertTrue(addon.catalogs.filter { it.id.startsWith("anime-") }.all { it.apiType == "anime" })
+            assertEquals(addon.catalogs.size, addon.catalogs.map { "${it.apiType}:${it.id}" }.distinct().size)
+            for (type in listOf("anime", "movies", "tv")) {
+                assertTrue(addon.catalogs.any { it.id == "$type-genre-action" })
+                assertTrue(addon.catalogs.any { it.id == "$type-genre-comedy" })
+                assertTrue(addon.catalogs.any { it.id == "$type-genre-fantasy" })
+            }
+            assertFalse(addon.catalogs.any { it.id.contains("hentai") || it.id.contains("erotica") })
         }
     }
 
@@ -101,6 +108,47 @@ class SimklPublicCatalogHttpTest {
             h.server.enqueue(json("""[{"name":"Drama","slug":"drama"}]"""))
             assertTrue(h.catalog.catalog("movies-genre-documentary", 0).items.isEmpty())
             assertEquals(1, h.server.requestCount)
+        }
+    }
+
+    @Test fun `Anime genres retain native IDs and page cached publisher data without more network requests`() = runBlocking {
+        Harness().use { h ->
+            h.server.enqueue(json("""[{"name":"Action","slug":"official-action"}]"""))
+            val items = (1..101).map { index -> SimklPublicCatalogCodecTest.item(mal = (60_000 + index).toString())
+                .replace("\"simkl_id\":12345", "\"simkl_id\":${12_345 + index}") }
+            h.server.enqueue(json(items.joinToString(",", "[", "]")))
+            val first = h.catalog.catalog("anime-genre-action", 0)
+            val next = h.catalog.catalog("anime-genre-action", first.nextSkip)
+            assertEquals(100, first.items.size)
+            assertEquals("mal:60001", first.items.first().id)
+            assertTrue(first.hasMore)
+            assertEquals("mal:60101", next.items.single().id)
+            assertFalse(next.hasMore)
+            assertTrue((first.items + next.items).all { "Anime" in it.genres && "Action" in it.genres })
+            assertEquals(listOf("/discover/trending/anime/genre/index.json", "/discover/trending/anime/genre/official-action_month_500.json"),
+                h.original.map { it.url.encodedPath })
+        }
+    }
+
+    @Test fun `Documentary topic rows require exact metadata and reuse the same bounded public feed`() = runBlocking {
+        Harness().use { h ->
+            h.server.enqueue(json("""[{"name":"Documentary","slug":"documentary"}]"""))
+            val crime = SimklPublicCatalogCodecTest.item().replace("Drama", "Crime")
+            val history = SimklPublicCatalogCodecTest.item().replace("Drama", "History")
+                .replace("tt1234567", "tt2345678").replace("\"simkl_id\":12345", "\"simkl_id\":12346")
+            val guessed = SimklPublicCatalogCodecTest.item().replace("Frieren: Beyond Journey's End Season 2", "Crime and History")
+                .replace("tt1234567", "tt3456789").replace("\"simkl_id\":12345", "\"simkl_id\":12347")
+            h.server.enqueue(json("[$crime,$history,$guessed]"))
+            val original = h.catalog.catalog("movies-genre-documentary", 0)
+            val crimeRow = h.catalog.catalog("movies-genre-documentary-crime", 0)
+            val historyRow = h.catalog.catalog("movies-genre-documentary-history", 0)
+            assertEquals(3, original.items.size)
+            assertEquals(listOf("tt1234567"), crimeRow.items.map { it.id })
+            assertEquals(listOf("tt2345678"), historyRow.items.map { it.id })
+            assertTrue((crimeRow.items + historyRow.items).all { "Documentary" in it.genres })
+            assertEquals(SimklPublicCatalog.BASE_URL, crimeRow.addonBaseUrl)
+            assertNotEquals(crimeRow.catalogId, historyRow.catalogId)
+            assertEquals(2, h.server.requestCount)
         }
     }
 

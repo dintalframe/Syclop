@@ -520,7 +520,7 @@ class LayoutSettingsViewModel @Inject constructor(
             _streamBadgeUiState.update { it.copy(serverError = context.getString(R.string.error_server_ports_unavailable)) }
             return
         }
-        val url = "http://$ip:${server.listeningPort}"
+        val url = server.pairingUrl(ip)
         _streamBadgeUiState.update {
             it.copy(
                 isQrModeActive = true,
@@ -562,9 +562,11 @@ class LayoutSettingsViewModel @Inject constructor(
         viewModelScope.launch { streamBadgeSettingsDataStore.setStreamBadgePlacement(placement) }
     }
 
+    // File-backed drawable resources can be opened as raw bytes without decoding.
+    @android.annotation.SuppressLint("ResourceType")
     private fun loadLogoBytes() {
         try {
-            val inputStream = context.resources.openRawResource(R.drawable.app_logo_wordmark)
+            val inputStream = context.resources.openRawResource(R.drawable.syclop_primary_head_512)
             logoBytes = inputStream.use { it.readBytes() }
         } catch (_: Exception) {
         }
@@ -980,7 +982,7 @@ class LayoutSettingsViewModel @Inject constructor(
             _customPosterQrState.update { it.copy(serverError = context.getString(com.nuvio.tv.R.string.error_server_ports_unavailable)) }
             return
         }
-        val url = "http://$ip:${server.listeningPort}"
+        val url = server.pairingUrl(ip)
         _customPosterQrState.update {
             it.copy(
                 isActive = true,

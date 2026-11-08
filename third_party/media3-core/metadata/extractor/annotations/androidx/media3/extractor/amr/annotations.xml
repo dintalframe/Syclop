@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.amr.AmrExtractor AmrExtractor(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.amr.AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING, androidx.media3.extractor.amr.AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING_ALWAYS, androidx.media3.extractor.amr.AmrExtractor.FLAG_ENABLE_INDEX_SEEKING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.amr.AmrExtractor flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.amr.AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING, androidx.media3.extractor.amr.AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING_ALWAYS, androidx.media3.extractor.amr.AmrExtractor.FLAG_ENABLE_INDEX_SEEKING}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.amr.AmrExtractor.Flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.amr.AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING, androidx.media3.extractor.amr.AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING_ALWAYS, androidx.media3.extractor.amr.AmrExtractor.FLAG_ENABLE_INDEX_SEEKING}" />
+    </annotation>
+  </item>
+</root>
+

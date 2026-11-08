@@ -632,7 +632,7 @@ fun FolderEditorContent(
                 }
                 val isMissing = addonSource != null && catalog == null && addonCatalogInfo == null
                 val sourceKey = collectionSourceKey(source)
-                val removeFocusRequester = catalogFocusRequesters.getOrPut(sourceKey) { FocusRequester() }
+                val removeFocusRequester = catalogFocusRequesters.getOrPut(sourceKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                 val genreLabel = addonSource?.genre ?: if (catalog?.genreRequired == true) {
                     stringResource(R.string.collections_editor_select_genre)
                 } else {

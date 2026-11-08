@@ -71,6 +71,29 @@ class PlaybackStartActionsTvTest {
         compose.runOnIdle { assertEquals(0, requests) }
     }
 
+    @Test
+    fun setupActionUsesRemoteSelectWithoutStartingPlayback() {
+        val meta = fixtureMeta(series = false)
+        val setupLabel = instrumentation.targetContext.getString(R.string.hero_set_up_playback)
+        var setupRequests = 0
+        var playbackRequests = 0
+        setContent {
+            hero(
+                meta, resume(meta), isPlayEnabled = false,
+                onResume = { playbackRequests++ },
+                onSetup = { setupRequests++ }
+            )
+        }
+        compose.onNodeWithText(setupLabel).assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onNodeWithText(setupLabel).assertIsFocused()
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        compose.runOnIdle {
+            assertEquals(1, setupRequests)
+            assertEquals(0, playbackRequests)
+        }
+    }
+
     private fun verifyResumeActions(series: Boolean, snapshot: String) {
         val meta = fixtureMeta(series)
         val progress = resume(meta)
@@ -104,7 +127,8 @@ class PlaybackStartActionsTvTest {
         nextToWatch: NextToWatch,
         isPlayEnabled: Boolean = true,
         onResume: () -> Unit = {},
-        onBeginning: () -> Unit = {}
+        onBeginning: () -> Unit = {},
+        onSetup: (() -> Unit)? = null
     ) {
         HeroContentSection(
             meta = meta,
@@ -112,6 +136,7 @@ class PlaybackStartActionsTvTest {
             nextToWatch = nextToWatch,
             onPlayClick = onResume,
             isPlayEnabled = isPlayEnabled,
+            onSetupPlayback = onSetup,
             onStartFromBeginning = onBeginning,
             isInLibrary = false,
             onToggleLibrary = {},

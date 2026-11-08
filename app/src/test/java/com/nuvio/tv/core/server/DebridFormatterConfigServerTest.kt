@@ -36,7 +36,7 @@ class DebridFormatterConfigServerTest {
             )
         )
 
-        val response = server.serve(FakePostSession(body))
+        val response = server.serve(FakePostSession(body, authorization(server)))
 
         assertEquals(NanoHTTPD.Response.Status.OK, response.status)
         assertEquals("🔥4K UHD ☁️", saved?.nameTemplate)
@@ -65,15 +65,19 @@ class DebridFormatterConfigServerTest {
             )
         )
 
-        val response = server.serve(FakePostSession(body))
+        val response = server.serve(FakePostSession(body, authorization(server)))
 
         assertEquals(NanoHTTPD.Response.Status.OK, response.status)
         assertEquals("", saved?.nameTemplate)
         assertEquals("", saved?.descriptionTemplate)
     }
 
+    private fun authorization(server: DebridFormatterConfigServer): String =
+        "Bearer " + server.pairingUrl("192.0.2.1").substringAfter('#')
+
     private class FakePostSession(
         body: String,
+        private val authorization: String,
         private val uri: String = "/api/settings"
     ) : NanoHTTPD.IHTTPSession {
         private val bytes = body.toByteArray(StandardCharsets.UTF_8)
@@ -81,6 +85,7 @@ class DebridFormatterConfigServerTest {
         override fun execute() = Unit
         override fun getCookies(): NanoHTTPD.CookieHandler? = null
         override fun getHeaders(): Map<String, String> = mapOf(
+            "authorization" to authorization,
             "content-length" to bytes.size.toString(),
             "content-type" to "application/json; charset=utf-8"
         )

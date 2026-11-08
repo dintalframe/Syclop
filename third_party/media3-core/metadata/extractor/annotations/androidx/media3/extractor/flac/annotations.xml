@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.flac.FlacExtractor state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.flac.FlacExtractor.STATE_READ_ID3_METADATA, androidx.media3.extractor.flac.FlacExtractor.STATE_GET_STREAM_MARKER_AND_INFO_BLOCK_BYTES, androidx.media3.extractor.flac.FlacExtractor.STATE_READ_STREAM_MARKER, androidx.media3.extractor.flac.FlacExtractor.STATE_READ_METADATA_BLOCKS, androidx.media3.extractor.flac.FlacExtractor.STATE_GET_FRAME_START_MARKER, androidx.media3.extractor.flac.FlacExtractor.STATE_READ_FRAMES}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.flac.FlacExtractor.Flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.flac.FlacExtractor.FLAG_DISABLE_ID3_METADATA}" />
+    </annotation>
+  </item>
+</root>
+

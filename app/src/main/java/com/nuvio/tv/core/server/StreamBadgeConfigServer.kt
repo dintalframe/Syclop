@@ -8,11 +8,10 @@ import com.nuvio.tv.core.streams.StreamBadgePlacement
 import com.nuvio.tv.core.streams.StreamBadgeRules
 import com.nuvio.tv.core.streams.StreamBadgeRulesParser
 import com.nuvio.tv.core.streams.StreamBadgeSettings
+import com.nuvio.tv.core.streams.StreamBadgePatternException
+import com.nuvio.tv.core.streams.validatePatterns
 import fi.iki.elonen.NanoHTTPD
 import java.io.ByteArrayInputStream
-import java.net.HttpURLConnection
-import java.net.URL
-import java.nio.charset.StandardCharsets
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
@@ -28,14 +27,18 @@ class StreamBadgeConfigServer(
 ) : NanoHTTPD(port) {
     private val gson = Gson()
     private val settingsMapType = object : TypeToken<Map<String, Any?>>() {}.type
+    private val pairing = LocalConfigSession()
+    private val downloader = BadgeConfigDownloader()
     @OptIn(ExperimentalSerializationApi::class)
     private val badgeJson = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
     }
 
-    override fun serve(session: IHTTPSession): Response {
-        return when {
+    fun pairingUrl(ipAddress: String): String = pairing.pairingUrl(ipAddress, listeningPort)
+
+    override fun serve(session: IHTTPSession): Response = pairing.respond(session) {
+        when {
             session.method == Method.GET && session.uri == "/" -> serveWebPage()
             session.method == Method.GET && session.uri == "/logo.png" -> serveLogo()
             session.method == Method.GET && session.uri == "/api/settings" -> serveSettings()
@@ -78,9 +81,9 @@ class StreamBadgeConfigServer(
     private fun handleSettingsUpdate(session: IHTTPSession): Response {
         val parsed = parseBodyMap(session)
         val currentSettings = currentSettingsProvider()
-        val streamBadgeRules = parseStreamBadgeRules(parsed?.get("streamBadgeRules")) ?: currentSettings.rules.normalized()
-        val showFileSizeBadges = (parsed?.get("showFileSizeBadges") as? Boolean) ?: currentSettings.showFileSizeBadges
-        val badgePlacement = (parsed?.get("badgePlacement") as? String)
+        val streamBadgeRules = parseStreamBadgeRules(parsed.get("streamBadgeRules")) ?: currentSettings.rules.normalized()
+        val showFileSizeBadges = (parsed.get("showFileSizeBadges") as? Boolean) ?: currentSettings.showFileSizeBadges
+        val badgePlacement = (parsed.get("badgePlacement") as? String)
             .toStreamBadgePlacement()
             ?: currentSettings.badgePlacement
         onSettingsChanged(
@@ -95,8 +98,8 @@ class StreamBadgeConfigServer(
 
     private fun handleBadgeImport(session: IHTTPSession): Response {
         val parsed = parseBodyMap(session)
-        val rawSourceUrl = (parsed?.get("sourceUrl") as? String).orEmpty().trim()
-        val pastedPayload = (parsed?.get("payload") as? String).orEmpty()
+        val rawSourceUrl = (parsed.get("sourceUrl") as? String).orEmpty().trim()
+        val pastedPayload = (parsed.get("payload") as? String).orEmpty()
         if (rawSourceUrl.isBlank() && pastedPayload.isBlank()) {
             return errorResponse(context?.getString(com.nuvio.tv.R.string.web_stream_badge_error_url_required) ?: "Enter a badge JSON URL.")
         }
@@ -118,7 +121,8 @@ class StreamBadgeConfigServer(
         }
 
         return try {
-            val payload = pastedPayload.ifBlank { fetchText(sourceUrl) }
+            val payload = pastedPayload.ifBlank { downloader.fetch(sourceUrl) }
+            com.nuvio.tv.core.express.validateExpressJsonBounds(payload)
             val parsedImport = StreamBadgeRulesParser.parse(
                 sourceUrl = sourceUrl,
                 payload = payload
@@ -131,13 +135,15 @@ class StreamBadgeConfigServer(
                 "application/json; charset=utf-8",
                 """{"status":"imported","streamBadgeRules":$rulesJson}"""
             )
-        } catch (error: Exception) {
+        } catch (error: StreamBadgePatternException) {
             errorResponse(error.message ?: badgeImportFailedMessage())
+        } catch (_: Exception) {
+            errorResponse(badgeImportFailedMessage())
         }
     }
 
     private fun handleBadgeActive(session: IHTTPSession): Response {
-        val sourceUrl = (parseBodyMap(session)?.get("sourceUrl") as? String).orEmpty()
+        val sourceUrl = (parseBodyMap(session).get("sourceUrl") as? String).orEmpty()
         val currentSettings = currentSettingsProvider()
         val rules = currentSettings.rules.normalized().setActiveSource(sourceUrl)
         onSettingsChanged(currentSettings.copy(rules = rules))
@@ -150,7 +156,7 @@ class StreamBadgeConfigServer(
     }
 
     private fun handleBadgeDelete(session: IHTTPSession): Response {
-        val sourceUrl = (parseBodyMap(session)?.get("sourceUrl") as? String).orEmpty()
+        val sourceUrl = (parseBodyMap(session).get("sourceUrl") as? String).orEmpty()
         val currentSettings = currentSettingsProvider()
         val rules = currentSettings.rules.normalized().removeSource(sourceUrl)
         onSettingsChanged(currentSettings.copy(rules = rules))
@@ -162,17 +168,22 @@ class StreamBadgeConfigServer(
         )
     }
 
-    private fun parseBodyMap(session: IHTTPSession): Map<String, Any?>? {
-        val body = readUtf8Body(session)
-        return runCatching {
+    private fun parseBodyMap(session: IHTTPSession): Map<String, Any?> {
+        val body = readConfigJsonBody(session)
+        return try {
             gson.fromJson<Map<String, Any?>>(body, settingsMapType)
-        }.getOrNull()
+                ?: throw IllegalArgumentException("Empty settings")
+        } catch (_: Exception) {
+            throw InvalidConfigRequest(Response.Status.BAD_REQUEST, "Invalid settings JSON")
+        }
     }
 
     private fun parseStreamBadgeRules(value: Any?): StreamBadgeRules? {
         if (value == null) return null
         return try {
-            badgeJson.decodeFromString<StreamBadgeRules>(gson.toJson(value)).normalized()
+            badgeJson.decodeFromString<StreamBadgeRules>(gson.toJson(value)).also { it.validatePatterns() }.normalized()
+        } catch (error: StreamBadgePatternException) {
+            throw InvalidConfigRequest(Response.Status.BAD_REQUEST, error.message ?: badgeImportFailedMessage())
         } catch (_: SerializationException) {
             null
         } catch (_: IllegalArgumentException) {
@@ -185,22 +196,6 @@ class StreamBadgeConfigServer(
             placement.name.equals(this, ignoreCase = true)
         }
 
-    private fun fetchText(url: String): String {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = 10_000
-        connection.readTimeout = 15_000
-        connection.requestMethod = "GET"
-        return try {
-            val code = connection.responseCode
-            if (code !in 200..299) {
-                throw IllegalArgumentException(badgeImportFailedMessage())
-            }
-            connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-        } finally {
-            connection.disconnect()
-        }
-    }
-
     private fun badgeImportFailedMessage(): String =
         context?.getString(com.nuvio.tv.R.string.web_stream_badge_import_error) ?: "Badge import failed."
 
@@ -210,19 +205,6 @@ class StreamBadgeConfigServer(
             "application/json; charset=utf-8",
             gson.toJson(mapOf("error" to message))
         )
-
-    private fun readUtf8Body(session: IHTTPSession): String {
-        val length = session.headers["content-length"]?.toIntOrNull() ?: return ""
-        if (length <= 0) return ""
-        val buffer = ByteArray(length)
-        var offset = 0
-        while (offset < length) {
-            val read = session.inputStream.read(buffer, offset, length - offset)
-            if (read <= 0) break
-            offset += read
-        }
-        return String(buffer, 0, offset, StandardCharsets.UTF_8)
-    }
 
     companion object {
         fun startOnAvailablePort(

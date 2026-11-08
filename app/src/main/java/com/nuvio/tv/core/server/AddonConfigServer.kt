@@ -22,6 +22,9 @@ class AddonConfigServer(
 
     private val gson = Gson()
     private val pendingChanges = ConcurrentHashMap<String, PendingAddonChange>()
+    private val pairing = LocalConfigSession()
+
+    fun pairingUrl(ipAddress: String): String = pairing.pairingUrl(ipAddress, listeningPort)
 
     fun confirmChange(id: String) {
         pendingChanges[id]?.status = AddonChangeStatus.CONFIRMED
@@ -31,11 +34,11 @@ class AddonConfigServer(
         pendingChanges[id]?.status = AddonChangeStatus.REJECTED
     }
 
-    override fun serve(session: IHTTPSession): Response {
+    override fun serve(session: IHTTPSession): Response = pairing.respond(session) {
         val uri = session.uri
         val method = session.method
 
-        return when {
+        when {
             method == Method.GET && uri == "/" -> serveWebPage()
             method == Method.GET && uri == "/logo.png" -> serveLogo()
             method == Method.GET && uri == "/api/state" -> servePageState()
@@ -154,15 +157,7 @@ class AddonConfigServer(
     }
 
     private fun handleAddonUpdate(session: IHTTPSession): Response {
-        // Auto-reject any stale pending changes so a new request can proceed
-        pendingChanges.values
-            .filter { it.status == AddonChangeStatus.PENDING }
-            .forEach { it.status = AddonChangeStatus.REJECTED }
-
-        // Parse request body
-        val bodyMap = HashMap<String, String>()
-        session.parseBody(bodyMap)
-        val body = bodyMap["postData"] ?: ""
+        val body = readConfigJsonBody(session)
 
         val change: PendingAddonChange = try {
             val parsed = gson.fromJson<Map<String, Any>>(body, object : TypeToken<Map<String, Any>>() {}.type)
@@ -194,6 +189,9 @@ class AddonConfigServer(
             )
         }
 
+        pendingChanges.values
+            .filter { it.status == AddonChangeStatus.PENDING }
+            .forEach { it.status = AddonChangeStatus.REJECTED }
         pendingChanges[change.id] = change
         onChangeProposed(change)
 

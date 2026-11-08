@@ -71,6 +71,7 @@ import androidx.tv.material3.Text
 import coil3.compose.rememberAsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
 import com.nuvio.tv.core.cloud.PremiumizeCloudLibraryPosterUrl
 import com.nuvio.tv.core.cloud.TorboxCloudLibraryPosterUrl
@@ -91,8 +92,13 @@ private const val IntroDbUrl = "https://introdb.app/"
 private const val ImdbDatasetsUrl = "https://developer.imdb.com/non-commercial-datasets/"
 private const val ApacheLicenseUrl = "https://www.apache.org/licenses/LICENSE-2.0"
 private const val HazeLicenseUrl = "https://github.com/chrisbanes/haze/blob/1.7.2/LICENSE"
-private const val LibMpvAndroidUrl = "https://github.com/jarnedemeulemeester/libmpv-android"
+private const val LibMpvAndroidUrl = "https://github.com/mpv-player/mpv/tree/b0841e8c4d156b8403dc1876c4cbd9011eb583f3"
 private const val ConscryptSourceUrl = "https://github.com/google/conscrypt/tree/2.8.0"
+private const val SentryNativeSourceUrl = "https://github.com/getsentry/sentry-native/tree/0.15.2"
+private const val MpegHSourceUrl = "https://github.com/Fraunhofer-IIS/mpeghdec/tree/4555490b82ff4cdb965c9501a96d1c248804fcb6"
+private const val Av1SourceUrl = "https://chromium.googlesource.com/codecs/libgav1/+/c05bf9be660cf170d7c26bd06bb42b3322180e58"
+private const val LibassSourceUrl = "https://github.com/NuvioMedia/nuvio-libass/tree/b824ae66738e279d09b1994d9977978e7ffcc90a"
+private const val LibassNoticeDirectory = "licenses/libass-0.18.4"
 
 private sealed interface LicenseLogo {
     data class Drawable(@param:DrawableRes val resId: Int) : LicenseLogo
@@ -260,9 +266,9 @@ private fun AttributionDetailRow(
     var bundledNotices by remember(item.noticeAssetPaths) { mutableStateOf<String?>(null) }
 
     if (bundledNotices != null) {
-        BundledLicenseDialog(
+        SettingsTextDialog(
             title = item.title,
-            notices = bundledNotices!!,
+            text = bundledNotices!!,
             onDismiss = { bundledNotices = null }
         )
     }
@@ -453,14 +459,205 @@ private fun dataAttributionItems() = listOf(
 @Composable
 private fun playbackLicenseItems() = listOf(
     LicenseAttributionItem(
+        title = stringResource(R.string.syclop_licenses_nextlib_title),
+        body = stringResource(R.string.syclop_licenses_nextlib_body),
+        url = SyclopRepositoryUrl,
+        noticeAssetPaths = listOf(
+            "licenses/native-media/ATTRIBUTION.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__x86__x86inc.asm.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__uuid.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__softfloat_tables.h.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__sha.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__fixed_dsp.h.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__fixed_dsp.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__avsscanf.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__oggparsevorbis.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__oggparsetheora.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__oggparsespeex.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__oggdec.h.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__oggdec.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__aadec.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavcodec__x86__vc1dsp_init.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavcodec__jrevdct.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavcodec__arm__vp8dsp_armv6.S.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavcodec__arm__jrevdct_arm.S.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavcodec__aom_film_grain_template.c.notice.txt",
+            "licenses/android-ndk-r29/NOTICE.toolchain",
+            "licenses/native-media/nextlib/mbedtls/LICENSE",
+            "licenses/ffmpeg-audio/COPYING.GPLv3",
+            "licenses/ffmpeg-audio/COPYING.LGPLv3",
+            "licenses/ffmpeg-audio/LICENSE.md",
+            "licenses/native-media/nextlib/nextlib/COPYING.GPLv3"
+        )
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.syclop_licenses_ffmpeg_audio_title),
+        body = stringResource(R.string.syclop_licenses_ffmpeg_audio_body),
+        url = "https://github.com/FFmpeg/FFmpeg/tree/a35157abb96167fd7308edc92b55408d5bb084b0",
+        noticeAssetPaths = listOf(
+            "licenses/ffmpeg-audio/NOTICE.md",
+            "licenses/iamf-1.1.0/Media3-APACHE-2.0.txt",
+            "licenses/ffmpeg-audio/LICENSE.md",
+            "licenses/ffmpeg-audio/COPYING.LGPLv2.1",
+            "licenses/ffmpeg-audio/COPYING.LGPLv3",
+            "licenses/ffmpeg-audio/COPYING.GPLv2",
+            "licenses/ffmpeg-audio/COPYING.GPLv3"
+        )
+    ),
+    LicenseAttributionItem(
         title = stringResource(R.string.licenses_attributions_exoplayer_title),
         body = stringResource(R.string.licenses_attributions_exoplayer_body),
         url = ApacheLicenseUrl
     ),
     LicenseAttributionItem(
         title = stringResource(R.string.licenses_attributions_libmpv_title),
-        body = stringResource(R.string.licenses_attributions_libmpv_body),
-        url = LibMpvAndroidUrl
+        body = stringResource(R.string.syclop_licenses_mpv_body),
+        url = LibMpvAndroidUrl,
+        noticeAssetPaths = listOf(
+            "licenses/native-media/ATTRIBUTION.txt",
+            "licenses/native-media/mpv/component-embedded/libplacebo/3rdparty__json.h.notice.txt",
+            "licenses/native-media/mpv/component-embedded/libplacebo/src__hash.h.notice.txt",
+            "licenses/native-media/mpv/component-embedded/libplacebo/src__include__libplacebo__shaders__deinterlacing.h.notice.txt",
+            "licenses/native-media/mpv/component-embedded/libxml2/dict.c.notice.txt",
+            "licenses/native-media/mpv/component-embedded/libxml2/list.c.notice.txt",
+            "licenses/native-media/mpv/component-embedded/libxml2/timsort.h.notice.txt",
+            "licenses/native-media/mpv/component-embedded/mpv/include__mpv__client.h.notice.txt",
+            "licenses/native-media/mpv/component-embedded/mpv/include__mpv__render.h.notice.txt",
+            "licenses/native-media/mpv/component-embedded/mpv/osdep__android__strnlen.c.notice.txt",
+            "licenses/native-media/mpv/dav1d/COPYING",
+            "licenses/ffmpeg-audio/COPYING.GPLv2",
+            "licenses/ffmpeg-audio/COPYING.GPLv3",
+            "licenses/ffmpeg-audio/COPYING.LGPLv2.1",
+            "licenses/ffmpeg-audio/COPYING.LGPLv3",
+            "licenses/ffmpeg-audio/LICENSE.md",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__aacsbr_fixed.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__ac3dec_fixed.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavcodec__aom_film_grain_template.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavcodec__arm__jrevdct_arm.S.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__arm__vp8dsp_armv6.S.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__bsf__mjpeg2jpeg.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__faandct.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__ilbcdata.h.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__interplayacm.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__jfdctfst.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__jfdctint_template.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__jpeg2000htdec.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavcodec__jrevdct.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__nellymoser.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__nellymoserdec.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__ra144dec.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__speexdata.h.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__texturedsp.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__vvc__itx_1d.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavcodec__x86__vc1dsp_init.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavcodec__zerocodec.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__af_arnndn.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__af_deesser.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__af_hdcd.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__ebur128.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__edge_template.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__gblur.h.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__median.h.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__vf_avgblur.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__vf_bilateral.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__vf_bm3d.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__vf_deband.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__vf_hqx.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavfilter__vf_morpho.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__aadec.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavformat__imf.h.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__oggdec.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__oggdec.h.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__oggparsespeex.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__oggparsetheora.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavformat__oggparsevorbis.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__avsscanf.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__fixed_dsp.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__fixed_dsp.h.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavutil__libm.h.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavutil__mathematics.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__sha.c.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__softfloat_tables.h.notice.txt",
+            "licenses/native-media/nextlib/ffmpeg/embedded/libavutil__uuid.c.notice.txt",
+            "licenses/native-media/mpv/ffmpeg-embedded/libavutil__x86__x86inc.asm.notice.txt",
+            "licenses/native-media/mpv/glad-generated/CC0-1.0.txt",
+            "licenses/native-media/mpv/glad-generated/arm64-v8a/egl.h.notice.txt",
+            "licenses/native-media/mpv/glad-generated/arm64-v8a/gl.h.notice.txt",
+            "licenses/libass-0.18.4/edde-distribution/expat/AUTHORS",
+            "licenses/libass-0.18.4/edde-distribution/expat/COPYING",
+            "licenses/libass-0.18.4/edde-distribution/expat/LICENSE.build",
+            "licenses/libass-0.18.4/edde-distribution/fontconfig/AUTHORS",
+            "licenses/libass-0.18.4/edde-distribution/fontconfig/COPYING",
+            "licenses/libass-0.18.4/edde-distribution/freetype/FTL.TXT",
+            "licenses/libass-0.18.4/edde-distribution/freetype/GPLv2.TXT",
+            "licenses/libass-0.18.4/edde-distribution/freetype/LICENSE.TXT",
+            "licenses/libass-0.18.4/edde-distribution/fribidi/AUTHORS",
+            "licenses/libass-0.18.4/edde-distribution/fribidi/COPYING",
+            "licenses/libass-0.18.4/edde-distribution/harfbuzz/AUTHORS",
+            "licenses/libass-0.18.4/edde-distribution/harfbuzz/COPYING",
+            "licenses/libass-0.18.4/edde-distribution/libass/COPYING",
+            "licenses/libass-0.18.4/edde-distribution/libunibreak/AUTHORS",
+            "licenses/libass-0.18.4/harfbuzz-upstream/COPYING",
+            "licenses/libass-0.18.4/libunibreak-upstream/LICENCE",
+            "licenses/libass-0.18.4/ATTRIBUTION.md",
+            "licenses/native-media/mpv/libplacebo-7.387.0/LICENSE",
+            "licenses/native-media/mpv/libplacebo-generated-inputs/fast_float/LICENSE-APACHE",
+            "licenses/native-media/mpv/libplacebo-generated-inputs/fast_float/LICENSE-BOOST",
+            "licenses/native-media/mpv/libplacebo-generated-inputs/fast_float/LICENSE-MIT",
+            "licenses/native-media/mpv/libplacebo-generated-inputs/glad/LICENSE",
+            "licenses/native-media/mpv/libxml2-2.15.4/Copyright",
+            "licenses/native-media/mpv/lua-5.2.4/lua.h",
+            "licenses/native-media/mpv/lua-5.2.4/readme.html",
+            "licenses/native-media/nextlib/mbedtls/LICENSE",
+            "licenses/native-media/mpv/mpv-0.42.0/Copyright",
+            "licenses/native-media/mpv/mpv-0.42.0/LICENSE.GPL",
+            "licenses/native-media/mpv/mpv-0.42.0/LICENSE.LGPL"
+        )
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.syclop_licenses_mpegh_title),
+        body = stringResource(R.string.syclop_licenses_mpegh_body),
+        url = MpegHSourceUrl,
+        noticeAssetPaths = listOf(
+            "licenses/iamf-1.1.0/Media3-APACHE-2.0.txt",
+            "licenses/fraunhofer-mpegh-r2/LICENSE.txt"
+        )
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.syclop_licenses_av1_title),
+        body = stringResource(R.string.syclop_licenses_av1_body),
+        url = Av1SourceUrl,
+        noticeAssetPaths = listOf(
+            "licenses/av1/NOTICE.txt",
+            "licenses/iamf-1.1.0/Media3-APACHE-2.0.txt",
+            "licenses/cpu-features-0.10.1/LICENSE"
+        )
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.syclop_licenses_libass_title),
+        body = stringResource(R.string.syclop_licenses_libass_body),
+        url = LibassSourceUrl,
+        noticeAssetPaths = listOf(
+            "licenses/native-media/ATTRIBUTION.txt",
+            "$LibassNoticeDirectory/ATTRIBUTION.md",
+            "$LibassNoticeDirectory/edde-distribution/libass/COPYING",
+            "$LibassNoticeDirectory/edde-distribution/freetype/LICENSE.TXT",
+            "$LibassNoticeDirectory/edde-distribution/freetype/FTL.TXT",
+            "$LibassNoticeDirectory/edde-distribution/freetype/GPLv2.TXT",
+            "$LibassNoticeDirectory/edde-distribution/fribidi/AUTHORS",
+            "$LibassNoticeDirectory/edde-distribution/fribidi/COPYING",
+            "$LibassNoticeDirectory/edde-distribution/harfbuzz/AUTHORS",
+            "$LibassNoticeDirectory/edde-distribution/harfbuzz/COPYING",
+            "$LibassNoticeDirectory/harfbuzz-upstream/COPYING",
+            "$LibassNoticeDirectory/libunibreak-upstream/LICENCE",
+            "$LibassNoticeDirectory/edde-distribution/libunibreak/AUTHORS",
+            "$LibassNoticeDirectory/edde-distribution/libunibreak/LICENSE.build",
+            "$LibassNoticeDirectory/edde-distribution/fontconfig/AUTHORS",
+            "$LibassNoticeDirectory/edde-distribution/fontconfig/COPYING",
+            "$LibassNoticeDirectory/edde-distribution/expat/AUTHORS",
+            "$LibassNoticeDirectory/edde-distribution/expat/COPYING",
+            "$LibassNoticeDirectory/edde-distribution/expat/LICENSE.build"
+        )
     ),
     LicenseAttributionItem(
         title = stringResource(R.string.conscrypt_notices_title),
@@ -473,13 +670,29 @@ private fun playbackLicenseItems() = listOf(
             "licenses/conscrypt-2.8.0/licenses/LICENSE.harmony.txt",
             "licenses/conscrypt-2.8.0/boringssl/LICENSE"
         )
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.syclop_licenses_sentry_native_title),
+        body = stringResource(R.string.syclop_licenses_sentry_native_body),
+        url = SentryNativeSourceUrl,
+        noticeAssetPaths = listOf(
+            "licenses/sentry-native-0.15.2/LICENSE",
+            "licenses/sentry-native-0.15.2/libunwindstack-ndk/LICENSE",
+            "licenses/sentry-native-0.15.2/mpack/LICENSE"
+        )
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.syclop_licenses_re2j_title),
+        body = stringResource(R.string.syclop_licenses_re2j_body),
+        url = "https://github.com/google/re2j/tree/re2j-1.8",
+        noticeAssetPaths = listOf("licenses/re2j-1.8/LICENSE")
     )
 )
 
 
-/** Bundled notice text remains readable without sending the viewer to a browser. */
+/** Keeps bundled settings text readable with a TV remote. */
 @Composable
-private fun BundledLicenseDialog(title: String, notices: String, onDismiss: () -> Unit) {
+internal fun SettingsTextDialog(title: String, text: String, onDismiss: () -> Unit) {
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val textFocus = remember { FocusRequester() }
@@ -516,7 +729,7 @@ private fun BundledLicenseDialog(title: String, notices: String, onDismiss: () -
                 .focusable()
                 .verticalScroll(scroll)
         ) {
-            Text(notices, style = MaterialTheme.typography.bodySmall,
+            Text(text, style = MaterialTheme.typography.bodySmall,
                 color = NuvioTheme.colors.TextPrimary)
         }
         Button(

@@ -42,6 +42,7 @@ import com.nuvio.tv.domain.repository.WatchProgressRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -300,6 +301,8 @@ class HomeViewModel @Inject constructor(
     internal val cwPipelineRefreshTrigger = kotlinx.coroutines.flow.MutableStateFlow(0)
     /** Tracks the active CW pipeline coroutine so it can be cancelled on profile switch. */
     internal var cwPipelineJob: Job? = null
+    private var cwCacheRestoreJob: Job? = null
+    @Volatile private var cwCacheOwnerRevision = 0L
     internal val fullyWatchedSeriesIds get() = watchedSeriesStateHolder
     internal var tmdbEnrichFocusJob: Job? = null
     internal var pendingTmdbEnrichItemId: String? = null
@@ -389,6 +392,9 @@ class HomeViewModel @Inject constructor(
                 if (newId != previousProfileId) {
                     previousProfileId = newId
                     // Cancel old pipeline — prevents racing writes from stale coroutines.
+                    cwCacheOwnerRevision++
+                    cwCacheRestoreJob?.cancel()
+                    cwCacheRestoreJob = null
                     cwPipelineJob?.cancel()
                     cwPipelineJob = null
                     // Clear all in-memory CW caches so data from the previous
@@ -408,7 +414,7 @@ class HomeViewModel @Inject constructor(
                     cwLastBadgeEpisodeKeys = emptySet()
                     cwLastShowIdSiblings = emptyMap()
                     _uiState.update {
-                        it.copy(layoutPreferencesReady = false, continueWatchingItems = emptyList())
+                        it.copy(layoutPreferencesReady = false, continueWatchingItems = emptyList(), upcomingItems = emptyList())
                     }
                     clearFocusState()
                     _gridFocusState.value = HomeScreenFocusState()
@@ -633,32 +639,43 @@ class HomeViewModel @Inject constructor(
      * switching between Trakt and Nuvio Sync), clear the CW disk cache and
      * in-memory state so items from the old source don't leak into the new one.
      */
-    private fun observeProgressSourceChanges() {
+    internal fun observeProgressSourceChanges() {
         viewModelScope.launch {
             var previousSource: com.nuvio.tv.data.local.WatchProgressSource? = null
             var previousProfileId: Int? = null
-            traktSettingsDataStore.watchProgressSource
-                .collect { source ->
-                    val currentProfileId = profileManager.activeProfileId.value
-                    val profileChanged = previousProfileId != null && previousProfileId != currentProfileId
-                    if (previousSource != null && previousSource != source && !profileChanged) {
-                        // Genuine in-profile source change — clear CW caches to prevent mixing.
-                        cwMetaCache.clear()
-                        cwEnrichedNextUpOverlay.clear()
-                        cwEnrichedInProgressOverlay.clear()
-                        discoveredOlderNextUpItems.clear()
-                        cwLastProcessedNextUpContentIds.clear()
-                        // Clear disk cache for current profile.
-                        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                            runCatching { cwEnrichmentCache.saveNextUpSnapshot(emptyList(), force = true) }
-                            runCatching { cwEnrichmentCache.saveInProgressSnapshot(emptyList(), force = true) }
-                        }
-                        // Reload CW from fresh source.
-                        loadContinueWatching()
+            combine(watchProgressRepository.effectiveProgressSource, profileManager.activeProfileId) { source, profileId ->
+                source to profileId
+            }.collectLatest { (source, currentProfileId) ->
+                val currentProfileRevision = profileManager.activeProfileSelectionRevision
+                val profileChanged = previousProfileId != null && previousProfileId != currentProfileId
+                val sourceChanged = previousSource != null && previousSource != source
+                previousSource = source
+                previousProfileId = currentProfileId
+                if (sourceChanged && !profileChanged) {
+                    cwCacheOwnerRevision++
+                    _uiState.update { it.copy(continueWatchingItems = emptyList(), upcomingItems = emptyList()) }
+                    cwCacheRestoreJob?.cancelAndJoin()
+                    cwCacheRestoreJob = null
+                    cwPipelineJob?.cancelAndJoin()
+                    cwPipelineJob = null
+                    // Genuine in-profile source change — clear CW caches to prevent mixing.
+                    cwMetaCache.clear()
+                    cwEnrichedNextUpOverlay.clear()
+                    cwEnrichedInProgressOverlay.clear()
+                    discoveredOlderNextUpItems.clear()
+                    cwLastProcessedNextUpContentIds.clear()
+                    // Clear disk cache for current profile.
+                    if (profileManager.activeProfileSelectionRevision == currentProfileRevision) {
+                        cwEnrichmentCache.saveNextUpSnapshot(emptyList(), force = true)
                     }
-                    previousSource = source
-                    previousProfileId = currentProfileId
+                    if (profileManager.activeProfileSelectionRevision == currentProfileRevision) {
+                        cwEnrichmentCache.saveInProgressSnapshot(emptyList(), force = true)
+                    }
+                    // Reload CW from fresh source.
+                    if (profileManager.activeProfileSelectionRevision == currentProfileRevision &&
+                        watchProgressRepository.effectiveProgressSource.value == source) loadContinueWatching()
                 }
+            }
         }
     }
 
@@ -704,8 +721,12 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun loadContinueWatching() {
+        cwCacheRestoreJob?.cancel()
+        val ownerRevision = cwCacheOwnerRevision
+        val profileRevision = profileManager.activeProfileSelectionRevision
+        val progressSource = watchProgressRepository.effectiveProgressSource.value
         // Immediately restore last known CW from disk cache for instant display.
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        cwCacheRestoreJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val cachedInProgress = runCatching { cwEnrichmentCache.getInProgressSnapshot() }.getOrDefault(emptyList())
             val cachedNextUp = runCatching { cwEnrichmentCache.getNextUpSnapshot() }.getOrDefault(emptyList())
             if (cachedInProgress.isEmpty() && cachedNextUp.isEmpty()) return@launch
@@ -780,7 +801,9 @@ class HomeViewModel @Inject constructor(
                 nextUpItems = nextUpItems,
                 mode = sortMode
             )
-            if (items.isNotEmpty()) {
+            if (items.isNotEmpty() && cwCacheOwnerRevision == ownerRevision &&
+                profileManager.activeProfileSelectionRevision == profileRevision &&
+                watchProgressRepository.effectiveProgressSource.value == progressSource) {
                 val (mainItems, upcomingOnly) = splitUpcomingItems(items, sortMode)
                 _uiState.update { it.copy(continueWatchingItems = mainItems, upcomingItems = upcomingOnly) }
                 _initialCwResolved.value = true

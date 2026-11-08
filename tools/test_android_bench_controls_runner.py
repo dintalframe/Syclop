@@ -26,6 +26,7 @@ FIXED_CLASSES = ",".join((
     "com.nuvio.tv.ui.screens.detail.PlaybackStartActionsTvTest",
     "com.nuvio.tv.ui.screens.player.PlaybackActionButtonsTvTest",
     "com.nuvio.tv.ui.screens.settings.AppRestartSettingsTvTest",
+    "com.nuvio.tv.ui.screens.settings.AppShutdownSettingsTvTest",
 ))
 FIXED_RUNNER = "com.dintal.syclop.test/androidx.test.runner.AndroidJUnitRunner"
 REMOTE = "/sdcard/Android/data/com.dintal.syclop/files/"
@@ -36,14 +37,16 @@ CATEGORY_CASES = (
     (CATEGORY_CLASS, "changingCategoriesKeepsHeaderFocusAndUsesNewCategoryRows"),
     (CATEGORY_CLASS, "newRequestRevisionRestoresConfiguredOrderWithoutOldFocus"),
     (CATEGORY_CLASS, "lateHomeBodyCannotStealHeaderAndDownRestoresRememberedCard"),
+    (CATEGORY_CLASS, "repeatedUpAndLeftDoNotActivateHomeUntilExplicitCenter"),
 )
 CATEGORY_IMAGES = (
     "category-anime-late-arrival.png", "category-kids-late-group.png",
     "category-change-anime-header.png", "category-request-order-reset.png",
-    "category-home-late-header.png", "category-home-remembered-entry.png")
+    "category-home-late-header.png", "category-home-remembered-entry.png",
+    "category-boundary-home-unselected.png")
 CATEGORY_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
-                           for i, case in enumerate(CATEGORY_CASES, 1)).replace("numtests=11", "numtests=5") + (
-    "INSTRUMENTATION_RESULT: stream=\n\nTime: 43.2\n\nOK (5 tests)\n\nINSTRUMENTATION_CODE: -1\n")
+                           for i, case in enumerate(CATEGORY_CASES, 1)).replace("numtests=15", "numtests=6") + (
+    "INSTRUMENTATION_RESULT: stream=\n\nTime: 43.2\n\nOK (6 tests)\n\nINSTRUMENTATION_CODE: -1\n")
 EPISODE_CLASS = "com.nuvio.tv.ui.screens.stream.EpisodeSourceCardsTvTest"
 EPISODE_CASES = (
     (EPISODE_CLASS, "completeSeasonPackIsHiddenAndExactEpisodeCardKeepsRemoteFocus"),
@@ -51,19 +54,21 @@ EPISODE_CASES = (
 )
 EPISODE_IMAGES = ("episode-source-only-single-episode.png", "episode-source-packs-only-empty.png")
 EPISODE_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
-                          for i, case in enumerate(EPISODE_CASES, 1)).replace("numtests=11", "numtests=2") + (
+                          for i, case in enumerate(EPISODE_CASES, 1)).replace("numtests=15", "numtests=2") + (
     "INSTRUMENTATION_RESULT: stream=\n\nTime: 12.3\n\nOK (2 tests)\n\nINSTRUMENTATION_CODE: -1\n")
 STARTUP_CLASS = "com.nuvio.tv.ui.components.StartupInitializationScreenTvTest"
 STARTUP_CASES = (
     (STARTUP_CLASS, "lateBackgroundFocusCannotEscapeInitializationGate"),
     (STARTUP_CLASS, "retryContinueAndBackKeepTheirActionsAndRestoreHomeFocus"),
     (STARTUP_CLASS, "repeatedGateTransitionsKeepTheSameNativeWindowRoots"),
+    (STARTUP_CLASS, "retryThatRemovesFocusedActionKeepsContinueUsableUntilHomeReturns"),
 )
 STARTUP_IMAGES = ("startup-gate-background-blocked.png", "startup-gate-actions.png",
-                  "startup-gate-resumed-home.png", "startup-gate-same-window.png")
+                  "startup-gate-resumed-home.png", "startup-gate-same-window.png",
+                  "startup-gate-retry-focus-restored.png")
 STARTUP_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
-                          for i, case in enumerate(STARTUP_CASES, 1)).replace("numtests=11", "numtests=3") + (
-    "INSTRUMENTATION_RESULT: stream=\n\nTime: 16.2\n\nOK (3 tests)\n\nINSTRUMENTATION_CODE: -1\n")
+                          for i, case in enumerate(STARTUP_CASES, 1)).replace("numtests=15", "numtests=4") + (
+    "INSTRUMENTATION_RESULT: stream=\n\nTime: 16.2\n\nOK (4 tests)\n\nINSTRUMENTATION_CODE: -1\n")
 
 
 PROGRESSIVE_CLASS = "com.nuvio.tv.ui.screens.stream.ProgressiveSourcesTvTest"
@@ -73,7 +78,7 @@ PROGRESSIVE_CASES = (
 )
 PROGRESSIVE_IMAGES = ("progressive-sources-stable-focus.png", "progressive-sources-empty-diagnostics.png")
 PROGRESSIVE_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
-                              for i, case in enumerate(PROGRESSIVE_CASES, 1)).replace("numtests=11", "numtests=2") + (
+                              for i, case in enumerate(PROGRESSIVE_CASES, 1)).replace("numtests=15", "numtests=2") + (
     "INSTRUMENTATION_RESULT: stream=\n\nTime: 12.3\n\nOK (2 tests)\n\nINSTRUMENTATION_CODE: -1\n")
 
 WATCHING_CLASS = "com.nuvio.tv.ui.screens.home.ContinueWatchingPlaybackTvTest"
@@ -83,7 +88,7 @@ WATCHING_CASES = (
 )
 WATCHING_IMAGES = ("continue-watching-latest-episode.png", "continue-watching-next-up.png")
 WATCHING_SUCCESS = "".join(event(i, case, 1) + event(i, case, 0)
-                           for i, case in enumerate(WATCHING_CASES, 1)).replace("numtests=11", "numtests=2") + (
+                           for i, case in enumerate(WATCHING_CASES, 1)).replace("numtests=15", "numtests=2") + (
     "INSTRUMENTATION_RESULT: stream=\n\nTime: 12.3\n\nOK (2 tests)\n\nINSTRUMENTATION_CODE: -1\n")
 
 def answer(output="", code=0, binary=False):
@@ -237,7 +242,7 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
             with self.subTest(flag=flag), patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
                 bench.parser().parse_args(["continue-watching", flag, "untrusted"])
 
-    def test_category_navigation_runs_only_its_fixed_class_and_six_fresh_images(self):
+    def test_category_navigation_runs_only_its_six_fixed_cases_and_seven_fresh_images(self):
         self.protocol = CATEGORY_SUCCESS
         instance = self.instance(command="category-navigation")
         with self.mocks(instance) as (_, device):
@@ -247,7 +252,7 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
         removal = next(call for call in device.call_args_list if call.args[:3] == ("shell", "rm", "-f"))
         self.assertEqual(("shell", "rm", "-f", *[REMOTE + name for name in CATEGORY_IMAGES]), removal.args)
         self.assertEqual("account-free-category-navigation", instance.report["fixture"])
-        self.assertEqual({"expected": 5, "completed": 5, "passed": True}, instance.report["instrumentation"])
+        self.assertEqual({"expected": 6, "completed": 6, "passed": True}, instance.report["instrumentation"])
         self.assertEqual(list(CATEGORY_IMAGES), instance.report["screenshots"])
         self.assertEqual("required", instance.report["visual_inspection"])
 
@@ -289,7 +294,7 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
             with self.subTest(flag=flag), patch("sys.stderr", new_callable=io.StringIO), self.assertRaises(SystemExit):
                 bench.parser().parse_args(["episode-sources", flag, "untrusted"])
 
-    def test_startup_runs_only_fixed_cases_and_four_fresh_window_images(self):
+    def test_startup_runs_only_fixed_cases_and_five_fresh_window_images(self):
         self.protocol = STARTUP_SUCCESS
         instance = self.instance(command="startup-initialization")
         with self.mocks(instance) as (_, device):
@@ -299,7 +304,7 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
         removal = next(call for call in device.call_args_list if call.args[:3] == ("shell", "rm", "-f"))
         self.assertEqual(("shell", "rm", "-f", *[REMOTE + name for name in STARTUP_IMAGES]), removal.args)
         self.assertEqual("account-free-startup-initialization", instance.report["fixture"])
-        self.assertEqual({"expected": 3, "completed": 3, "passed": True}, instance.report["instrumentation"])
+        self.assertEqual({"expected": 4, "completed": 4, "passed": True}, instance.report["instrumentation"])
         self.assertEqual(list(STARTUP_IMAGES), instance.report["screenshots"])
 
     def test_startup_native_window_fixture_requires_api29_before_install(self):
@@ -310,8 +315,12 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
         self.assert_no_installs(device)
 
     def test_startup_protocol_rejects_other_suite_incomplete_or_failed_cases(self):
+        missing_retry_case = "".join(event(i, case, 1) + event(i, case, 0)
+                                    for i, case in enumerate(STARTUP_CASES[:-1], 1)).replace("numtests=15", "numtests=4") + (
+            "INSTRUMENTATION_RESULT: stream=\n\nOK (4 tests)\n\nINSTRUMENTATION_CODE: -1\n")
         for output in (SUCCESS, CATEGORY_SUCCESS, EPISODE_SUCCESS,
-                       STARTUP_SUCCESS.replace("OK (3 tests)", "OK (2 tests)"),
+                       missing_retry_case,
+                       STARTUP_SUCCESS.replace("OK (4 tests)", "OK (3 tests)"),
                        STARTUP_SUCCESS.replace("INSTRUMENTATION_STATUS_CODE: 0", "INSTRUMENTATION_STATUS_CODE: -2", 1),
                        STARTUP_SUCCESS.replace("INSTRUMENTATION_CODE: -1", "")):
             with self.subTest(output=output[-45:]):
@@ -320,11 +329,11 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
 
     def test_startup_capture_failure_cannot_reuse_an_earlier_image(self):
         self.protocol = STARTUP_SUCCESS
-        self.capture_override[STARTUP_IMAGES[0]] = answer(b"", 1, binary=True)
+        self.capture_override[STARTUP_IMAGES[-1]] = answer(b"", 1, binary=True)
         instance = self.instance(command="startup-initialization")
         with self.mocks(instance), self.assertRaises(bench.BenchError):
             instance.startup_initialization()
-        self.assertNotIn(STARTUP_IMAGES[0], instance.report["screenshots"])
+        self.assertNotIn(STARTUP_IMAGES[-1], instance.report["screenshots"])
 
     def test_startup_command_rejects_arbitrary_instrumentation_arguments(self):
         options = bench.parser().parse_args(["startup-initialization", "--test-timeout", "600"])
@@ -334,7 +343,7 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
                 bench.parser().parse_args(["startup-initialization", flag, "untrusted"])
 
     def test_category_protocol_rejects_playback_or_incomplete_or_failed_suite(self):
-        for index, output in enumerate((SUCCESS, CATEGORY_SUCCESS.replace("OK (5 tests)", "OK (4 tests)"),
+        for index, output in enumerate((SUCCESS, CATEGORY_SUCCESS.replace("OK (6 tests)", "OK (5 tests)"),
                        CATEGORY_SUCCESS.replace("INSTRUMENTATION_STATUS_CODE: 0", "INSTRUMENTATION_STATUS_CODE: -2", 1),
                        CATEGORY_SUCCESS.replace("INSTRUMENTATION_CODE: -1", ""),
                        CATEGORY_SUCCESS + "INSTRUMENTATION_CODE: -1\n")):
@@ -343,11 +352,21 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
         self.assertFalse(bench.controls.instrumentation_result(CATEGORY_SUCCESS, 0)["passed"])
         self.assertFalse(bench.controls.instrumentation_result(CATEGORY_SUCCESS, 1, "category-navigation")["passed"])
 
-    def test_category_requires_late_home_focus_case_despite_a_success_summary(self):
-        incomplete = "".join(event(i, case, 1) + event(i, case, 0)
-                             for i, case in enumerate(CATEGORY_CASES[:-1], 1)).replace("numtests=11", "numtests=5") + (
-            "INSTRUMENTATION_RESULT: stream=\n\nOK (5 tests)\n\nINSTRUMENTATION_CODE: -1\n")
-        self.assertFalse(bench.controls.instrumentation_result(incomplete, 0, "category-navigation")["passed"])
+    def test_category_requires_home_boundary_and_late_focus_cases_despite_a_success_summary(self):
+        for missing in CATEGORY_CASES[-2:]:
+            incomplete = "".join(event(i, case, 1) + event(i, case, 0)
+                                 for i, case in enumerate((case for case in CATEGORY_CASES if case != missing), 1)
+                                 ).replace("numtests=15", "numtests=6") + (
+                "INSTRUMENTATION_RESULT: stream=\n\nOK (6 tests)\n\nINSTRUMENTATION_CODE: -1\n")
+            self.assertFalse(bench.controls.instrumentation_result(incomplete, 0, "category-navigation")["passed"])
+
+    def test_category_missing_boundary_capture_cannot_reuse_an_earlier_image(self):
+        self.protocol = CATEGORY_SUCCESS
+        self.capture_override[CATEGORY_IMAGES[-1]] = answer(b"", 1, binary=True)
+        instance = self.instance(command="category-navigation")
+        with self.mocks(instance), self.assertRaises(bench.BenchError):
+            instance.category_navigation()
+        self.assertNotIn(CATEGORY_IMAGES[-1], instance.report["screenshots"])
 
     def test_category_capture_failure_cannot_reuse_a_playback_screenshot(self):
         self.protocol = CATEGORY_SUCCESS
@@ -518,7 +537,7 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
         self.assertEqual({"timeout": 600, "check": False}, calls[0].kwargs)
         self.assertFalse(any(call.args[:2] in [("shell", "input"), ("shell", "pm")] for call in device.call_args_list))
 
-    def test_exactly_six_fixed_stale_images_are_removed_before_instrumentation(self):
+    def test_exactly_nine_fixed_stale_images_are_removed_before_instrumentation(self):
         instance = self.instance()
         with self.mocks(instance) as (_, device):
             instance.playback_controls()
@@ -530,7 +549,7 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
         self.assertLess(cleanup_at, instrument_at)
         self.assertTrue(all(i < cleanup_at for i, command in enumerate(calls) if command[0] == "install"))
 
-    def test_all_six_fixed_valid_captures_are_required_and_written(self):
+    def test_all_nine_fixed_valid_captures_are_required_and_written(self):
         instance = self.instance()
         with self.mocks(instance) as (_, device):
             instance.playback_controls()
@@ -542,7 +561,7 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
         self.assertEqual([("exec-out", "cat", REMOTE + name) for name in bench.controls.SCREENSHOTS], [call.args for call in captures])
         self.assertTrue(all(call.kwargs == {"binary": True, "check": False} for call in captures))
 
-    def test_missing_corrupt_or_truncated_capture_fails_even_after_eleven_passes(self):
+    def test_missing_corrupt_or_truncated_capture_fails_even_after_fifteen_passes(self):
         name = bench.controls.SCREENSHOTS[0]
         for response in [answer(b"No such file", code=1, binary=True), answer(b"not png", binary=True), answer(ONE_PIXEL_PNG[:-1], binary=True)]:
             with self.subTest(response=response.stdout):
@@ -551,7 +570,20 @@ class PlaybackControlsRunnerTest(unittest.TestCase):
                 with self.mocks(instance), self.assertRaises(bench.BenchError):
                     instance.playback_controls()
                 self.assertTrue(instance.report["instrumentation"]["passed"])
-                self.assertEqual(5, len(instance.report["screenshots"]))
+                self.assertEqual(8, len(instance.report["screenshots"]))
+                self.assertNotIn(name, instance.report["screenshots"])
+
+    def test_each_shutdown_capture_must_be_fresh_even_when_a_valid_old_file_exists(self):
+        for name in ("shutdown-confirmation-cancel-focused.png",
+                     "shutdown-confirmation-shutdown-focused.png",
+                     "shutdown-failure-action-restored.png"):
+            with self.subTest(name=name):
+                self.capture_override = {name: answer(b"No such file", code=1, binary=True)}
+                instance = self.instance()
+                (instance.report_dir / name).write_bytes(ONE_PIXEL_PNG)
+                with self.mocks(instance), self.assertRaises(bench.BenchError):
+                    instance.playback_controls()
+                self.assertTrue(instance.report["instrumentation"]["passed"])
                 self.assertNotIn(name, instance.report["screenshots"])
 
     def test_bad_protocol_fails_and_never_records_raw_instrumentation(self):

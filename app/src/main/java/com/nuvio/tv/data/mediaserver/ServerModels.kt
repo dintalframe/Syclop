@@ -54,7 +54,8 @@ data class ServerConnection(
     val libraries: List<ServerLibrary> = emptyList(),
     val enabled: Boolean = true,
     val useCatalogMetadata: Boolean = false,
-    val importWatchState: Boolean = false
+    val importWatchState: Boolean = false,
+    val localHttpApproved: Boolean = false
 ) {
     val selectedLibraries: List<ServerLibrary>
         get() = libraries.filter { it.selected }
@@ -212,6 +213,7 @@ enum class ServerFailure {
     UNSUPPORTED,
     NOT_FOUND,
     INCOMPLETE,
+    INSECURE_CONNECTION,
     FAILED
 }
 

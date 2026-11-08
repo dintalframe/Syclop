@@ -345,6 +345,15 @@ class Bench:
     def continue_watching(self):
         self.fixed_fixtures("continue-watching")
 
+    def playback_badges(self):
+        self.fixed_fixtures("playback-badges")
+
+    def playback_end(self):
+        self.fixed_fixtures("playback-end")
+
+    def hero_description(self):
+        self.fixed_fixtures("hero-description")
+
     def fixed_fixtures(self, suite):
         """Run only the fixed synthetic fixtures, preserving the emulator's app data."""
         if suite not in controls.SUITES:
@@ -398,7 +407,8 @@ class Bench:
             if not result.stdout.splitlines() or result.stdout.splitlines()[-1].strip() != "Success":
                 raise BenchError("Emulator did not confirm the fixture APK installation.")
         remote = "/sdcard/Android/data/" + PACKAGE + "/files/"
-        self.device("shell", "rm", "-f", *[remote + name for name in screenshots])
+        if screenshots:
+            self.device("shell", "rm", "-f", *[remote + name for name in screenshots])
         print("Running the %d fixed %s fixtures on" % (count, suite), self.serial, flush=True)
         result = self.device("shell", "am", "instrument", "-w", "-r", "-e", "class", ",".join(tests),
                              controls.TEST_PACKAGE + "/" + controls.RUNNER,
@@ -416,12 +426,15 @@ class Bench:
                 continue
             (self.report_dir / name).write_bytes(capture.stdout)
             self.report["screenshots"].append(name)
-        self.report["visual_inspection"] = "required"
+        self.report["visual_inspection"] = "required" if screenshots else "not-applicable-no-visuals"
         if not self.report["instrumentation"]["passed"]:
             raise BenchError("The required fixed fixture tests did not all pass.")
         if len(self.report["screenshots"]) != len(screenshots):
             raise BenchError("The fixed fixture run did not produce all fresh valid screenshots.")
-        print("All %d fixtures passed; inspect the %d screenshots before accepting the visuals." % (count, len(screenshots)))
+        if screenshots:
+            print("All %d fixtures passed; inspect the %d screenshots before accepting the visuals." % (count, len(screenshots)))
+        else:
+            print("All %d fixtures passed." % count)
 
     def apk(self):
         return Path(self.options.apk).expanduser().resolve() if self.options.apk else self.project.parent / "dist/development/syclop-release.apk"
@@ -638,7 +651,7 @@ def parser():
     playback.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     playback.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
     playback.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
-    category = commands.add_parser("category-navigation", help="Run the five fixed account-free category navigation fixtures")
+    category = commands.add_parser("category-navigation", help="Run the six fixed account-free category navigation fixtures")
     category.set_defaults(command="category_navigation")
     category.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     category.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
@@ -648,7 +661,7 @@ def parser():
     episode.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     episode.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
     episode.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
-    startup = commands.add_parser("startup-initialization", help="Run three fixed account-free startup focus/window fixtures (API29+)")
+    startup = commands.add_parser("startup-initialization", help="Run four fixed account-free startup focus/window fixtures (API29+)")
     startup.set_defaults(command="startup_initialization")
     startup.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     startup.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
@@ -663,6 +676,21 @@ def parser():
     watching.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
     watching.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
     watching.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
+    badges = commands.add_parser("playback-badges", help="Run five fixed active-format badge and remote-focus fixtures")
+    badges.set_defaults(command="playback_badges")
+    badges.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
+    badges.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
+    badges.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
+    playback_end = commands.add_parser("playback-end", help="Run two fixed native Media3 renderer-end and seek-recovery fixtures")
+    playback_end.set_defaults(command="playback_end")
+    playback_end.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
+    playback_end.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
+    playback_end.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
+    hero = commands.add_parser("hero-description", help="Run four fixed synopsis scrolling and accessibility fixtures")
+    hero.set_defaults(command="hero_description")
+    hero.add_argument("--apk", help="Debug app APK under dist/development; default syclop-debug.apk")
+    hero.add_argument("--test-apk", help="Test APK under dist/development; default syclop-ui-tests.apk")
+    hero.add_argument("--test-timeout", type=bounded_integer(60, 600), default=300)
     commands.add_parser("stop")
     reset = commands.add_parser("reset", help="Explicit deletion, ownership marker required")
     reset.add_argument("--confirm-reset", action="store_true")
@@ -678,7 +706,7 @@ def main(argv=None):
     bench = None
     try:
         bench = Bench(options)
-        if options.command in ("status", "install", "smoke", "playback_controls", "category_navigation", "episode_sources", "startup_initialization", "progressive_sources", "continue_watching"):
+        if options.command in ("status", "install", "smoke", "playback_controls", "category_navigation", "episode_sources", "startup_initialization", "progressive_sources", "continue_watching", "playback_badges", "playback_end", "hero_description"):
             bench.begin_report()
         getattr(bench, options.command)()
         bench.save_report(True)

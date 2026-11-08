@@ -1,7 +1,6 @@
 package com.nuvio.tv.core.player
 
 import android.app.Activity
-import android.content.Context
 import io.mockk.mockk
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -12,16 +11,16 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 import kotlin.math.abs
 
 /**
  * Regression suite for Auto Frame Rate (AFR) pure logic in [FrameRateUtils].
  *
  * Covers behaviour introduced after 0.7.10-beta:
- * - NextLib header bypass (auth vs synthetic UA/Connection/Range)
+ * - local container and remote extractor safety
  * - FPS cache keys (filename, query stripping, header sensitivity)
  * - snapToStandardRate / cinema rate buckets
- * - live / mkv / scheme gating for NextLib
  */
 class FrameRateUtilsAfrTest {
 
@@ -76,180 +75,35 @@ class FrameRateUtilsAfrTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // hasNextLibBlockingHeaders / shouldUseNextLibProbe — 0.7.10 regression
-    // ─────────────────────────────────────────────────────────────────────────
+    // Native parsing only sees real, local container files.
+    // ──────────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `synthetic headers alone do not block NextLib — UA Connection Range`() {
-        assertFalse(
-            "User-Agent alone must not block NextLib (0.7.10 parity regression)",
-            FrameRateUtils.hasNextLibBlockingHeaders(mapOf("User-Agent" to "NuvioTV/1.0"))
-        )
-        assertFalse(
-            FrameRateUtils.hasNextLibBlockingHeaders(mapOf("Connection" to "close"))
-        )
-        assertFalse(
-            FrameRateUtils.hasNextLibBlockingHeaders(mapOf("Range" to "bytes=0-1"))
-        )
-        assertFalse(
-            FrameRateUtils.hasNextLibBlockingHeaders(
-                mapOf(
-                    "User-Agent" to "NuvioTV/1.0",
-                    "Connection" to "close",
-                    "Range" to "bytes=0-"
-                )
-            )
-        )
-        // Case-insensitive header names
-        assertFalse(
-            FrameRateUtils.hasNextLibBlockingHeaders(
-                mapOf("user-agent" to "x", "connection" to "close", "range" to "bytes=0-")
-            )
-        )
+    fun `a downloaded playlist cannot become a native input by using a video extension`() {
+        val file = File.createTempFile("afr-playlist-", ".mkv")
+        try {
+            file.writeText("#EXTM3U\n#EXTINF:10,\nhttps://media.example.test/clip.ts\n")
+            assertFalse(FrameRateUtils.canProbeLocalContainerWithNextLib(file))
+            assertFalse(FrameRateUtils.canProbeLocalContainerWithNextLib(File("https://media.example.test/clip.mkv")))
+        } finally {
+            file.delete()
+        }
     }
 
     @Test
-    fun `auth and cookie headers block NextLib`() {
-        assertTrue(FrameRateUtils.hasNextLibBlockingHeaders(mapOf("Authorization" to "Bearer tok")))
-        assertTrue(FrameRateUtils.hasNextLibBlockingHeaders(mapOf("Cookie" to "session=abc")))
-        assertTrue(FrameRateUtils.hasNextLibBlockingHeaders(mapOf("X-Auth-Token" to "secret")))
-        assertTrue(FrameRateUtils.hasNextLibBlockingHeaders(mapOf("Proxy-Authorization" to "Basic x")))
-        // Auth mixed with synthetic headers still blocks
-        assertTrue(
-            FrameRateUtils.hasNextLibBlockingHeaders(
-                mapOf(
-                    "User-Agent" to "NuvioTV",
-                    "Authorization" to "Bearer tok",
-                    "Connection" to "close"
-                )
-            )
-        )
+    fun `local probe accepts container headers from partial range files`() {
+        val file = File.createTempFile("afr-header-", ".tmp")
+        try {
+            file.writeBytes(byteArrayOf(0x1a, 0x45, 0xdf.toByte(), 0xa3.toByte()))
+            assertTrue(FrameRateUtils.canProbeLocalContainerWithNextLib(file))
+            file.writeBytes(byteArrayOf(0, 0, 0, 16) + "ftypisom".toByteArray() + ByteArray(4))
+            assertTrue(FrameRateUtils.canProbeLocalContainerWithNextLib(file))
+        } finally {
+            file.delete()
+        }
     }
 
-    @Test
-    fun `blank header values do not block NextLib`() {
-        assertFalse(
-            FrameRateUtils.hasNextLibBlockingHeaders(
-                mapOf("Authorization" to "", "Cookie" to "   ")
-            )
-        )
-    }
-
-    @Test
-    fun `Accept-like headers block NextLib today — documented current policy`() {
-        // Not necessarily ideal long-term, but this locks current behaviour so
-        // accidental changes to the allowlist are caught.
-        assertTrue(FrameRateUtils.hasNextLibBlockingHeaders(mapOf("Accept" to "*/*")))
-        assertTrue(FrameRateUtils.hasNextLibBlockingHeaders(mapOf("Referer" to "https://example.com")))
-        assertTrue(FrameRateUtils.hasNextLibBlockingHeaders(mapOf("Origin" to "https://example.com")))
-    }
-
-    @Test
-    fun `shouldUseNextLibProbe rejects blank and live streams`() {
-        assertFalse(FrameRateUtils.shouldUseNextLibProbe("", emptyMap()))
-        assertFalse(FrameRateUtils.shouldUseNextLibProbe("   ", emptyMap()))
-        assertFalse(
-            FrameRateUtils.shouldUseNextLibProbe(
-                "https://cdn.example.com/live/manifest.mpd",
-                emptyMap()
-            )
-        )
-        assertFalse(
-            FrameRateUtils.shouldUseNextLibProbe(
-                "https://cdn.example.com/live/foo.ism/manifest?token=1",
-                emptyMap()
-            )
-        )
-    }
-
-    @Test
-    fun `shouldUseNextLibProbe allows public http https mkv and local schemes`() {
-        assertTrue(
-            FrameRateUtils.shouldUseNextLibProbe(
-                "https://cdn.example.com/movie.mkv",
-                emptyMap()
-            )
-        )
-        assertTrue(
-            FrameRateUtils.shouldUseNextLibProbe(
-                "http://cdn.example.com/movie.mp4",
-                emptyMap()
-            )
-        )
-        assertTrue(
-            FrameRateUtils.shouldUseNextLibProbe(
-                "file:///storage/emulated/0/movie.mkv",
-                emptyMap()
-            )
-        )
-        assertTrue(
-            FrameRateUtils.shouldUseNextLibProbe(
-                "content://media/external/video/media/1",
-                emptyMap()
-            )
-        )
-        // MKV extension short-circuits even without scheme recognition
-        assertTrue(
-            FrameRateUtils.shouldUseNextLibProbe(
-                "https://cdn.example.com/path/Movie.Name.1080p.mkv?token=abc",
-                emptyMap()
-            )
-        )
-    }
-
-    @Test
-    fun `shouldUseNextLibProbe allows streams with only synthetic headers — 0_7_10 parity`() {
-        val publicUrl = "https://public.cdn.example.com/film.mkv"
-        val synthetic = mapOf(
-            "User-Agent" to "Mozilla/5.0 NuvioTV",
-            "Connection" to "close"
-        )
-        assertTrue(
-            "Public streams that only inject UA must still use NextLib (regression vs broken intermediate)",
-            FrameRateUtils.shouldUseNextLibProbe(publicUrl, synthetic)
-        )
-    }
-
-    @Test
-    fun `shouldUseNextLibProbe bypasses NextLib for authenticated debrid streams`() {
-        val debridUrl = "https://real-debrid.com/d/ABC123/movie.mkv"
-        assertFalse(
-            FrameRateUtils.shouldUseNextLibProbe(
-                debridUrl,
-                mapOf(
-                    "User-Agent" to "NuvioTV",
-                    "Authorization" to "Bearer secret",
-                    "Cookie" to "auth=1"
-                )
-            )
-        )
-    }
-
-    @Test
-    fun `detectFrameRateFromNextLib returns null immediately when blocked by headers`() {
-        // Gate returns null before MediaInfoBuilder runs — Context must not be required.
-        val context = mockk<Context>(relaxed = true)
-        val result = FrameRateUtils.detectFrameRateFromNextLib(
-            context = context,
-            sourceUrl = "https://cdn.example.com/a.mkv",
-            headers = mapOf("Authorization" to "Bearer x")
-        )
-        assertNull(result)
-    }
-
-    @Test
-    fun `detectFrameRateFromNextLib returns null for live dash without touching heavy probe`() {
-        val context = mockk<Context>(relaxed = true)
-        assertNull(
-            FrameRateUtils.detectFrameRateFromNextLib(
-                context = context,
-                sourceUrl = "https://cdn.example.com/live.mpd",
-                headers = emptyMap()
-            )
-        )
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────────
     // Header helpers used by preflight
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -280,21 +134,6 @@ class FrameRateUtilsAfrTest {
         assertEquals("Bearer x", probe["Authorization"])
         assertEquals("NuvioTV", probe["User-Agent"])
         assertFalse(probe.keys.any { it.equals("Range", ignoreCase = true) })
-    }
-
-    @Test
-    fun `NextLib decision uses stream headers not extractor Connection synthetic`() {
-        // Preflight passes streamHeaders (no Connection) to NextLib.
-        // Connection alone must not flip the gate — and streamHeaders never inject it.
-        val original = mapOf("User-Agent" to "NuvioTV")
-        val stream = FrameRateUtils.streamHeadersForAfrProbe(original)
-        val probe = FrameRateUtils.extractorProbeHeaders(original)
-
-        assertTrue(FrameRateUtils.shouldUseNextLibProbe("https://cdn.example.com/a.mkv", stream))
-        // Even if someone mistakenly passed probe headers, Connection is ignored
-        assertTrue(FrameRateUtils.shouldUseNextLibProbe("https://cdn.example.com/a.mkv", probe))
-        assertEquals("close", probe["Connection"])
-        assertNull(stream["Connection"])
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -679,75 +518,6 @@ class FrameRateUtilsAfrTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Cross-scenario matrix: probe path selection summary
-    // ─────────────────────────────────────────────────────────────────────────
-
-    @Test
-    fun `probe path matrix matches 0_7_10 expectations for common stream types`() {
-        data class Case(
-            val name: String,
-            val url: String,
-            val headers: Map<String, String>,
-            val expectNextLib: Boolean
-        )
-
-        val cases = listOf(
-            Case("public mkv no headers", "https://cdn/x.mkv", emptyMap(), true),
-            Case("public mp4 no headers", "https://cdn/x.mp4", emptyMap(), true),
-            Case("public + UA only", "https://cdn/x.mkv", mapOf("User-Agent" to "Nuvio"), true),
-            Case(
-                "public + UA + Connection",
-                "https://cdn/x.mkv",
-                mapOf("User-Agent" to "Nuvio", "Connection" to "close"),
-                true
-            ),
-            Case(
-                "debrid auth",
-                "https://cdn/x.mkv",
-                mapOf("Authorization" to "Bearer t"),
-                false
-            ),
-            Case(
-                "debrid cookie",
-                "https://cdn/x.mkv",
-                mapOf("Cookie" to "a=b"),
-                false
-            ),
-            Case(
-                "debrid auth + UA (realistic preflight streamHeaders)",
-                "https://cdn/x.mkv",
-                FrameRateUtils.streamHeadersForAfrProbe(
-                    mapOf(
-                        "User-Agent" to "Nuvio",
-                        "Authorization" to "Bearer t",
-                        "Range" to "bytes=0-"
-                    )
-                ),
-                false
-            ),
-            Case(
-                "public after streamHeadersForAfrProbe strips Range",
-                "https://cdn/x.mkv",
-                FrameRateUtils.streamHeadersForAfrProbe(
-                    mapOf("User-Agent" to "Nuvio", "Range" to "bytes=0-")
-                ),
-                true
-            ),
-            Case("dash live", "https://cdn/live.mpd", emptyMap(), false),
-            Case("ism live", "https://cdn/live.ism/manifest", emptyMap(), false),
-            Case("blank url", "", emptyMap(), false),
-            Case("unsupported scheme rtmp", "rtmp://cdn/stream", emptyMap(), false),
-        )
-
-        cases.forEach { c ->
-            assertEquals(
-                "Failed case: ${c.name}",
-                c.expectNextLib,
-                FrameRateUtils.shouldUseNextLibProbe(c.url, c.headers)
-            )
-        }
-    }
-
     @Test
     fun `snap boundary edges at band limits`() {
         // Lower edge of NTSC film band is inclusive 23.90
@@ -818,7 +588,6 @@ class FrameRateUtilsAfrTest {
         val streamUrl = "https://example.com/cdn/sample_movie_2160p.iT.WEB-DL.UNRATED.DV.HDR10%2B.MULTi%5BTest%5D.mp4"
 
         assertTrue("Must be identified as MP4 source", FrameRateUtils.isMp4Source(streamUrl))
-        assertTrue("Must pass NextLib probe eligibility", FrameRateUtils.shouldUseNextLibProbe(streamUrl, emptyMap()))
         assertFalse("Must not be identified as live stream", FrameRateUtils.isLiveStreamUrl(streamUrl))
 
         val key = FrameRateUtils.buildCacheKey(streamUrl, emptyMap(), null)

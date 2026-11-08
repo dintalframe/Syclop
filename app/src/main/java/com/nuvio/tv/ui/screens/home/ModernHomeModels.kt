@@ -11,6 +11,7 @@ import com.nuvio.tv.domain.model.CollectionFolder
 import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.PosterShape
 import com.nuvio.tv.domain.model.stableKey
+import com.nuvio.tv.domain.model.stableItemKey
 import com.nuvio.tv.ui.util.localizeEpisodeTitle
 import com.nuvio.tv.ui.util.localizedContentType
 import com.nuvio.tv.ui.util.computeAirDateBadgeText
@@ -158,6 +159,7 @@ data class ModernHomePresentationState(
 
 @Immutable
 internal data class ModernHeroSceneState(
+    val itemKey: String?,
     val heroBackdrop: String?,
     val preview: HeroPreview?,
     val enrichmentActive: Boolean,
@@ -522,7 +524,11 @@ internal fun buildCatalogItem(
         },
         heroPreview = heroPreview,
         payload = ModernPayload.Catalog(
-            focusKey = "${row.key()}::${item.id}",
+            focusKey = if (row.addonId == WATCHED_HISTORY_ADDON_ID) {
+                row.stableItemKey(item, occurrence)
+            } else {
+                "${row.key()}::${item.id}"
+            },
             itemId = item.id,
             itemType = item.apiType,
             addonBaseUrl = row.addonBaseUrl,
@@ -605,6 +611,7 @@ internal fun catalogRowTitle(
     strTypeSeries: String = ""
 ): String {
     val catalogName = row.catalogName.replaceFirstChar { it.uppercase() }
+    if (row.addonId == WATCHED_HISTORY_ADDON_ID) return catalogName
     if (!showCatalogTypeSuffix) return catalogName
     val typeLabel = when (row.apiType.lowercase()) {
         "movie" -> strTypeMovie.ifBlank { row.apiType.replaceFirstChar { it.uppercase() } }

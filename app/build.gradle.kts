@@ -184,9 +184,6 @@ android {
         buildConfigField("String", "SPONSOR_NAMES", buildConfigString(""))
         buildConfigField("String", "SENTRY_DSN", buildConfigString(""))
 
-        // In-app updater (GitHub Releases)
-        buildConfigField("String", "GITHUB_OWNER", buildConfigString(""))
-        buildConfigField("String", "GITHUB_REPO", buildConfigString(""))
     }
 
     flavorDimensions += "distribution"
@@ -194,7 +191,7 @@ android {
         create("full") {
             dimension = "distribution"
             buildConfigField("boolean", "FEATURE_PLUGINS_ENABLED", "false")
-            buildConfigField("boolean", "FEATURE_IN_APP_UPDATES_ENABLED", "false")
+            buildConfigField("boolean", "FEATURE_IN_APP_UPDATES_ENABLED", "true")
             buildConfigField("boolean", "FEATURE_IN_APP_TRAILERS_ENABLED", "true")
             buildConfigField("boolean", "FEATURE_EXTERNAL_TRAILERS_ENABLED", "true")
             buildConfigField("boolean", "FEATURE_EXTERNAL_PLAYBACK_KEEP_ALIVE_ENABLED", "true")
@@ -528,7 +525,8 @@ dependencies {
     // - Guava: needed by lib-common (ImmutableList/ImmutableSet in Tracks, Player API)
     // - media3-database: needed by lib-datasource (cache/storage layer)
     // - annotation-experimental: needed by lib-common (OptIn annotations)
-    implementation("com.google.guava:guava:33.3.1-android")
+    implementation("com.google.guava:guava:33.7.2-android")
+    implementation("com.google.re2j:re2j:1.8")
     implementation("androidx.media3:media3-database:1.8.0")
     implementation("androidx.annotation:annotation-experimental:1.3.1")
 
@@ -560,7 +558,7 @@ dependencies {
     implementation(files("libs/nuvio-libass-release.aar"))
     // Local nextlib-mediainfo fork (static FFmpeg; no libav*.so in final AAR)
     implementation(files("libs/nextlib-mediainfo-local.aar"))
-    implementation("io.github.abdallahmehiz:mpv-android-lib:0.1.12")
+    implementation(files("libs/mpv-android-local.aar"))
     implementation("dev.chrisbanes.haze:haze-android:1.7.2") {
         exclude(group = "org.jetbrains.compose.ui")
         exclude(group = "org.jetbrains.compose.foundation")
@@ -568,10 +566,10 @@ dependencies {
 
     implementation(libs.gson)
 
-    add("fullImplementation", files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
     implementation(libs.jsoup)
-    add("fullImplementation", "com.fasterxml.jackson.core:jackson-databind:2.17.0")
-    add("fullImplementation", "com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
+    add("fullImplementation", platform("com.fasterxml.jackson:jackson-bom:2.18.12"))
+    add("fullImplementation", "com.fasterxml.jackson.core:jackson-databind")
+    add("fullImplementation", "com.fasterxml.jackson.module:jackson-module-kotlin")
     add("fullImplementation", libs.nicehttp)
     add("fullImplementation", libs.conscrypt.android)
     add("fullImplementation", "com.github.recloudstream.cloudstream:library:${libs.versions.cloudstream.get()}") {
@@ -585,7 +583,6 @@ dependencies {
     // Markdown rendering
     implementation(libs.markdown.renderer.m3)
 
-    add("fullImplementation", libs.crypto.js)
     // QR code + local server for addon management
     implementation(libs.nanohttpd)
     implementation(libs.zxing.core)
@@ -607,7 +604,6 @@ dependencies {
     implementation("androidx.metrics:metrics-performance:1.0.0-rc01")  // JankStats
     debugImplementation("androidx.compose.runtime:runtime-tracing")
 
-    add("fullImplementation", "org.webjars.npm:crypto-js:4.2.0")
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

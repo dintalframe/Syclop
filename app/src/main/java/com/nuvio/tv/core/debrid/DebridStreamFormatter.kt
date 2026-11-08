@@ -7,6 +7,7 @@ import com.nuvio.tv.domain.model.DebridStreamEncode
 import com.nuvio.tv.domain.model.DebridStreamQuality
 import com.nuvio.tv.domain.model.DebridStreamResolution
 import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.domain.model.StreamAvailabilityScope
 import com.nuvio.tv.domain.model.StreamBadge
 import com.nuvio.tv.domain.model.StreamClientResolve
 import com.nuvio.tv.domain.model.StreamClientResolveParsed
@@ -22,11 +23,14 @@ class DebridStreamFormatter @Inject constructor(
         stream: Stream,
         settings: DebridSettings,
         compiledBadgeFilters: List<CompiledStreamBadgeFilter> = emptyList(),
-        facts: DirectDebridStreamFilter.StreamFacts? = null
+        facts: DirectDebridStreamFilter.StreamFacts? = null,
+        scope: StreamAvailabilityScope? = null,
+        nowMs: Long = System.currentTimeMillis()
     ): Stream {
         if (!stream.isManagedDebridForFormatting()) return stream
         val matchedBadges = StreamBadgeMatcher.matchedBadges(stream, compiledBadgeFilters)
-        val values = buildValues(stream, matchedBadges, facts ?: DirectDebridStreamFilter.facts(stream, settings))
+        val values = buildValues(stream, matchedBadges, facts ?: DirectDebridStreamFilter.facts(stream, settings),
+            NativeDebridServiceLabels.services(stream, settings, scope, nowMs))
         val formattedName = engine.render(settings.streamNameTemplate, values)
             .lineSequence()
             .joinToString(" ") { it.trim() }
@@ -49,7 +53,8 @@ class DebridStreamFormatter @Inject constructor(
     private fun buildValues(
         stream: Stream,
         matchedBadges: List<StreamBadge>,
-        facts: DirectDebridStreamFilter.StreamFacts
+        facts: DirectDebridStreamFilter.StreamFacts,
+        services: NativeDebridServiceLabels.Services
     ): Map<String, Any?> {
         val resolve = stream.clientResolve
         val raw = resolve?.stream?.raw
@@ -101,9 +106,9 @@ class DebridStreamFormatter @Inject constructor(
             "stream.regexMatched" to matchedBadgeNames,
             "stream.rseMatched" to matchedBadgeNames,
             "stream.type" to streamType(stream, resolve),
-            "service.cached" to serviceCached(stream, resolve),
-            "service.shortName" to serviceShortName(stream, resolve),
-            "service.name" to serviceName(stream, resolve),
+            "service.cached" to (services.resolved || services.verifiedCached),
+            "service.shortName" to services.shortName,
+            "service.name" to services.name,
             "addon.name" to stream.addonName
         )
     }
@@ -116,29 +121,6 @@ class DebridStreamFormatter @Inject constructor(
             else -> resolve?.type.orEmpty()
         }
     }
-
-    private fun serviceCached(stream: Stream, resolve: StreamClientResolve?): Boolean? {
-        return when (stream.debridCacheStatus?.state) {
-            StreamDebridCacheState.CACHED -> true
-            StreamDebridCacheState.NOT_CACHED -> false
-            StreamDebridCacheState.CHECKING,
-            StreamDebridCacheState.UNKNOWN,
-            null -> resolve?.isCached
-        }
-    }
-
-    private fun serviceShortName(stream: Stream, resolve: StreamClientResolve?): String {
-        val extension = resolve?.serviceExtension?.takeIf { it.isNotBlank() }
-        if (extension != null) return extension
-        return DebridProviders.shortName(serviceId(stream, resolve))
-    }
-
-    private fun serviceName(stream: Stream, resolve: StreamClientResolve?): String {
-        return DebridProviders.displayName(serviceId(stream, resolve))
-    }
-
-    private fun serviceId(stream: Stream, resolve: StreamClientResolve?): String? =
-        stream.debridCacheStatus?.providerId ?: resolve?.service
 
     private fun Stream.isManagedDebridForFormatting(): Boolean =
         isDirectDebrid() || debridCacheStatus != null

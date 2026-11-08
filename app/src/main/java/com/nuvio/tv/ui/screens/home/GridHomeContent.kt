@@ -88,9 +88,6 @@ import com.nuvio.tv.ui.components.GridContinueWatchingSection
 import com.nuvio.tv.core.poster.withCustomPosterUrls
 import com.nuvio.tv.domain.model.ContinueWatchingCardStyle
 import com.nuvio.tv.ui.components.HeroCarousel
-import com.nuvio.tv.ui.components.SyclopBrandAnimation
-import com.nuvio.tv.ui.components.SyclopBrandState
-import com.nuvio.tv.ui.components.LocalStartupSplashEnabled
 import com.nuvio.tv.ui.components.PosterCardDefaults
 import com.nuvio.tv.ui.components.PosterCardStyle
 import com.nuvio.tv.ui.components.collectionFolderCardImageUrl
@@ -325,7 +322,10 @@ fun GridHomeContent(
                 is GridItem.Hero -> "hero"
                 is GridItem.SectionDivider -> "divider_${item.addonBaseUrl.hashCode()}_${item.catalogId}_${item.addonId}_${item.type}"
                 is GridItem.Content -> {
-                    val base = "content_${item.addonBaseUrl.hashCode()}_${item.catalogId}_${item.item.id}"
+                    val identity = if (item.addonId == WATCHED_HISTORY_ADDON_ID) {
+                        "${item.item.apiType}:${item.item.id}"
+                    } else item.item.id
+                    val base = "content_${item.addonBaseUrl.hashCode()}_${item.catalogId}_$identity"
                     val count = occurrences.getOrDefault(base, 0)
                     occurrences[base] = count + 1
                     "${base}_$count"
@@ -356,14 +356,7 @@ fun GridHomeContent(
     }
 
     if (deferGridContent) {
-        if (!LocalStartupSplashEnabled.current) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                SyclopBrandAnimation(SyclopBrandState.Loading)
-            }
-        }
+        HomeStartupIndicator()
         return
     }
 
@@ -728,7 +721,8 @@ fun GridHomeContent(
                             "series" -> strTypeSeries
                             else -> gridItem.type.replaceFirstChar { it.uppercase() }
                         }
-                        val displayName = if (uiState.catalogTypeSuffixEnabled && typeLabel.isNotBlank()) {
+                        val displayName = if (uiState.catalogTypeSuffixEnabled && typeLabel.isNotBlank() &&
+                            gridItem.addonId != WATCHED_HISTORY_ADDON_ID) {
                             "${gridItem.catalogName.replaceFirstChar { it.uppercase() }} - $typeLabel"
                         } else {
                             gridItem.catalogName.replaceFirstChar { it.uppercase() }
@@ -752,9 +746,9 @@ fun GridHomeContent(
                         }
                         GridContentCard(
                             item = gridItem.item,
-                            focusRequester = focusRequester ?: focusRequesters.getOrPut(itemKey) { FocusRequester() },
+                            focusRequester = focusRequester ?: focusRequesters.getOrPut(itemKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() },
                             posterCardStyle = posterCardStyle,
-                            showLabel = uiState.posterLabelsEnabled,
+                            showLabel = uiState.posterLabelsEnabled || gridItem.addonId == WATCHED_HISTORY_ADDON_ID,
                             isWatched = isCatalogItemWatched(gridItem.item),
                             onFocused = remember(itemKey, gridItem.item) {
                                 {
@@ -803,7 +797,7 @@ fun GridHomeContent(
                         }
                         SeeAllGridCard(
                             posterCardStyle = posterCardStyle,
-                            focusRequester = focusRequester ?: focusRequesters.getOrPut(itemKey) { FocusRequester() },
+                            focusRequester = focusRequester ?: focusRequesters.getOrPut(itemKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() },
                             onFocused = remember(itemKey) {
                                 {
                                     lastFocusedGridItemKey.value = itemKey
@@ -831,7 +825,7 @@ fun GridHomeContent(
                             collectionTitle = gridItem.collectionTitle,
                             focusGlowEnabled = gridItem.focusGlowEnabled,
                             posterCardStyle = posterCardStyle,
-                            focusRequester = focusRequesters.getOrPut(itemKey) { FocusRequester() },
+                            focusRequester = focusRequesters.getOrPut(itemKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() },
                             onFocused = remember(itemKey) { { lastFocusedGridItemKey.value = itemKey; activeCwRowKey.value = null } },
                             onClick = remember(gridItem.collectionId, gridItem.folder.id) {
                                 {

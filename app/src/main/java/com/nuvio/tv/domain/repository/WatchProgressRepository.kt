@@ -1,14 +1,22 @@
 package com.nuvio.tv.domain.repository
 
+import com.nuvio.tv.data.local.WatchProgressSource
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.model.WatchedItem
+import com.nuvio.tv.domain.model.WatchedHistoryItem
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
 
 /**
  * Repository for managing watch progress data.
  */
 interface WatchProgressRepository {
+    /** Resolved service, including Automatic connection changes; never returns AUTO. */
+    val effectiveProgressSource: StateFlow<WatchProgressSource>
+        get() = MutableStateFlow(WatchProgressSource.NUVIO_SYNC)
+
     
     /**
      * Get all watch progress items sorted by last watched (most recent first)
@@ -62,6 +70,9 @@ interface WatchProgressRepository {
      * Get completed series episode seeds suitable for building a lightweight "Next Up".
      */
     fun observeNextUpSeeds(): Flow<List<WatchProgress>>
+
+    /** Bounded completed history from the selected supported account; never synthesized from Continue Watching. */
+    fun observeWatchedHistory(): Flow<List<WatchedHistoryItem>> = flowOf(emptyList())
 
     /**
      * Emits true when the remote progress source has completed its initial load.
@@ -117,6 +128,19 @@ interface WatchProgressRepository {
     suspend fun getShowIdSiblings(): Map<String, Set<String>>
 
     fun isWatchedByVideoId(videoId: String, episode: Int): Boolean? = null
+
+    /** Playback writes retain local profile history, but never rebind an app-cloud outbox owner. */
+    suspend fun savePlaybackProgress(
+        progress: WatchProgress,
+        profileId: Int,
+        origin: com.nuvio.tv.core.tracking.TrackingPlaybackOrigin?,
+        completed: Boolean = false,
+        syncRemote: Boolean = true
+    ) {
+        val local = if (completed) progress.copy(position = progress.duration.coerceAtLeast(1L),
+            duration = progress.duration.coerceAtLeast(1L), progressPercent = 100f) else progress
+        saveProgress(local, profileId, syncRemote = false)
+    }
 
     /**
      * Save or update watch progress

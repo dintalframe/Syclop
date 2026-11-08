@@ -1,0 +1,3393 @@
+--- /dev/null
++++ b/libraries/common/src/main/java/androidx/media3/common/ByteBufferDataReader.java
+@@ -0,0 +1,13 @@
++// SPDX-License-Identifier: Apache-2.0
++package androidx.media3.common;
++
++import androidx.media3.common.util.UnstableApi;
++import java.io.IOException;
++import java.nio.ByteBuffer;
++
++@UnstableApi
++public interface ByteBufferDataReader extends DataReader {
++  boolean supportsByteBufferRead();
++
++  int read(ByteBuffer buffer, int length) throws IOException;
++}
+--- /dev/null
++++ b/libraries/common/src/main/java/androidx/media3/common/NuvioEngineConfig.java
+@@ -0,0 +1,91 @@
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
++package androidx.media3.common;
++
++import androidx.media3.common.util.UnstableApi;
++
++@UnstableApi
++public final class NuvioEngineConfig {
++    public static final int STOCK_EXTRACTOR_SCRATCH_SIZE = 4096;
++    public static final int NUVIO_EXTRACTOR_SCRATCH_SIZE = 65536;
++    private static volatile NuvioEngineConfig instance = stockMode();
++    private final AllocationMode allocationMode;
++    private final DataPipelineMode dataPipelineMode;
++    private final int extractorScratchSize;
++
++    public enum AllocationMode {
++        STOCK_HEAP,
++        NATIVE_OFF_HEAP
++    }
++
++    public enum DataPipelineMode {
++        STOCK,
++        ZERO_COPY
++    }
++
++    private NuvioEngineConfig(Builder builder) {
++        this.allocationMode = builder.allocationMode;
++        this.dataPipelineMode = builder.dataPipelineMode;
++        this.extractorScratchSize = builder.extractorScratchSize;
++    }
++
++    public static NuvioEngineConfig get() {
++        return instance;
++    }
++
++    public static void set(NuvioEngineConfig config) {
++        instance = config;
++    }
++
++    public static NuvioEngineConfig nuvioMode() {
++        return new Builder().setAllocationMode(AllocationMode.NATIVE_OFF_HEAP).setDataPipelineMode(DataPipelineMode.ZERO_COPY).setExtractorScratchSize(NUVIO_EXTRACTOR_SCRATCH_SIZE).build();
++    }
++
++    public static NuvioEngineConfig stockMode() {
++        return new Builder().setAllocationMode(AllocationMode.STOCK_HEAP).setDataPipelineMode(DataPipelineMode.STOCK).setExtractorScratchSize(STOCK_EXTRACTOR_SCRATCH_SIZE).build();
++    }
++
++    public AllocationMode getAllocationMode() {
++        return this.allocationMode;
++    }
++
++    public DataPipelineMode getDataPipelineMode() {
++        return this.dataPipelineMode;
++    }
++
++    public int getExtractorScratchSize() {
++        return this.extractorScratchSize;
++    }
++
++    public boolean isNativeAllocationEnabled() {
++        return this.allocationMode == AllocationMode.NATIVE_OFF_HEAP;
++    }
++
++    public boolean isZeroCopyEnabled() {
++        return this.dataPipelineMode == DataPipelineMode.ZERO_COPY;
++    }
++
++    public static final class Builder {
++        private AllocationMode allocationMode = AllocationMode.STOCK_HEAP;
++        private DataPipelineMode dataPipelineMode = DataPipelineMode.STOCK;
++        private int extractorScratchSize = NuvioEngineConfig.STOCK_EXTRACTOR_SCRATCH_SIZE;
++
++        public Builder setAllocationMode(AllocationMode allocationMode) {
++            this.allocationMode = allocationMode;
++            return this;
++        }
++
++        public Builder setDataPipelineMode(DataPipelineMode dataPipelineMode) {
++            this.dataPipelineMode = dataPipelineMode;
++            return this;
++        }
++
++        public Builder setExtractorScratchSize(int extractorScratchSize) {
++            this.extractorScratchSize = extractorScratchSize;
++            return this;
++        }
++
++        public NuvioEngineConfig build() {
++            return new NuvioEngineConfig(this);
++        }
++    }
++}
+--- a/libraries/datasource_okhttp/src/main/java/androidx/media3/datasource/okhttp/OkHttpDataSource.java
++++ b/libraries/datasource_okhttp/src/main/java/androidx/media3/datasource/okhttp/OkHttpDataSource.java
+@@ -13,7 +13,14 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource.okhttp;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import androidx.media3.datasource.UdpDataSource;
++import java.nio.ByteBuffer;
++import okio.BufferedSource;
+ 
+ import static androidx.media3.common.util.Util.castNonNull;
+ import static androidx.media3.datasource.HttpUtil.buildRangeRequestHeader;
+@@ -65,7 +72,9 @@
+  * priority) the {@code dataSpec}, {@link #setRequestProperty} and the default parameters used to
+  * construct the instance.
+  */
+-public class OkHttpDataSource extends BaseDataSource implements HttpDataSource {
++public class OkHttpDataSource extends BaseDataSource implements HttpDataSource, ByteBufferDataReader {
++  @Nullable private BufferedSource responseByteSource;
++
+ 
+   static {
+     MediaLibraryInfo.registerModule("media3.datasource.okhttp");
+@@ -272,7 +281,8 @@
+       this.response = executeCall(call);
+       response = this.response;
+       responseBody = Assertions.checkNotNull(response.body());
+-      responseByteStream = responseBody.byteStream();
++      responseByteSource = responseBody.source();
++    responseByteStream = responseByteSource.inputStream();
+     } catch (IOException e) {
+       throw HttpDataSourceException.createForIOException(
+           e, dataSpec, HttpDataSourceException.TYPE_OPEN);
+@@ -533,5 +543,47 @@
+       Assertions.checkNotNull(response.body()).close();
+     }
+     responseByteStream = null;
+-  }
++    responseByteSource = null;
++  }
++
++
++    public boolean supportsByteBufferRead() {
++        return NuvioEngineConfig.get().isZeroCopyEnabled();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws HttpDataSource.HttpDataSourceException {
++        try {
++            return readInternal(buffer, length);
++        } catch (IOException e) {
++            throw HttpDataSource.HttpDataSourceException.createForIOException(e, (DataSpec) Util.castNonNull(this.dataSpec), 2);
++        }
++    }
++
++    private int readInternal(ByteBuffer buffer, int readLength) throws IOException {
++        if (readLength == 0) {
++            return 0;
++        }
++        readLength = Math.min(readLength, buffer.remaining());
++        if (bytesToRead != -1) {
++            long bytesRemaining = bytesToRead - bytesRead;
++            if (bytesRemaining == 0) {
++                return -1;
++            }
++            readLength = (int) Math.min(readLength, bytesRemaining);
++        }
++        int originalLimit = buffer.limit();
++        int read;
++        try {
++            buffer.limit(buffer.position() + readLength);
++            read = ((BufferedSource) Util.castNonNull(responseByteSource)).read(buffer);
++        } finally {
++            buffer.limit(originalLimit);
++        }
++        if (read == -1) {
++            return -1;
++        }
++        bytesRead += read;
++        bytesTransferred(read);
++        return read;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/AesCipherDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/AesCipherDataSource.java
+@@ -13,7 +13,13 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.util.Assertions;
++import androidx.media3.common.util.Util;
++import java.nio.ByteBuffer;
+ 
+ import static androidx.media3.common.util.Assertions.checkNotNull;
+ import static androidx.media3.common.util.Util.castNonNull;
+@@ -29,7 +35,9 @@
+ 
+ /** A {@link DataSource} that decrypts the data read from an upstream source. */
+ @UnstableApi
+-public final class AesCipherDataSource implements DataSource {
++public final class AesCipherDataSource implements DataSource, ByteBufferDataReader {
++  private byte[] byteBufferScratch;
++
+ 
+   private final DataSource upstream;
+   private final byte[] secretKey;
+@@ -88,4 +96,54 @@
+     cipher = null;
+     upstream.close();
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return (this.upstream instanceof ByteBufferDataReader) && ((ByteBufferDataReader) this.upstream).supportsByteBufferRead();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws IOException {
++        if (!supportsByteBufferRead()) {
++            throw new UnsupportedOperationException();
++        }
++        if (length == 0) {
++            return 0;
++        }
++        int startPosition = buffer.position();
++        int read = ((ByteBufferDataReader) this.upstream).read(buffer, length);
++        if (read == -1) {
++            return -1;
++        }
++        updateInPlace(buffer, startPosition, read);
++        return read;
++    }
++
++    private void updateInPlace(ByteBuffer buffer, int offset, int length) {
++        if (buffer.hasArray()) {
++            ((AesFlushingCipher) Util.castNonNull(this.cipher)).updateInPlace(buffer.array(), buffer.arrayOffset() + offset, length);
++            return;
++        }
++        byte[] scratch = getByteBufferScratch(length);
++        int remaining = length;
++        int scratchOffset = offset;
++        while (remaining > 0) {
++            int toUpdate = Math.min(remaining, scratch.length);
++            ByteBuffer duplicate = buffer.duplicate();
++            duplicate.position(scratchOffset);
++            duplicate.get(scratch, 0, toUpdate);
++            ((AesFlushingCipher) Util.castNonNull(this.cipher)).updateInPlace(scratch, 0, toUpdate);
++            duplicate.position(scratchOffset);
++            duplicate.put(scratch, 0, toUpdate);
++            scratchOffset += toUpdate;
++            remaining -= toUpdate;
++        }
++    }
++
++    private byte[] getByteBufferScratch(int length) {
++        int scratchLength = Math.min(length, 16384);
++        if (this.byteBufferScratch == null || this.byteBufferScratch.length < scratchLength) {
++            this.byteBufferScratch = new byte[scratchLength];
++        }
++        return this.byteBufferScratch;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/ByteArrayDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/ByteArrayDataSource.java
+@@ -13,7 +13,13 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import androidx.media3.common.util.Assertions;
++import java.nio.ByteBuffer;
+ 
+ import static androidx.media3.common.util.Assertions.checkArgument;
+ import static androidx.media3.common.util.Assertions.checkNotNull;
+@@ -29,7 +35,7 @@
+ 
+ /** A {@link DataSource} for reading from a byte array. */
+ @UnstableApi
+-public final class ByteArrayDataSource extends BaseDataSource {
++public final class ByteArrayDataSource extends BaseDataSource implements ByteBufferDataReader {
+ 
+   /** Functional interface to resolve from {@link Uri} to {@code byte[]}. */
+   public interface UriResolver {
+@@ -124,4 +130,24 @@
+     uri = null;
+     data = null;
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return NuvioEngineConfig.get().isZeroCopyEnabled();
++    }
++
++    public int read(ByteBuffer buffer, int length) {
++        if (length == 0) {
++            return 0;
++        }
++        if (this.bytesRemaining == 0) {
++            return -1;
++        }
++        length = Math.min(Math.min(length, buffer.remaining()), this.bytesRemaining);
++        buffer.put((byte[]) Assertions.checkStateNotNull(this.data), this.readPosition, length);
++        this.readPosition += length;
++        this.bytesRemaining -= length;
++        bytesTransferred(length);
++        return length;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/ContentDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/ContentDataSource.java
+@@ -13,7 +13,13 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import androidx.media3.common.util.Util;
++import java.nio.ByteBuffer;
+ 
+ import static androidx.media3.common.util.Util.castNonNull;
+ import static java.lang.Math.min;
+@@ -36,7 +42,7 @@
+ 
+ /** A {@link DataSource} for reading from a content URI. */
+ @UnstableApi
+-public final class ContentDataSource extends BaseDataSource {
++public final class ContentDataSource extends BaseDataSource implements ByteBufferDataReader {
+ 
+   /** Thrown when an {@link IOException} is encountered reading from a content URI. */
+   public static class ContentDataSourceException extends DataSourceException {
+@@ -227,4 +233,37 @@
+       }
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return NuvioEngineConfig.get().isZeroCopyEnabled();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws ContentDataSourceException {
++        if (length == 0) {
++            return 0;
++        }
++        if (bytesRemaining == 0) {
++            return -1;
++        }
++        int originalLimit = buffer.limit();
++        int bytesRead;
++        try {
++            int bytesToRead = bytesRemaining == -1 ? Math.min(length, buffer.remaining()) : (int) Math.min(bytesRemaining, Math.min(length, buffer.remaining()));
++            buffer.limit(buffer.position() + bytesToRead);
++            bytesRead = ((FileInputStream) Util.castNonNull(inputStream)).getChannel().read(buffer);
++        } catch (IOException e) {
++            throw new ContentDataSourceException(e, 2000);
++        } finally {
++            buffer.limit(originalLimit);
++        }
++        if (bytesRead == -1) {
++            return -1;
++        }
++        if (bytesRemaining != -1) {
++            bytesRemaining -= bytesRead;
++        }
++        bytesTransferred(bytesRead);
++        return bytesRead;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/DataSchemeDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/DataSchemeDataSource.java
+@@ -13,7 +13,12 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import java.nio.ByteBuffer;
+ 
+ import static androidx.media3.common.util.Util.castNonNull;
+ import static java.lang.Math.min;
+@@ -33,7 +38,7 @@
+ 
+ /** A {@link DataSource} for reading data URLs, as defined by RFC 2397. */
+ @UnstableApi
+-public final class DataSchemeDataSource extends BaseDataSource {
++public final class DataSchemeDataSource extends BaseDataSource implements ByteBufferDataReader {
+ 
+   public static final String SCHEME_DATA = "data";
+ 
+@@ -113,4 +118,24 @@
+     }
+     dataSpec = null;
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return NuvioEngineConfig.get().isZeroCopyEnabled();
++    }
++
++    public int read(ByteBuffer buffer, int length) {
++        if (length == 0) {
++            return 0;
++        }
++        if (this.bytesRemaining == 0) {
++            return -1;
++        }
++        length = Math.min(Math.min(length, buffer.remaining()), this.bytesRemaining);
++        buffer.put((byte[]) Util.castNonNull(this.data), this.readPosition, length);
++        this.readPosition += length;
++        this.bytesRemaining -= length;
++        bytesTransferred(length);
++        return length;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/DefaultDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/DefaultDataSource.java
+@@ -13,7 +13,12 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import java.nio.ByteBuffer;
+ 
+ import android.content.ContentResolver;
+ import android.content.Context;
+@@ -57,7 +62,9 @@
+  *       data source if constructed using {@link #DefaultDataSource(Context, DataSource)}.
+  * </ul>
+  */
+-public final class DefaultDataSource implements DataSource {
++public final class DefaultDataSource implements DataSource, ByteBufferDataReader {
++  @Nullable private DataSource localhostZeroCopyDataSource;
++
+ 
+   /** {@link DataSource.Factory} for {@link DefaultDataSource} instances. */
+   public static final class Factory implements DataSource.Factory {
+@@ -241,6 +248,7 @@
+     maybeAddListenerToDataSource(udpDataSource, transferListener);
+     maybeAddListenerToDataSource(dataSchemeDataSource, transferListener);
+     maybeAddListenerToDataSource(rawResourceDataSource, transferListener);
++    maybeAddListenerToDataSource(localhostZeroCopyDataSource, transferListener);
+   }
+ 
+   @UnstableApi
+@@ -269,7 +277,14 @@
+     } else if (SCHEME_RAW.equals(scheme) || SCHEME_ANDROID_RESOURCE.equals(scheme)) {
+       dataSource = getRawResourceDataSource();
+     } else {
+-      dataSource = baseDataSource;
++      String host = dataSpec.uri.getHost();
++      boolean isLocalhost = host != null && (host.equalsIgnoreCase("127.0.0.1") || host.equalsIgnoreCase("localhost"));
++      if (isLocalhost && (("http".equals(scheme) || "https".equals(scheme)) && NuvioEngineConfig.get().isNativeAllocationEnabled())) {
++        Log.d(TAG, "Binding LocalhostZeroCopyDataSource for zero-copy socket loopback pipeline: " + dataSpec.uri);
++        dataSource = getLocalhostZeroCopyDataSource();
++      } else {
++        dataSource = baseDataSource;
++      }
+     }
+     // Open the source and return.
+     return dataSource.open(dataSpec);
+@@ -388,4 +403,24 @@
+       dataSource.addTransferListener(listener);
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return (this.dataSource instanceof ByteBufferDataReader) && ((ByteBufferDataReader) this.dataSource).supportsByteBufferRead();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws IOException {
++        if (!supportsByteBufferRead()) {
++            throw new UnsupportedOperationException();
++        }
++        return ((ByteBufferDataReader) Assertions.checkNotNull(this.dataSource)).read(buffer, length);
++    }
++
++    private DataSource getLocalhostZeroCopyDataSource() {
++        if (this.localhostZeroCopyDataSource == null) {
++            this.localhostZeroCopyDataSource = new LocalhostZeroCopyDataSource();
++            addListenersToDataSource(this.localhostZeroCopyDataSource);
++        }
++        return this.localhostZeroCopyDataSource;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/DefaultHttpDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/DefaultHttpDataSource.java
+@@ -13,7 +13,15 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import androidx.media3.common.util.Assertions;
++import java.nio.ByteBuffer;
++import java.nio.channels.Channels;
++import java.nio.channels.ReadableByteChannel;
+ 
+ import static androidx.media3.common.util.Assertions.checkNotNull;
+ import static androidx.media3.common.util.Util.castNonNull;
+@@ -61,7 +69,9 @@
+  * priority) the {@code dataSpec}, {@link #setRequestProperty} and the default properties that can
+  * be passed to {@link HttpDataSource.Factory#setDefaultRequestProperties(Map)}.
+  */
+-public class DefaultHttpDataSource extends BaseDataSource implements HttpDataSource {
++public class DefaultHttpDataSource extends BaseDataSource implements HttpDataSource, ByteBufferDataReader {
++  @Nullable private ReadableByteChannel inputChannel;
++
+ 
+   /** {@link DataSource.Factory} for {@link DefaultHttpDataSource} instances. */
+   public static final class Factory implements HttpDataSource.Factory {
+@@ -438,6 +448,7 @@
+       if (isCompressed) {
+         inputStream = new GZIPInputStream(inputStream);
+       }
++      inputChannel = Channels.newChannel(inputStream);
+     } catch (IOException e) {
+       closeConnectionQuietly();
+       throw new HttpDataSourceException(
+@@ -497,6 +508,7 @@
+       }
+     } finally {
+       inputStream = null;
++      inputChannel = null;
+       closeConnectionQuietly();
+       if (transferStarted) {
+         transferStarted = false;
+@@ -861,4 +873,45 @@
+       return super.standardHashCode();
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return NuvioEngineConfig.get().isZeroCopyEnabled();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws HttpDataSource.HttpDataSourceException {
++        try {
++            return readInternal(buffer, length);
++        } catch (IOException e) {
++            throw HttpDataSource.HttpDataSourceException.createForIOException(e, (DataSpec) Util.castNonNull(this.dataSpec), 2);
++        }
++    }
++
++    private int readInternal(ByteBuffer buffer, int readLength) throws IOException {
++        if (readLength == 0) {
++            return 0;
++        }
++        readLength = Math.min(readLength, buffer.remaining());
++        if (bytesToRead != -1) {
++            long bytesRemaining = bytesToRead - bytesRead;
++            if (bytesRemaining == 0) {
++                return -1;
++            }
++            readLength = (int) Math.min(readLength, bytesRemaining);
++        }
++        int originalLimit = buffer.limit();
++        int read;
++        try {
++            buffer.limit(buffer.position() + readLength);
++            read = ((ReadableByteChannel) Util.castNonNull(inputChannel)).read(buffer);
++        } finally {
++            buffer.limit(originalLimit);
++        }
++        if (read == -1) {
++            return -1;
++        }
++        bytesRead += read;
++        bytesTransferred(read);
++        return read;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/FileDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/FileDataSource.java
+@@ -13,7 +13,13 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import androidx.media3.common.util.Util;
++import java.nio.ByteBuffer;
+ 
+ import static androidx.media3.common.util.Util.castNonNull;
+ import static java.lang.Math.min;
+@@ -34,7 +40,7 @@
+ 
+ /** A {@link DataSource} for reading local files. */
+ @UnstableApi
+-public final class FileDataSource extends BaseDataSource {
++public final class FileDataSource extends BaseDataSource implements ByteBufferDataReader {
+ 
+   /** Thrown when a {@link FileDataSource} encounters an error reading a file. */
+   public static class FileDataSourceException extends DataSourceException {
+@@ -207,4 +213,34 @@
+       throw new FileDataSourceException(e, PlaybackException.ERROR_CODE_IO_UNSPECIFIED);
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return NuvioEngineConfig.get().isZeroCopyEnabled();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws FileDataSourceException {
++        if (length == 0) {
++            return 0;
++        }
++        if (bytesRemaining == 0) {
++            return -1;
++        }
++        int originalLimit = buffer.limit();
++        int bytesRead;
++        try {
++            int bytesToRead = (int) Math.min(bytesRemaining, Math.min(length, buffer.remaining()));
++            buffer.limit(buffer.position() + bytesToRead);
++            bytesRead = ((RandomAccessFile) Util.castNonNull(file)).getChannel().read(buffer);
++        } catch (IOException e) {
++            throw new FileDataSourceException(e, 2000);
++        } finally {
++            buffer.limit(originalLimit);
++        }
++        if (bytesRead > 0) {
++            bytesRemaining -= bytesRead;
++            bytesTransferred(bytesRead);
++        }
++        return bytesRead;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/FileDescriptorDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/FileDescriptorDataSource.java
+@@ -13,7 +13,14 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import androidx.media3.common.util.Assertions;
++import androidx.media3.common.util.Util;
++import java.nio.ByteBuffer;
+ 
+ import static androidx.media3.common.util.Assertions.checkNotNull;
+ import static androidx.media3.common.util.Util.castNonNull;
+@@ -48,7 +55,7 @@
+  * FileDescriptor} is used for all read operations.
+  */
+ @UnstableApi
+-public class FileDescriptorDataSource extends BaseDataSource {
++public class FileDescriptorDataSource extends BaseDataSource implements ByteBufferDataReader {
+ 
+   // Track file descriptors currently in use to fail fast if an attempt is made to re-use one.
+   private static final Set<FileDescriptor> inUseFileDescriptors = Sets.newConcurrentHashSet();
+@@ -194,4 +201,37 @@
+       throw new DataSourceException(e, PlaybackException.ERROR_CODE_IO_UNSPECIFIED);
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return NuvioEngineConfig.get().isZeroCopyEnabled();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws DataSourceException {
++        if (length == 0) {
++            return 0;
++        }
++        if (bytesRemaining == 0) {
++            return -1;
++        }
++        int originalLimit = buffer.limit();
++        int bytesRead;
++        try {
++            int bytesToRead = bytesRemaining == -1 ? Math.min(length, buffer.remaining()) : (int) Math.min(bytesRemaining, Math.min(length, buffer.remaining()));
++            buffer.limit(buffer.position() + bytesToRead);
++            bytesRead = ((FileInputStream) Util.castNonNull(inputStream)).getChannel().read(buffer);
++        } catch (IOException e) {
++            throw new DataSourceException(e, 2000);
++        } finally {
++            buffer.limit(originalLimit);
++        }
++        if (bytesRead == -1) {
++            return -1;
++        }
++        if (bytesRemaining != -1) {
++            bytesRemaining -= bytesRead;
++        }
++        bytesTransferred(bytesRead);
++        return bytesRead;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/HttpEngineDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/HttpEngineDataSource.java
+@@ -13,7 +13,11 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
+ 
+ import static android.net.http.UrlRequest.REQUEST_PRIORITY_MEDIUM;
+ import static androidx.media3.common.util.Util.castNonNull;
+@@ -67,7 +71,7 @@
+  */
+ @RequiresExtension(extension = Build.VERSION_CODES.S, version = 7)
+ @UnstableApi
+-public final class HttpEngineDataSource extends BaseDataSource implements HttpDataSource {
++public final class HttpEngineDataSource extends BaseDataSource implements HttpDataSource, ByteBufferDataReader {
+ 
+   /** {@link DataSource.Factory} for {@link HttpEngineDataSource} instances. */
+   public static final class Factory implements HttpDataSource.Factory {
+@@ -1148,4 +1152,20 @@
+       // Do nothing
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return NuvioEngineConfig.get().isZeroCopyEnabled();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws HttpDataSource.HttpDataSourceException {
++        int originalLimit = buffer.limit();
++        try {
++            buffer.limit(buffer.position() + Math.min(length, buffer.remaining()));
++            return read(buffer);
++        } finally {
++            buffer.limit(originalLimit);
++        }
++    }
++
+ }
+--- /dev/null
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/LocalhostZeroCopyDataSource.java
+@@ -0,0 +1,263 @@
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
++package androidx.media3.datasource;
++
++import android.net.Uri;
++import androidx.annotation.Nullable;
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.util.Util;
++import java.io.IOException;
++import java.net.InetSocketAddress;
++import java.nio.ByteBuffer;
++import java.nio.channels.SocketChannel;
++import java.nio.charset.StandardCharsets;
++import java.util.Collections;
++
++public final class LocalhostZeroCopyDataSource extends BaseDataSource implements ByteBufferDataReader {
++
++    @Nullable
++    private SocketChannel socketChannel;
++
++    @Nullable
++    private Uri uri;
++
++    @Nullable
++    private DataSpec dataSpec;
++    private long bytesRemaining;
++    private boolean opened;
++
++    @Nullable
++    private ByteBuffer excessBuffer;
++
++    public LocalhostZeroCopyDataSource() {
++        super(true);
++        this.bytesRemaining = -1L;
++    }
++
++    public long open(DataSpec dataSpec) throws HttpDataSource.HttpDataSourceException {
++        this.dataSpec = dataSpec;
++        this.uri = dataSpec.uri;
++        transferInitializing(dataSpec);
++        String host = this.uri.getHost();
++        if (host == null) {
++            host = "127.0.0.1";
++        }
++        int port = this.uri.getPort();
++        if (port == -1) {
++            port = 8090;
++        }
++        try {
++            SocketChannel channel = SocketChannel.open();
++            channel.configureBlocking(true);
++            channel.connect(new InetSocketAddress(host, port));
++            this.socketChannel = channel;
++            String path = this.uri.getPath();
++            if (this.uri.getQuery() != null) {
++                path = path + "?" + this.uri.getQuery();
++            }
++            if (path == null || path.isEmpty()) {
++                path = "/";
++            }
++            String rangeHeader = "";
++            if (dataSpec.position != 0) {
++                rangeHeader = "Range: bytes=" + dataSpec.position + "-\r\n";
++            }
++            String request = "GET " + path + " HTTP/1.1\r\nHost: " + host + ":" + port + "\r\n" + rangeHeader + "Connection: close\r\n\r\n";
++            ByteBuffer requestBuffer = ByteBuffer.wrap(request.getBytes(StandardCharsets.US_ASCII));
++            while (requestBuffer.hasRemaining()) {
++                channel.write(requestBuffer);
++            }
++            ByteBuffer buffer = ByteBuffer.allocate(2048);
++            int headerEndIndex = -1;
++            while (true) {
++                int read = channel.read(buffer);
++                if (read <= 0) {
++                    break;
++                }
++                byte[] array = buffer.array();
++                int limit = buffer.position();
++                for (int i = 0; i <= limit - 4; i++) {
++                    if (array[i] == 13 && array[i + 1] == 10 && array[i + 2] == 13 && array[i + 3] == 10) {
++                        headerEndIndex = i + 4;
++                        break;
++                    }
++                }
++                if (headerEndIndex != -1) {
++                    break;
++                }
++                if (buffer.position() == buffer.capacity()) {
++                    ByteBuffer newBuffer = ByteBuffer.allocate(buffer.capacity() * 2);
++                    buffer.flip();
++                    newBuffer.put(buffer);
++                    buffer = newBuffer;
++                }
++            }
++            if (headerEndIndex == -1) {
++                throw new HttpDataSource.HttpDataSourceException("Malformed HTTP response: headers separator not found", dataSpec, 2007, 1);
++            }
++            int totalRead = buffer.position();
++            int excessBytes = totalRead - headerEndIndex;
++            if (excessBytes > 0) {
++                this.excessBuffer = ByteBuffer.allocate(excessBytes);
++                this.excessBuffer.put(buffer.array(), headerEndIndex, excessBytes);
++                this.excessBuffer.flip();
++            } else {
++                this.excessBuffer = null;
++            }
++            byte[] headerBytes = buffer.array();
++            int firstLineEnd = -1;
++            for (int i2 = 0; i2 < headerEndIndex; i2++) {
++                if (headerBytes[i2] == 13) {
++                    firstLineEnd = i2;
++                    break;
++                }
++            }
++            if (firstLineEnd == -1) {
++                firstLineEnd = headerEndIndex;
++            }
++            boolean isSuccess = false;
++            for (int i3 = 0; i3 <= firstLineEnd - 5; i3++) {
++                if (headerBytes[i3] == 32 && headerBytes[i3 + 4] == 32 && ((headerBytes[i3 + 1] == 50 && headerBytes[i3 + 2] == 48 && headerBytes[i3 + 3] == 48) || (headerBytes[i3 + 1] == 50 && headerBytes[i3 + 2] == 48 && headerBytes[i3 + 3] == 54))) {
++                    isSuccess = true;
++                    break;
++                }
++            }
++            if (!isSuccess) {
++                String firstLine = new String(headerBytes, 0, firstLineEnd, StandardCharsets.US_ASCII);
++                throw new HttpDataSource.InvalidResponseCodeException(firstLine.contains(" 416 ") ? 416 : 400, firstLine, null, Collections.emptyMap(), dataSpec, Util.EMPTY_BYTE_ARRAY);
++            }
++            if (dataSpec.length != -1) {
++                this.bytesRemaining = dataSpec.length;
++            } else {
++                long contentLength = -1;
++                byte[] targetLower = {99, 111, 110, 116, 101, 110, 116, 45, 108, 101, 110, 103, 116, 104, 58};
++                for (int i4 = 0; i4 <= headerEndIndex - targetLower.length; i4++) {
++                    boolean match = true;
++                    for (int j = 0; j < targetLower.length; j++) {
++                        byte b = headerBytes[i4 + j];
++                        int c = (b >= 65 && b <= 90) ? b + 32 : b;
++                        if (c != targetLower[j]) {
++                            match = false;
++                            break;
++                        }
++                    }
++                    if (match) {
++                        int start = i4 + targetLower.length;
++                        while (start < headerEndIndex && (headerBytes[start] == 32 || headerBytes[start] == 9)) {
++                            start++;
++                        }
++                        long num = 0;
++                        boolean hasDigits = false;
++                        while (start < headerEndIndex && headerBytes[start] >= 48 && headerBytes[start] <= 57) {
++                            num = (num * 10) + ((long) (headerBytes[start] - 48));
++                            hasDigits = true;
++                            start++;
++                        }
++                        if (hasDigits) {
++                            contentLength = num;
++                        }
++                        break;
++                    }
++                }
++                this.bytesRemaining = contentLength >= 0 ? contentLength : -1L;
++            }
++            this.opened = true;
++            transferStarted(dataSpec);
++            return this.bytesRemaining;
++        } catch (HttpDataSource.HttpDataSourceException e) {
++            close();
++            throw e;
++        } catch (IOException e2) {
++            close();
++            throw new HttpDataSource.HttpDataSourceException(e2, dataSpec, 2001, 1);
++        }
++    }
++
++    public boolean supportsByteBufferRead() {
++        return true;
++    }
++
++    public int read(ByteBuffer buffer, int length) throws HttpDataSource.HttpDataSourceException {
++        if (length == 0) {
++            return 0;
++        }
++        if (bytesRemaining == 0) {
++            return -1;
++        }
++        SocketChannel channel = socketChannel;
++        if (channel == null) {
++            return -1;
++        }
++        int readLength = length;
++        if (bytesRemaining != -1) {
++            readLength = (int) Math.min(bytesRemaining, length);
++        }
++        int excessBytesRead = 0;
++        if (excessBuffer != null && excessBuffer.hasRemaining()) {
++            excessBytesRead = Math.min(excessBuffer.remaining(), readLength);
++            int originalLimit = excessBuffer.limit();
++            excessBuffer.limit(excessBuffer.position() + excessBytesRead);
++            buffer.put(excessBuffer);
++            excessBuffer.limit(originalLimit);
++            if (!excessBuffer.hasRemaining()) {
++                excessBuffer = null;
++            }
++            readLength -= excessBytesRead;
++            if (bytesRemaining != -1) {
++                bytesRemaining -= excessBytesRead;
++            }
++            bytesTransferred(excessBytesRead);
++            if (readLength == 0) {
++                return excessBytesRead;
++            }
++        }
++        if (readLength > 0) {
++            int originalLimit = buffer.limit();
++            buffer.limit(buffer.position() + readLength);
++            int bytesRead;
++            try {
++                bytesRead = channel.read(buffer);
++            } catch (IOException e) {
++                throw new HttpDataSource.HttpDataSourceException(e, Util.castNonNull(dataSpec), 2001, 2);
++            } finally {
++                buffer.limit(originalLimit);
++            }
++            if (bytesRead < 0) {
++                return excessBytesRead > 0 ? excessBytesRead : -1;
++            }
++            if (bytesRemaining != -1) {
++                bytesRemaining -= bytesRead;
++            }
++            bytesTransferred(bytesRead);
++            return excessBytesRead + bytesRead;
++        }
++        return excessBytesRead;
++    }
++
++    public int read(byte[] buffer, int offset, int length) throws HttpDataSource.HttpDataSourceException {
++        ByteBuffer wrap = ByteBuffer.wrap(buffer, offset, length);
++        return read(wrap, length);
++    }
++
++    @Nullable
++    public Uri getUri() {
++        return this.uri;
++    }
++
++    public void close() {
++        this.dataSpec = null;
++        this.uri = null;
++        this.excessBuffer = null;
++        try {
++            if (this.socketChannel != null) {
++                this.socketChannel.close();
++            }
++        } catch (IOException e) {
++        } finally {
++            this.socketChannel = null;
++            if (this.opened) {
++                this.opened = false;
++                transferEnded();
++            }
++        }
++    }
++}
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/PriorityDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/PriorityDataSource.java
+@@ -13,7 +13,11 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import java.nio.ByteBuffer;
+ 
+ import android.net.Uri;
+ import androidx.annotation.Nullable;
+@@ -39,7 +43,7 @@
+  * themselves.
+  */
+ @UnstableApi
+-public final class PriorityDataSource implements DataSource {
++public final class PriorityDataSource implements DataSource, ByteBufferDataReader {
+ 
+   /** {@link DataSource.Factory} for {@link PriorityDataSource} instances. */
+   public static final class Factory implements DataSource.Factory {
+@@ -123,4 +127,17 @@
+   public void close() throws IOException {
+     upstream.close();
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return (this.upstream instanceof ByteBufferDataReader) && ((ByteBufferDataReader) this.upstream).supportsByteBufferRead();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws IOException {
++        if (!supportsByteBufferRead()) {
++            throw new UnsupportedOperationException();
++        }
++        this.priorityTaskManager.proceedOrThrow(this.priority);
++        return ((ByteBufferDataReader) this.upstream).read(buffer, length);
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/RawResourceDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/RawResourceDataSource.java
+@@ -13,7 +13,13 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import androidx.media3.common.util.Util;
++import java.nio.ByteBuffer;
+ 
+ import static androidx.media3.common.util.Util.castNonNull;
+ import static java.lang.Math.min;
+@@ -69,7 +75,7 @@
+  * }</pre>
+  */
+ @UnstableApi
+-public final class RawResourceDataSource extends BaseDataSource {
++public final class RawResourceDataSource extends BaseDataSource implements ByteBufferDataReader {
+ 
+   /** Thrown when an {@link IOException} is encountered reading from a raw resource. */
+   public static class RawResourceDataSourceException extends DataSourceException {
+@@ -373,4 +379,37 @@
+       }
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return NuvioEngineConfig.get().isZeroCopyEnabled() && (this.inputStream instanceof FileInputStream);
++    }
++
++    public int read(ByteBuffer buffer, int length) throws RawResourceDataSourceException {
++        if (length == 0) {
++            return 0;
++        }
++        if (bytesRemaining == 0) {
++            return -1;
++        }
++        int originalLimit = buffer.limit();
++        int bytesRead;
++        try {
++            int bytesToRead = bytesRemaining == -1 ? Math.min(length, buffer.remaining()) : (int) Math.min(bytesRemaining, Math.min(length, buffer.remaining()));
++            buffer.limit(buffer.position() + bytesToRead);
++            bytesRead = ((FileInputStream) Util.castNonNull(inputStream)).getChannel().read(buffer);
++        } catch (IOException e) {
++            throw new RawResourceDataSourceException(null, e, 2000);
++        } finally {
++            buffer.limit(originalLimit);
++        }
++        if (bytesRead == -1) {
++            return -1;
++        }
++        if (bytesRemaining != -1) {
++            bytesRemaining -= bytesRead;
++        }
++        bytesTransferred(bytesRead);
++        return bytesRead;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/ResolvingDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/ResolvingDataSource.java
+@@ -13,7 +13,12 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.util.Assertions;
++import java.nio.ByteBuffer;
+ 
+ import static androidx.media3.common.util.Assertions.checkNotNull;
+ 
+@@ -26,7 +31,7 @@
+ 
+ /** {@link DataSource} wrapper allowing just-in-time resolution of {@link DataSpec DataSpecs}. */
+ @UnstableApi
+-public final class ResolvingDataSource implements DataSource {
++public final class ResolvingDataSource implements DataSource, ByteBufferDataReader {
+ 
+   /** Resolves {@link DataSpec DataSpecs}. */
+   public interface Resolver {
+@@ -134,4 +139,16 @@
+       upstreamDataSource.close();
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return (this.upstreamDataSource instanceof ByteBufferDataReader) && ((ByteBufferDataReader) this.upstreamDataSource).supportsByteBufferRead();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws IOException {
++        if (!supportsByteBufferRead()) {
++            throw new UnsupportedOperationException();
++        }
++        return ((ByteBufferDataReader) this.upstreamDataSource).read(buffer, length);
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/StatsDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/StatsDataSource.java
+@@ -13,7 +13,11 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import java.nio.ByteBuffer;
+ 
+ import android.net.Uri;
+ import androidx.annotation.Nullable;
+@@ -30,7 +34,7 @@
+  * headers.
+  */
+ @UnstableApi
+-public final class StatsDataSource implements DataSource {
++public final class StatsDataSource implements DataSource, ByteBufferDataReader {
+ 
+   private final DataSource dataSource;
+ 
+@@ -122,4 +126,20 @@
+   public void close() throws IOException {
+     dataSource.close();
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return (this.dataSource instanceof ByteBufferDataReader) && ((ByteBufferDataReader) this.dataSource).supportsByteBufferRead();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws IOException {
++        if (!supportsByteBufferRead()) {
++            throw new UnsupportedOperationException();
++        }
++        int bytesRead = ((ByteBufferDataReader) this.dataSource).read(buffer, length);
++        if (bytesRead != -1) {
++            this.bytesRead += (long) bytesRead;
++        }
++        return bytesRead;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/TeeDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/TeeDataSource.java
+@@ -13,7 +13,11 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import java.nio.ByteBuffer;
+ 
+ import android.net.Uri;
+ import androidx.annotation.Nullable;
+@@ -26,7 +30,9 @@
+ 
+ /** Tees data into a {@link DataSink} as the data is read. */
+ @UnstableApi
+-public final class TeeDataSource implements DataSource {
++public final class TeeDataSource implements DataSource, ByteBufferDataReader {
++  private byte[] byteBufferScratch;
++
+ 
+   private final DataSource upstream;
+   private final DataSink dataSink;
+@@ -102,4 +108,48 @@
+       }
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return (this.upstream instanceof ByteBufferDataReader) && ((ByteBufferDataReader) this.upstream).supportsByteBufferRead();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws IOException {
++        if (!supportsByteBufferRead()) {
++            throw new UnsupportedOperationException();
++        }
++        if (this.bytesRemaining == 0) {
++            return -1;
++        }
++        int startPosition = buffer.position();
++        int bytesRead = ((ByteBufferDataReader) this.upstream).read(buffer, length);
++        if (bytesRead > 0) {
++            writeToSink(buffer, startPosition, bytesRead);
++            if (this.bytesRemaining != -1) {
++                this.bytesRemaining -= (long) bytesRead;
++            }
++        }
++        return bytesRead;
++    }
++
++    private void writeToSink(ByteBuffer buffer, int offset, int length) throws IOException {
++        byte[] scratch = getByteBufferScratch(length);
++        ByteBuffer duplicate = buffer.duplicate();
++        duplicate.position(offset);
++        int remaining = length;
++        while (remaining > 0) {
++            int bytesToWrite = Math.min(remaining, scratch.length);
++            duplicate.get(scratch, 0, bytesToWrite);
++            dataSink.write(scratch, 0, bytesToWrite);
++            remaining -= bytesToWrite;
++        }
++    }
++
++    private byte[] getByteBufferScratch(int length) {
++        int scratchLength = Math.min(length, 16384);
++        if (this.byteBufferScratch == null || this.byteBufferScratch.length < scratchLength) {
++            this.byteBufferScratch = new byte[scratchLength];
++        }
++        return this.byteBufferScratch;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/UdpDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/UdpDataSource.java
+@@ -13,7 +13,13 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import androidx.media3.common.util.Assertions;
++import java.nio.ByteBuffer;
+ 
+ import static androidx.media3.common.util.Assertions.checkNotNull;
+ import static java.lang.Math.min;
+@@ -33,7 +39,7 @@
+ 
+ /** A UDP {@link DataSource}. */
+ @UnstableApi
+-public final class UdpDataSource extends BaseDataSource {
++public final class UdpDataSource extends BaseDataSource implements ByteBufferDataReader {
+ 
+   /** Thrown when an error is encountered when trying to read from a {@link UdpDataSource}. */
+   public static final class UdpDataSourceException extends DataSourceException {
+@@ -193,4 +199,31 @@
+     }
+     return socket.getLocalPort();
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return NuvioEngineConfig.get().isZeroCopyEnabled();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws UdpDataSourceException {
++        if (length == 0) {
++            return 0;
++        }
++        if (this.packetRemaining == 0) {
++            try {
++                ((DatagramSocket) Assertions.checkNotNull(this.socket)).receive(this.packet);
++            } catch (SocketTimeoutException e) {
++                throw new UdpDataSourceException(e, 2002);
++            } catch (IOException e2) {
++                throw new UdpDataSourceException(e2, 2001);
++            }
++            this.packetRemaining = this.packet.getLength();
++            bytesTransferred(this.packetRemaining);
++        }
++        int packetOffset = this.packet.getLength() - this.packetRemaining;
++        int bytesToRead = Math.min(this.packetRemaining, Math.min(length, buffer.remaining()));
++        buffer.put(this.packetBuffer, packetOffset, bytesToRead);
++        this.packetRemaining -= bytesToRead;
++        return bytesToRead;
++    }
+ }
+--- a/libraries/datasource/src/main/java/androidx/media3/datasource/cache/CacheDataSource.java
++++ b/libraries/datasource/src/main/java/androidx/media3/datasource/cache/CacheDataSource.java
+@@ -13,7 +13,14 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.datasource.cache;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.util.Util;
++import java.io.File;
++import java.lang.annotation.ElementType;
++import java.nio.ByteBuffer;
+ 
+ import static androidx.media3.common.util.Assertions.checkNotNull;
+ import static androidx.media3.common.util.Util.castNonNull;
+@@ -60,7 +67,7 @@
+  * written into the cache.
+  */
+ @UnstableApi
+-public final class CacheDataSource implements DataSource {
++public final class CacheDataSource implements DataSource, ByteBufferDataReader {
+ 
+   /** {@link DataSource.Factory} for {@link CacheDataSource} instances. */
+   public static final class Factory implements DataSource.Factory {
+@@ -891,4 +898,52 @@
+       totalCachedBytesRead = 0;
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return (this.currentDataSource instanceof ByteBufferDataReader) && ((ByteBufferDataReader) this.currentDataSource).supportsByteBufferRead();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws IOException {
++        if (!supportsByteBufferRead()) {
++            throw new UnsupportedOperationException();
++        }
++        if (length == 0) {
++            return 0;
++        }
++        if (this.bytesRemaining == 0) {
++            return -1;
++        }
++        DataSpec requestDataSpec = (DataSpec) Assertions.checkNotNull(this.requestDataSpec);
++        DataSpec currentDataSpec = (DataSpec) Assertions.checkNotNull(this.currentDataSpec);
++        try {
++            if (this.readPosition >= this.checkCachePosition) {
++                openNextSource(requestDataSpec, true);
++            }
++            if (!supportsByteBufferRead()) {
++                throw new UnsupportedOperationException();
++            }
++            int bytesRead = ((ByteBufferDataReader) Assertions.checkNotNull(this.currentDataSource)).read(buffer, length);
++            if (bytesRead != -1) {
++                if (isReadingFromCache()) {
++                    this.totalCachedBytesRead += (long) bytesRead;
++                }
++                this.readPosition += (long) bytesRead;
++                this.currentDataSourceBytesRead += (long) bytesRead;
++                if (this.bytesRemaining != -1) {
++                    this.bytesRemaining -= (long) bytesRead;
++                }
++            } else if (isReadingFromUpstream() && (currentDataSpec.length == -1 || this.currentDataSourceBytesRead < currentDataSpec.length)) {
++                setNoBytesRemainingAndMaybeStoreLength((String) Util.castNonNull(requestDataSpec.key));
++            } else if (this.bytesRemaining > 0 || this.bytesRemaining == -1) {
++                closeCurrentSource();
++                openNextSource(requestDataSpec, false);
++                return read(buffer, length);
++            }
++            return bytesRead;
++        } catch (Throwable e) {
++            handleBeforeThrow(e);
++            throw e;
++        }
++    }
+ }
+--- a/libraries/exoplayer_hls/src/main/java/androidx/media3/exoplayer/hls/Aes128DataSource.java
++++ b/libraries/exoplayer_hls/src/main/java/androidx/media3/exoplayer/hls/Aes128DataSource.java
+@@ -17,6 +17,7 @@
+ 
+ import android.net.Uri;
+ import androidx.annotation.Nullable;
++import androidx.media3.common.ByteBufferDataReader;
+ import androidx.media3.common.C;
+ import androidx.media3.common.util.Assertions;
+ import androidx.media3.datasource.DataSource;
+@@ -24,6 +25,7 @@
+ import androidx.media3.datasource.DataSpec;
+ import androidx.media3.datasource.TransferListener;
+ import java.io.IOException;
++import java.nio.ByteBuffer;
+ import java.security.InvalidAlgorithmParameterException;
+ import java.security.InvalidKeyException;
+ import java.security.Key;
+@@ -45,7 +47,7 @@
+  * designed specifically for reading whole files as defined in an HLS media playlist. For this
+  * reason the implementation is private to the HLS package.
+  */
+-/* package */ class Aes128DataSource implements DataSource {
++/* package */ class Aes128DataSource implements DataSource, ByteBufferDataReader {
+ 
+   private final DataSource upstream;
+   private final byte[] encryptionKey;
+@@ -106,6 +108,16 @@
+   }
+ 
+   @Override
++  public boolean supportsByteBufferRead() {
++    return false;
++  }
++
++  @Override
++  public final int read(ByteBuffer buffer, int length) throws IOException {
++    throw new UnsupportedOperationException();
++  }
++
++  @Override
+   @Nullable
+   public final Uri getUri() {
+     return upstream.getUri();
+--- a/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/DefaultRenderersFactory.java
++++ b/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/DefaultRenderersFactory.java
+@@ -1,5 +1,7 @@
+ /*
+  * Copyright (C) 2017 The Android Open Source Project
++ *
++ * Syclop maintained reconstruction (2026): preserve the imported player API and behavior.
+  *
+  * Licensed under the Apache License, Version 2.0 (the "License");
+  * you may not use this file except in compliance with the License.
+@@ -109,6 +111,7 @@
+   private @ExtensionRendererMode int extensionRendererMode;
+   private long allowedVideoJoiningTimeMs;
+   private boolean enableDecoderFallback;
++  private boolean mapDV7ToHevc;
+   private MediaCodecSelector mediaCodecSelector;
+   private boolean enableFloatOutput;
+   private boolean enableAudioTrackPlaybackParams;
+@@ -143,6 +146,12 @@
+   public final DefaultRenderersFactory setExtensionRendererMode(
+       @ExtensionRendererMode int extensionRendererMode) {
+     this.extensionRendererMode = extensionRendererMode;
++    return this;
++  }
++
++  @CanIgnoreReturnValue
++  public final DefaultRenderersFactory setMapDV7ToHevc(boolean mapDV7ToHevc) {
++    this.mapDV7ToHevc = mapDV7ToHevc;
+     return this;
+   }
+ 
+@@ -441,7 +450,8 @@
+             .setEventListener(eventListener)
+             .setMaxDroppedFramesToNotify(MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY)
+             .experimentalSetParseAv1SampleDependencies(parseAv1SampleDependencies)
+-            .experimentalSetLateThresholdToDropDecoderInputUs(lateThresholdToDropDecoderInputUs);
++            .experimentalSetLateThresholdToDropDecoderInputUs(lateThresholdToDropDecoderInputUs)
++            .setMapDV7ToHevc(mapDV7ToHevc);
+     if (SDK_INT >= 34) {
+       videoRendererBuilder =
+           videoRendererBuilder.experimentalSetEnableMediaCodecBufferDecodeOnlyFlag(
+@@ -899,7 +909,8 @@
+               .setEventListener(eventListener)
+               .setMaxDroppedFramesToNotify(MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY)
+               .experimentalSetParseAv1SampleDependencies(parseAv1SampleDependencies)
+-              .experimentalSetLateThresholdToDropDecoderInputUs(lateThresholdToDropDecoderInputUs);
++              .experimentalSetLateThresholdToDropDecoderInputUs(lateThresholdToDropDecoderInputUs)
++            .setMapDV7ToHevc(mapDV7ToHevc);
+       if (SDK_INT >= 34) {
+         builder =
+             builder.experimentalSetEnableMediaCodecBufferDecodeOnlyFlag(
+--- a/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/mediacodec/MediaCodecUtil.java
++++ b/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/mediacodec/MediaCodecUtil.java
+@@ -1,5 +1,7 @@
+ /*
+  * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Syclop maintained reconstruction (2026): preserve the imported player API and behavior.
+  *
+  * Licensed under the Apache License, Version 2.0 (the "License");
+  * you may not use this file except in compliance with the License.
+@@ -242,7 +244,18 @@
+       boolean requiresSecureDecoder,
+       boolean requiresTunnelingDecoder)
+       throws DecoderQueryException {
+-    @Nullable String alternativeMimeType = getAlternativeCodecMimeType(format);
++    return getAlternativeDecoderInfos(
++        mediaCodecSelector, format, requiresSecureDecoder, requiresTunnelingDecoder, false);
++  }
++
++  public static List<MediaCodecInfo> getAlternativeDecoderInfos(
++      MediaCodecSelector mediaCodecSelector,
++      Format format,
++      boolean requiresSecureDecoder,
++      boolean requiresTunnelingDecoder,
++      boolean mapDV7ToHevc)
++      throws DecoderQueryException {
++    @Nullable String alternativeMimeType = getAlternativeCodecMimeType(format, mapDV7ToHevc);
+     if (alternativeMimeType == null) {
+       return ImmutableList.of();
+     }
+@@ -376,6 +389,11 @@
+    */
+   @Nullable
+   public static String getAlternativeCodecMimeType(Format format) {
++    return getAlternativeCodecMimeType(format, false);
++  }
++
++  @Nullable
++  public static String getAlternativeCodecMimeType(Format format, boolean mapDV7ToHevc) {
+     if (MimeTypes.AUDIO_E_AC3_JOC.equals(format.sampleMimeType)) {
+       // E-AC3 decoders can decode JOC streams, but in 2-D rather than 3-D.
+       return MimeTypes.AUDIO_E_AC3;
+@@ -389,7 +407,8 @@
+       if (codecProfileAndLevel != null) {
+         int profile = codecProfileAndLevel.first;
+         if (profile == CodecProfileLevel.DolbyVisionProfileDvheDtr
+-            || profile == CodecProfileLevel.DolbyVisionProfileDvheSt) {
++            || profile == CodecProfileLevel.DolbyVisionProfileDvheSt
++            || (mapDV7ToHevc && profile == CodecProfileLevel.DolbyVisionProfileDvheDtb)) {
+           return MimeTypes.VIDEO_H265;
+         } else if (profile == CodecProfileLevel.DolbyVisionProfileDvavSe) {
+           return MimeTypes.VIDEO_H264;
+--- a/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/source/IcyDataSource.java
++++ b/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/source/IcyDataSource.java
+@@ -13,7 +13,11 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.exoplayer.source;
++
++import androidx.media3.common.ByteBufferDataReader;
++import java.nio.ByteBuffer;
+ 
+ import static java.lang.Math.min;
+ 
+@@ -35,7 +39,7 @@
+  * <p>Note: {@link #open(DataSpec)} and {@link #close()} are not supported. This implementation is
+  * intended to wrap upstream {@link DataSource} instances that are opened and closed directly.
+  */
+-/* package */ final class IcyDataSource implements DataSource {
++/* package */ final class IcyDataSource implements DataSource, ByteBufferDataReader {
+ 
+   public interface Listener {
+ 
+@@ -149,4 +153,27 @@
+     }
+     return true;
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return (this.upstream instanceof ByteBufferDataReader) && ((ByteBufferDataReader) this.upstream).supportsByteBufferRead();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws IOException {
++        if (!supportsByteBufferRead()) {
++            throw new UnsupportedOperationException();
++        }
++        if (this.bytesUntilMetadata == 0) {
++            if (readMetadata()) {
++                this.bytesUntilMetadata = this.metadataIntervalBytes;
++            } else {
++                return -1;
++            }
++        }
++        int bytesRead = ((ByteBufferDataReader) this.upstream).read(buffer, Math.min(this.bytesUntilMetadata, length));
++        if (bytesRead != -1) {
++            this.bytesUntilMetadata -= bytesRead;
++        }
++        return bytesRead;
++    }
+ }
+--- a/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/source/SampleDataQueue.java
++++ b/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/source/SampleDataQueue.java
+@@ -19,6 +19,7 @@
+ 
+ import androidx.annotation.Nullable;
+ import androidx.media3.common.C;
++import androidx.media3.common.ByteBufferDataReader;
+ import androidx.media3.common.DataReader;
+ import androidx.media3.common.util.Assertions;
+ import androidx.media3.common.util.ParsableByteArray;
+@@ -39,6 +40,7 @@
+ /* package */ class SampleDataQueue {
+ 
+   private static final int INITIAL_SCRATCH_SIZE = 32;
++  private static final int MAX_JAVA_SMALL_COPY_LENGTH = 32;
+ 
+   private final Allocator allocator;
+   private final int allocationLength;
+@@ -51,6 +53,7 @@
+ 
+   // Accessed only by the loading thread (or the consuming thread when there is no loading thread).
+   private long totalBytesWritten;
++  private byte[] jniScratch;
+ 
+   public SampleDataQueue(Allocator allocator) {
+     this.allocator = allocator;
+@@ -173,33 +176,52 @@
+   }
+ 
+   public int sampleData(DataReader input, int length, boolean allowEndOfInput) throws IOException {
+-    length = preAppend(length);
+-    int bytesAppended =
+-        input.read(
+-            writeAllocationNode.allocation.data,
+-            writeAllocationNode.translateOffset(totalBytesWritten),
+-            length);
+-    if (bytesAppended == C.RESULT_END_OF_INPUT) {
+-      if (allowEndOfInput) {
+-        return C.RESULT_END_OF_INPUT;
+-      }
+-      throw new EOFException();
+-    }
+-    postAppend(bytesAppended);
+-    return bytesAppended;
+-  }
++        int bytesAppended;
++        length = preAppend(length);
++        Allocation allocation = this.writeAllocationNode.allocation;
++        if (allocation.buffer != null) {
++            int targetOffset = this.writeAllocationNode.translateOffset(this.totalBytesWritten);
++            if ((input instanceof ByteBufferDataReader) && ((ByteBufferDataReader) input).supportsByteBufferRead()) {
++                ByteBuffer target = allocation.buffer.duplicate();
++                target.position(targetOffset);
++                target.limit(targetOffset + length);
++                bytesAppended = ((ByteBufferDataReader) input).read(target, length);
++            } else {
++                if (this.jniScratch == null || this.jniScratch.length < length) {
++                    this.jniScratch = new byte[length];
++                }
++                bytesAppended = input.read(this.jniScratch, 0, length);
++                if (bytesAppended > 0) {
++                    writeData(allocation.buffer, targetOffset, this.jniScratch, 0, bytesAppended);
++                }
++            }
++        } else {
++            bytesAppended = input.read(allocation.data, this.writeAllocationNode.translateOffset(this.totalBytesWritten), length);
++        }
++        if (bytesAppended == -1) {
++            if (allowEndOfInput) {
++                return -1;
++            }
++            throw new EOFException();
++        }
++        postAppend(bytesAppended);
++        return bytesAppended;
++    }
+ 
+   public void sampleData(ParsableByteArray buffer, int length) {
+-    while (length > 0) {
+-      int bytesAppended = preAppend(length);
+-      buffer.readBytes(
+-          writeAllocationNode.allocation.data,
+-          writeAllocationNode.translateOffset(totalBytesWritten),
+-          bytesAppended);
+-      length -= bytesAppended;
+-      postAppend(bytesAppended);
+-    }
+-  }
++        while (length > 0) {
++            int bytesAppended = preAppend(length);
++            Allocation allocation = this.writeAllocationNode.allocation;
++            if (allocation.buffer != null) {
++                writeData(allocation.buffer, this.writeAllocationNode.translateOffset(this.totalBytesWritten), buffer.getData(), buffer.getPosition(), bytesAppended);
++                buffer.skipBytes(bytesAppended);
++            } else {
++                buffer.readBytes(allocation.data, this.writeAllocationNode.translateOffset(this.totalBytesWritten), bytesAppended);
++            }
++            length -= bytesAppended;
++            postAppend(bytesAppended);
++        }
++    }
+ 
+   // Private methods.
+ 
+@@ -398,22 +420,35 @@
+    * @param length The number of bytes to read.
+    * @return The first {@link AllocationNode} that contains unread bytes after this method returns.
+    */
+-  private static AllocationNode readData(
+-      AllocationNode allocationNode, long absolutePosition, ByteBuffer target, int length) {
+-    allocationNode = getNodeContainingPosition(allocationNode, absolutePosition);
+-    int remaining = length;
+-    while (remaining > 0) {
+-      int toCopy = min(remaining, (int) (allocationNode.endPosition - absolutePosition));
+-      Allocation allocation = allocationNode.allocation;
+-      target.put(allocation.data, allocationNode.translateOffset(absolutePosition), toCopy);
+-      remaining -= toCopy;
+-      absolutePosition += toCopy;
+-      if (absolutePosition == allocationNode.endPosition) {
+-        allocationNode = allocationNode.next;
+-      }
+-    }
+-    return allocationNode;
+-  }
++  private static AllocationNode readData(AllocationNode allocationNode, long absolutePosition, ByteBuffer target, int length) {
++        allocationNode = getNodeContainingPosition(allocationNode, absolutePosition);
++        int remaining = length;
++        while (remaining > 0) {
++            int toCopy = Math.min(remaining, (int) (allocationNode.endPosition - absolutePosition));
++            Allocation allocation = allocationNode.allocation;
++            if (allocation.buffer != null) {
++                int sourceOffset = allocationNode.translateOffset(absolutePosition);
++                long targetAddr = target.isDirect() ? SampleDataQueueNative.getDirectBufferAddressCached(target) : 0L;
++                int targetOffset = target.position();
++                if (allocation.nativeHandle != 0 && targetAddr != 0 && SampleDataQueueNative.copyBetweenAddressesDirect(allocation.nativeHandle, sourceOffset, targetAddr, targetOffset, toCopy)) {
++                    target.position(targetOffset + toCopy);
++                } else if (!readData(allocation.buffer, sourceOffset, target, toCopy)) {
++                    ByteBuffer source = allocation.buffer.duplicate();
++                    source.position(sourceOffset);
++                    source.limit(sourceOffset + toCopy);
++                    target.put(source);
++                }
++            } else {
++                target.put(allocation.data, allocationNode.translateOffset(absolutePosition), toCopy);
++            }
++            remaining -= toCopy;
++            absolutePosition += (long) toCopy;
++            if (absolutePosition == allocationNode.endPosition) {
++                allocationNode = allocationNode.next;
++            }
++        }
++        return allocationNode;
++    }
+ 
+   /**
+    * Reads data from {@code allocationNode} and its following nodes.
+@@ -424,32 +459,72 @@
+    * @param length The number of bytes to read.
+    * @return The first {@link AllocationNode} that contains unread bytes after this method returns.
+    */
+-  private static AllocationNode readData(
+-      AllocationNode allocationNode, long absolutePosition, byte[] target, int length) {
+-    allocationNode = getNodeContainingPosition(allocationNode, absolutePosition);
+-    int remaining = length;
+-    while (remaining > 0) {
+-      int toCopy = min(remaining, (int) (allocationNode.endPosition - absolutePosition));
+-      Allocation allocation = allocationNode.allocation;
+-      System.arraycopy(
+-          allocation.data,
+-          allocationNode.translateOffset(absolutePosition),
+-          target,
+-          length - remaining,
+-          toCopy);
+-      remaining -= toCopy;
+-      absolutePosition += toCopy;
+-      if (absolutePosition == allocationNode.endPosition) {
+-        allocationNode = allocationNode.next;
+-      }
+-    }
+-    return allocationNode;
+-  }
++  private static AllocationNode readData(AllocationNode allocationNode, long absolutePosition, byte[] target, int length) {
++        allocationNode = getNodeContainingPosition(allocationNode, absolutePosition);
++        int remaining = length;
++        while (remaining > 0) {
++            int toCopy = Math.min(remaining, (int) (allocationNode.endPosition - absolutePosition));
++            Allocation allocation = allocationNode.allocation;
++            if (allocation.buffer != null) {
++                int sourceOffset = allocationNode.translateOffset(absolutePosition);
++                int targetOffset = length - remaining;
++                if (!SampleDataQueueNative.copyToArray(allocation.buffer, sourceOffset, target, targetOffset, toCopy)) {
++                    ByteBuffer source = allocation.buffer.duplicate();
++                    source.position(sourceOffset);
++                    source.get(target, targetOffset, toCopy);
++                }
++            } else {
++                System.arraycopy(allocation.data, allocationNode.translateOffset(absolutePosition), target, length - remaining, toCopy);
++            }
++            remaining -= toCopy;
++            absolutePosition += (long) toCopy;
++            if (absolutePosition == allocationNode.endPosition) {
++                allocationNode = allocationNode.next;
++            }
++        }
++        return allocationNode;
++    }
+ 
+   /**
+    * Returns the {@link AllocationNode} in {@code allocationNode}'s chain which contains the given
+    * {@code absolutePosition}.
+    */
++  private static void writeData(ByteBuffer target, int targetOffset, byte[] source, int sourceOffset, int length) {
++        if (length <= 32) {
++            for (int i = 0; i < length; i++) {
++                target.put(targetOffset + i, source[sourceOffset + i]);
++            }
++            return;
++        }
++        if (!SampleDataQueueNative.copyFromArray(source, sourceOffset, target, targetOffset, length)) {
++            ByteBuffer targetDuplicate = target.duplicate();
++            targetDuplicate.position(targetOffset);
++            targetDuplicate.put(source, sourceOffset, length);
++        }
++    }
++
++  private static boolean readData(ByteBuffer source, int sourceOffset, ByteBuffer target, int length) {
++        int targetOffset = target.position();
++        if (length <= 32) {
++            if (target.remaining() < length) {
++                return false;
++            }
++            for (int i = 0; i < length; i++) {
++                target.put(source.get(sourceOffset + i));
++            }
++            return true;
++        }
++        if (target.isDirect() && SampleDataQueueNative.copyBetweenAddresses(source, sourceOffset, target, targetOffset, length)) {
++            target.position(targetOffset + length);
++            return true;
++        }
++        if (target.hasArray() && target.remaining() >= length && SampleDataQueueNative.copyToArray(source, sourceOffset, target.array(), target.arrayOffset() + targetOffset, length)) {
++            target.position(targetOffset + length);
++            return true;
++        }
++        return false;
++    }
++
+   private static AllocationNode getNodeContainingPosition(
+       AllocationNode allocationNode, long absolutePosition) {
+     while (absolutePosition >= allocationNode.endPosition) {
+--- /dev/null
++++ b/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/source/SampleDataQueueNative.java
+@@ -0,0 +1,206 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package androidx.media3.exoplayer.source;
++
++import dalvik.annotation.optimization.FastNative;
++import java.lang.ref.WeakReference;
++import java.nio.ByteBuffer;
++
++/** Preferred maintained reconstruction of the custom reference binary. */
++public final class SampleDataQueueNative {
++    private static final String LIBRARY_NAME = "media3_exoplayer_jni";
++    private static volatile boolean loadAttempted;
++    private static volatile boolean isAvailable;
++    private static final ThreadLocal<BufferAddressCache> targetCache = new ThreadLocal<BufferAddressCache>() { 
++        @Override
++        protected BufferAddressCache initialValue() {
++            return new BufferAddressCache();
++        }
++    };
++
++    @FastNative
++    private static native boolean nativeCopyFromArray(byte[] source, int sourceOffset, ByteBuffer target, int targetOffset, int length);
++
++    @FastNative
++    private static native boolean nativeCopyToArray(ByteBuffer source, int sourceOffset, byte[] target, int targetOffset, int length);
++
++    @FastNative
++    private static native boolean nativeCopyBetweenDirectBuffers(ByteBuffer source, int sourceOffset, ByteBuffer target, int targetOffset, int length);
++
++    @FastNative
++    public static native void nativeCopyAddresses(long sourceAddress, int sourceOffset, long targetAddress, int targetOffset, int length);
++
++    @FastNative
++    private static native long nativeGetBufferAddress(ByteBuffer buffer);
++
++    public static boolean copyFromArray(byte[] source, int sourceOffset, ByteBuffer target, int targetOffset, int length) {
++        if (length == 0) {
++            return true;
++        }
++        if (sourceOffset < 0 || length < 0 || sourceOffset + length > source.length) {
++            return false;
++        }
++        if (targetOffset < 0 || targetOffset + length > target.capacity()) {
++            return false;
++        }
++        if (!isAvailable()) {
++            return false;
++        }
++        try {
++            return nativeCopyFromArray(source, sourceOffset, target, targetOffset, length);
++        } catch (UnsatisfiedLinkError e) {
++            isAvailable = false;
++            return false;
++        }
++    }
++
++    public static boolean copyToArray(ByteBuffer source, int sourceOffset, byte[] target, int targetOffset, int length) {
++        if (length == 0) {
++            return true;
++        }
++        if (sourceOffset < 0 || length < 0 || sourceOffset + length > source.capacity()) {
++            return false;
++        }
++        if (targetOffset < 0 || targetOffset + length > target.length) {
++            return false;
++        }
++        if (!isAvailable()) {
++            return false;
++        }
++        try {
++            return nativeCopyToArray(source, sourceOffset, target, targetOffset, length);
++        } catch (UnsatisfiedLinkError e) {
++            isAvailable = false;
++            return false;
++        }
++    }
++
++    public static boolean copyBetweenDirectBuffers(ByteBuffer source, int sourceOffset, ByteBuffer target, int targetOffset, int length) {
++        if (length == 0) {
++            return true;
++        }
++        if (sourceOffset < 0 || length < 0 || sourceOffset + length > source.capacity()) {
++            return false;
++        }
++        if (targetOffset < 0 || targetOffset + length > target.capacity()) {
++            return false;
++        }
++        if (!isAvailable()) {
++            return false;
++        }
++        try {
++            return nativeCopyBetweenDirectBuffers(source, sourceOffset, target, targetOffset, length);
++        } catch (UnsatisfiedLinkError e) {
++            isAvailable = false;
++            return false;
++        }
++    }
++
++    private static boolean isAvailable() {
++        if (loadAttempted) {
++            return isAvailable;
++        }
++        return loadLibrary();
++    }
++
++    private static synchronized boolean loadLibrary() {
++        if (loadAttempted) {
++            return isAvailable;
++        }
++        loadAttempted = true;
++        try {
++            System.loadLibrary(LIBRARY_NAME);
++            isAvailable = true;
++        } catch (SecurityException | UnsatisfiedLinkError e) {
++            isAvailable = false;
++        }
++        return isAvailable;
++    }
++
++    public static long getDirectBufferAddress(ByteBuffer buffer) {
++        if (buffer == null || !buffer.isDirect() || !isAvailable()) {
++            return 0L;
++        }
++        try {
++            return nativeGetBufferAddress(buffer);
++        } catch (UnsatisfiedLinkError e) {
++            isAvailable = false;
++            return 0L;
++        }
++    }
++
++    // An address cache does not retain the buffer or take ownership of its native memory.
++    private static final class BufferAddressCache {
++        private WeakReference<ByteBuffer> lastBufferRef;
++        long lastAddress;
++
++        private BufferAddressCache() {
++            this.lastBufferRef = new WeakReference<>(null);
++        }
++    }
++
++    public static long getDirectBufferAddressCached(ByteBuffer buffer) {
++        if (buffer == null) {
++            return 0L;
++        }
++        BufferAddressCache cache = targetCache.get();
++        ByteBuffer lastBuffer = (ByteBuffer) cache.lastBufferRef.get();
++        if (lastBuffer == buffer) {
++            return cache.lastAddress;
++        }
++        long address = getDirectBufferAddress(buffer);
++        cache.lastBufferRef = new WeakReference<>(buffer);
++        cache.lastAddress = address;
++        return address;
++    }
++
++    public static boolean copyBetweenAddressesDirect(long sourceAddr, int sourceOffset, long targetAddr, int targetOffset, int length) {
++        if (sourceAddr == 0 || targetAddr == 0) {
++            return false;
++        }
++        if (!isAvailable()) {
++            return false;
++        }
++        try {
++            nativeCopyAddresses(sourceAddr, sourceOffset, targetAddr, targetOffset, length);
++            return true;
++        } catch (UnsatisfiedLinkError e) {
++            isAvailable = false;
++            return false;
++        }
++    }
++
++    public static boolean copyBetweenAddresses(ByteBuffer source, int sourceOffset, ByteBuffer target, int targetOffset, int length) {
++        long sourceAddr = getDirectBufferAddressCached(source);
++        long targetAddr = getDirectBufferAddressCached(target);
++        if (sourceAddr == 0 || targetAddr == 0) {
++            return false;
++        }
++        if (!isAvailable()) {
++            return false;
++        }
++        try {
++            nativeCopyAddresses(sourceAddr, sourceOffset, targetAddr, targetOffset, length);
++            return true;
++        } catch (UnsatisfiedLinkError e) {
++            isAvailable = false;
++            return false;
++        }
++    }
++
++    private SampleDataQueueNative() {
++    }
++}
+--- a/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/upstream/Allocation.java
++++ b/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/upstream/Allocation.java
+@@ -15,32 +15,39 @@
+  */
+ package androidx.media3.exoplayer.upstream;
+ 
++import androidx.annotation.Nullable;
+ import androidx.media3.common.util.UnstableApi;
++import java.nio.ByteBuffer;
+ 
+-/**
+- * An allocation within a byte array.
+- *
+- * <p>The allocation's length is obtained by calling {@link
+- * Allocator#getIndividualAllocationLength()} on the {@link Allocator} from which it was obtained.
+- */
+ @UnstableApi
+ public final class Allocation {
+ 
+-  /**
+-   * The array containing the allocated space. The allocated space might not be at the start of the
+-   * array, and so {@link #offset} must be used when indexing into it.
+-   */
+-  public final byte[] data;
++    @Nullable
++    public final byte[] data;
+ 
+-  /** The offset of the allocated space in {@link #data}. */
+-  public final int offset;
++    @Nullable
++    public final ByteBuffer buffer;
++    public final int offset;
++    public long nativeHandle;
+ 
+-  /**
+-   * @param data The array containing the allocated space.
+-   * @param offset The offset of the allocated space in {@code data}.
+-   */
+-  public Allocation(byte[] data, int offset) {
+-    this.data = data;
+-    this.offset = offset;
+-  }
++    public Allocation(@Nullable byte[] data, int offset) {
++        this.data = data;
++        this.buffer = null;
++        this.offset = offset;
++        this.nativeHandle = 0L;
++    }
++
++    public Allocation(@Nullable ByteBuffer buffer, int offset) {
++        this.data = null;
++        this.buffer = buffer;
++        this.offset = offset;
++        this.nativeHandle = 0L;
++    }
++
++    Allocation(@Nullable ByteBuffer buffer, int offset, long nativeHandle) {
++        this.data = null;
++        this.buffer = buffer;
++        this.offset = offset;
++        this.nativeHandle = nativeHandle;
++    }
+ }
+--- a/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/upstream/DefaultAllocator.java
++++ b/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/upstream/DefaultAllocator.java
+@@ -15,95 +15,89 @@
+  */
+ package androidx.media3.exoplayer.upstream;
+ 
+-import static java.lang.Math.max;
+-
+ import androidx.annotation.Nullable;
++import androidx.media3.common.NuvioEngineConfig;
+ import androidx.media3.common.util.Assertions;
+ import androidx.media3.common.util.NullableType;
+ import androidx.media3.common.util.UnstableApi;
+ import androidx.media3.common.util.Util;
++import java.nio.ByteBuffer;
+ import java.util.Arrays;
+ 
+-/** Default implementation of {@link Allocator}. */
+ @UnstableApi
+ public final class DefaultAllocator implements Allocator {
+-
+-  private static final int AVAILABLE_EXTRA_CAPACITY = 100;
+-
+-  private final boolean trimOnReset;
+-  private final int individualAllocationSize;
+-  @Nullable private final byte[] initialAllocationBlock;
+-
+-  private int targetBufferSize;
+-  private int allocatedCount;
+-  private int availableCount;
+-  private @NullableType Allocation[] availableAllocations;
+-
+-  /**
+-   * Constructs an instance without creating any {@link Allocation}s up front.
+-   *
+-   * @param trimOnReset Whether memory is freed when the allocator is reset. Should be true unless
+-   *     the allocator will be re-used by multiple player instances. If set to false, trimming can
+-   *     be forced by calling {@link #setTargetBufferSize(int)} manually when required.
+-   * @param individualAllocationSize The length of each individual {@link Allocation}.
+-   */
+-  public DefaultAllocator(boolean trimOnReset, int individualAllocationSize) {
+-    this(trimOnReset, individualAllocationSize, 0);
+-  }
+-
+-  /**
+-   * Constructs an instance with some {@link Allocation}s created up front.
+-   *
+-   * <p>Note: {@link Allocation}s created up front will never be discarded by {@link #trim()}.
+-   *
+-   * @param trimOnReset Whether memory is freed when the allocator is reset. Should be true unless
+-   *     the allocator will be re-used by multiple player instances. If set to false, trimming can
+-   *     be forced by calling {@link #setTargetBufferSize(int)} manually when required.
+-   * @param individualAllocationSize The length of each individual {@link Allocation}.
+-   * @param initialAllocationCount The number of allocations to create up front.
+-   */
+-  public DefaultAllocator(
+-      boolean trimOnReset, int individualAllocationSize, int initialAllocationCount) {
+-    Assertions.checkArgument(individualAllocationSize > 0);
+-    Assertions.checkArgument(initialAllocationCount >= 0);
+-    this.trimOnReset = trimOnReset;
+-    this.individualAllocationSize = individualAllocationSize;
+-    this.availableCount = initialAllocationCount;
+-    this.availableAllocations = new Allocation[initialAllocationCount + AVAILABLE_EXTRA_CAPACITY];
+-    if (initialAllocationCount > 0) {
+-      initialAllocationBlock = new byte[initialAllocationCount * individualAllocationSize];
+-      for (int i = 0; i < initialAllocationCount; i++) {
+-        int allocationOffset = i * individualAllocationSize;
+-        availableAllocations[i] = new Allocation(initialAllocationBlock, allocationOffset);
+-      }
+-    } else {
+-      initialAllocationBlock = null;
+-    }
+-  }
+-
+-  public synchronized void reset() {
+-    if (trimOnReset) {
+-      setTargetBufferSize(0);
+-    }
+-  }
+-
+-  public synchronized void setTargetBufferSize(int targetBufferSize) {
+-    boolean targetBufferSizeReduced = targetBufferSize < this.targetBufferSize;
+-    this.targetBufferSize = targetBufferSize;
+-    if (targetBufferSizeReduced) {
+-      trim();
+-    }
+-  }
+-
+-  @Override
+-  public synchronized Allocation allocate() {
++    private static final int AVAILABLE_EXTRA_CAPACITY = 100;
++    private final boolean trimOnReset;
++    private final int individualAllocationSize;
++    private final boolean forceNativeAllocation;
++
++    @Nullable
++    private final byte[] initialAllocationBlock;
++    private final @NullableType Allocation[] initialAllocations;
++    private int targetBufferSize;
++    private int allocatedCount;
++    private int availableCount;
++    private @NullableType Allocation[] availableAllocations;
++
++    public DefaultAllocator(boolean trimOnReset, int individualAllocationSize) {
++        this(trimOnReset, individualAllocationSize, 0, false);
++    }
++
++    public DefaultAllocator(boolean trimOnReset, int individualAllocationSize, int initialAllocationCount) {
++        this(trimOnReset, individualAllocationSize, initialAllocationCount, false);
++    }
++
++    public DefaultAllocator(boolean trimOnReset, int individualAllocationSize, int initialAllocationCount, boolean forceNativeAllocation) {
++        Assertions.checkArgument(individualAllocationSize > 0);
++        Assertions.checkArgument(initialAllocationCount >= 0);
++        this.trimOnReset = trimOnReset;
++        this.individualAllocationSize = individualAllocationSize;
++        this.forceNativeAllocation = forceNativeAllocation;
++        this.availableCount = initialAllocationCount;
++        this.availableAllocations = new Allocation[initialAllocationCount + AVAILABLE_EXTRA_CAPACITY];
++        boolean useNativeAllocation = forceNativeAllocation || NuvioEngineConfig.get().isNativeAllocationEnabled();
++        if (initialAllocationCount > 0 && !useNativeAllocation) {
++            this.initialAllocationBlock = new byte[initialAllocationCount * individualAllocationSize];
++            this.initialAllocations = null;
++            for (int i = 0; i < initialAllocationCount; i++) {
++                this.availableAllocations[i] = new Allocation(this.initialAllocationBlock, i * individualAllocationSize);
++            }
++        } else if (initialAllocationCount > 0) {
++            this.initialAllocationBlock = null;
++            this.initialAllocations = new Allocation[initialAllocationCount];
++            for (int i = 0; i < initialAllocationCount; i++) {
++                Allocation allocation = createAllocation(individualAllocationSize);
++                this.availableAllocations[i] = allocation;
++                this.initialAllocations[i] = allocation;
++            }
++        } else {
++            this.initialAllocationBlock = null;
++            this.initialAllocations = null;
++        }
++    }
++
++    public synchronized void reset() {
++        if (this.trimOnReset) {
++            setTargetBufferSize(0);
++        }
++    }
++
++    public synchronized void setTargetBufferSize(int targetBufferSize) {
++        boolean targetBufferSizeReduced = targetBufferSize < this.targetBufferSize;
++        this.targetBufferSize = targetBufferSize;
++        if (targetBufferSizeReduced) {
++            trim();
++        }
++    }
++
++    public synchronized Allocation allocate() {
+     allocatedCount++;
+     Allocation allocation;
+     if (availableCount > 0) {
+       allocation = Assertions.checkNotNull(availableAllocations[--availableCount]);
+       availableAllocations[availableCount] = null;
+     } else {
+-      allocation = new Allocation(new byte[individualAllocationSize], 0);
++      allocation = createAllocation(individualAllocationSize);
+       if (allocatedCount > availableAllocations.length) {
+         // Make availableAllocations be large enough to contain all allocations made by this
+         // allocator so that release() does not need to grow the availableAllocations array. See
+@@ -114,16 +108,14 @@
+     return allocation;
+   }
+ 
+-  @Override
+-  public synchronized void release(Allocation allocation) {
++    public synchronized void release(Allocation allocation) {
+     availableAllocations[availableCount++] = allocation;
+     allocatedCount--;
+     // Wake up threads waiting for the allocated size to drop.
+     notifyAll();
+   }
+ 
+-  @Override
+-  public synchronized void release(@Nullable AllocationNode allocationNode) {
++    public synchronized void release(@Nullable AllocationNode allocationNode) {
+     while (allocationNode != null) {
+       availableAllocations[availableCount++] = allocationNode.getAllocation();
+       allocatedCount--;
+@@ -133,55 +125,87 @@
+     notifyAll();
+   }
+ 
+-  @Override
+-  public synchronized void trim() {
+-    int targetAllocationCount = Util.ceilDivide(targetBufferSize, individualAllocationSize);
+-    int targetAvailableCount = max(0, targetAllocationCount - allocatedCount);
+-    if (targetAvailableCount >= availableCount) {
+-      // We're already at or below the target.
+-      return;
+-    }
+-
+-    if (initialAllocationBlock != null) {
+-      // Some allocations are backed by an initial block. We need to make sure that we hold onto all
+-      // such allocations. Re-order the available allocations so that the ones backed by the initial
+-      // block come first.
+-      int lowIndex = 0;
+-      int highIndex = availableCount - 1;
+-      while (lowIndex <= highIndex) {
+-        Allocation lowAllocation = Assertions.checkNotNull(availableAllocations[lowIndex]);
+-        if (lowAllocation.data == initialAllocationBlock) {
+-          lowIndex++;
+-        } else {
+-          Allocation highAllocation = Assertions.checkNotNull(availableAllocations[highIndex]);
+-          if (highAllocation.data != initialAllocationBlock) {
+-            highIndex--;
+-          } else {
+-            availableAllocations[lowIndex++] = highAllocation;
+-            availableAllocations[highIndex--] = lowAllocation;
+-          }
+-        }
+-      }
+-      // lowIndex is the index of the first allocation not backed by an initial block.
+-      targetAvailableCount = max(targetAvailableCount, lowIndex);
+-      if (targetAvailableCount >= availableCount) {
+-        // We're already at or below the target.
+-        return;
+-      }
+-    }
+-
+-    // Discard allocations beyond the target.
+-    Arrays.fill(availableAllocations, targetAvailableCount, availableCount, null);
+-    availableCount = targetAvailableCount;
+-  }
+-
+-  @Override
+-  public synchronized int getTotalBytesAllocated() {
+-    return allocatedCount * individualAllocationSize;
+-  }
+-
+-  @Override
+-  public int getIndividualAllocationLength() {
+-    return individualAllocationSize;
+-  }
++    public synchronized void trim() {
++        int targetAllocationCount = Util.ceilDivide(this.targetBufferSize, this.individualAllocationSize);
++        int targetAvailableCount = Math.max(0, targetAllocationCount - this.allocatedCount);
++        if (targetAvailableCount >= this.availableCount) {
++            return;
++        }
++        if (this.initialAllocationBlock != null || this.initialAllocations != null) {
++            int lowIndex = 0;
++            int highIndex = this.availableCount - 1;
++            while (lowIndex <= highIndex) {
++                Allocation lowAllocation = (Allocation) Assertions.checkNotNull(this.availableAllocations[lowIndex]);
++                if (isInitialAllocation(lowAllocation)) {
++                    lowIndex++;
++                } else {
++                    Allocation highAllocation = (Allocation) Assertions.checkNotNull(this.availableAllocations[highIndex]);
++                    if (!isInitialAllocation(highAllocation)) {
++                        highIndex--;
++                    } else {
++                        this.availableAllocations[lowIndex++] = highAllocation;
++                        this.availableAllocations[highIndex--] = lowAllocation;
++                    }
++                }
++            }
++            targetAvailableCount = Math.max(targetAvailableCount, lowIndex);
++            if (targetAvailableCount >= this.availableCount) {
++                return;
++            }
++        }
++        for (int i = targetAvailableCount; i < this.availableCount; i++) {
++            Allocation allocation = this.availableAllocations[i];
++            if (allocation != null && allocation.buffer != null) {
++                freeAllocation(allocation);
++            }
++        }
++        Arrays.fill(this.availableAllocations, targetAvailableCount, this.availableCount, (Object) null);
++        this.availableCount = targetAvailableCount;
++    }
++
++    public synchronized int getTotalBytesAllocated() {
++        return this.allocatedCount * this.individualAllocationSize;
++    }
++
++    public synchronized int getAvailableBytes() {
++        return this.availableCount * this.individualAllocationSize;
++    }
++
++    public synchronized int getMemoryFootprint() {
++        return (this.allocatedCount + this.availableCount) * this.individualAllocationSize;
++    }
++
++    public int getIndividualAllocationLength() {
++        return this.individualAllocationSize;
++    }
++
++    // Direct fallback is intentional: native mode keeps direct storage when JNI is unavailable.
++    private Allocation createAllocation(int size) {
++        if (!this.forceNativeAllocation && !NuvioEngineConfig.get().isNativeAllocationEnabled()) {
++            return new Allocation(new byte[size], 0);
++        }
++        Allocation allocation = DefaultAllocatorNative.createAllocation(size);
++        return allocation != null
++            ? allocation : new Allocation(ByteBuffer.allocateDirect(size), 0);
++    }
++
++    private boolean isInitialAllocation(Allocation allocation) {
++        if (this.initialAllocationBlock != null && allocation.data == this.initialAllocationBlock) {
++            return true;
++        }
++        if (this.initialAllocations != null) {
++            for (Allocation initialAllocation : this.initialAllocations) {
++                if (allocation == initialAllocation) {
++                    return true;
++                }
++            }
++        }
++        return false;
++    }
++
++    private static void freeAllocation(Allocation allocation) {
++        if (allocation.nativeHandle != 0) {
++            DefaultAllocatorNative.freeAllocation(allocation);
++        }
++    }
+ }
+--- /dev/null
++++ b/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/upstream/DefaultAllocatorNative.java
+@@ -0,0 +1,159 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package androidx.media3.exoplayer.upstream;
++
++import androidx.annotation.Nullable;
++import dalvik.annotation.optimization.FastNative;
++import java.nio.ByteBuffer;
++import java.util.Queue;
++import java.util.concurrent.ConcurrentLinkedQueue;
++
++/** Preferred maintained reconstruction of the custom reference binary. */
++public final class DefaultAllocatorNative {
++    private static final String LIBRARY_NAME = "media3_exoplayer_jni";
++    private static volatile boolean loadAttempted;
++    private static volatile boolean isAvailable;
++    private static final int ARENA_CHUNK_SIZE = 65536;
++    private static final int ARENA_MAX_CHUNKS = 512;
++    private static final int ARENA_MIN_CHUNKS = 64;
++    private static final Queue<Allocation> arenaPool = new ConcurrentLinkedQueue<>();
++    private static volatile long arenaBaseAddress = 0;
++    private static volatile long arenaEndAddress = 0;
++    private static Allocation arenaBaseAllocation = null;
++    private static volatile boolean arenaInitialized = false;
++
++    @FastNative
++    private static native Allocation nativeCreateAllocation(int size);
++
++    @FastNative
++    private static native void nativeFreeAllocation(long nativeHandle);
++
++    private static synchronized void initializeArena() {
++        if (arenaInitialized) {
++            return;
++        }
++        arenaInitialized = true;
++        if (!isAvailable()) {
++            return;
++        }
++        int chunks = ARENA_MAX_CHUNKS;
++        Allocation base = null;
++        while (chunks >= ARENA_MIN_CHUNKS) {
++            try {
++                base = nativeCreateAllocation(chunks * ARENA_CHUNK_SIZE);
++            } catch (Exception | UnsatisfiedLinkError e) {
++                base = null;
++            }
++            if (base != null && base.buffer != null) {
++                break;
++            }
++            base = null;
++            chunks >>= 1;
++        }
++        if (base == null) {
++            return;
++        }
++        // The base owns the memory; pooled chunks are slices that must only be recycled.
++        arenaBaseAllocation = base;
++        arenaBaseAddress = base.nativeHandle;
++        arenaEndAddress = arenaBaseAddress + (((long) chunks) * 65536);
++        ByteBuffer baseBuffer = base.buffer;
++        for (int i = 0; i < chunks; i++) {
++            int offset = i * ARENA_CHUNK_SIZE;
++            ByteBuffer chunkBuffer = baseBuffer.duplicate();
++            chunkBuffer.position(offset);
++            chunkBuffer.limit(offset + ARENA_CHUNK_SIZE);
++            ByteBuffer sliced = chunkBuffer.slice();
++            long chunkAddress = arenaBaseAddress + ((long) offset);
++            Allocation chunkAllocation = new Allocation(sliced, 0, chunkAddress);
++            arenaPool.offer(chunkAllocation);
++        }
++    }
++
++    @Nullable
++    private static Allocation createAllocationDirect(int size) {
++        if (!isAvailable()) {
++            return null;
++        }
++        try {
++            return nativeCreateAllocation(size);
++        } catch (UnsatisfiedLinkError e) {
++            isAvailable = false;
++            return null;
++        }
++    }
++
++    @Nullable
++    public static Allocation createAllocation(int size) {
++        Allocation allocation;
++        if (size == ARENA_CHUNK_SIZE) {
++            if (!arenaInitialized) {
++                initializeArena();
++            }
++            if (arenaBaseAddress != 0) {
++                allocation = arenaPool.poll();
++                if (allocation != null) {
++                    return allocation;
++                }
++            }
++        }
++        return createAllocationDirect(size);
++    }
++
++    public static void freeAllocation(Allocation allocation) {
++        long nativeHandle = allocation.nativeHandle;
++        if (nativeHandle == 0) {
++            return;
++        }
++        if (nativeHandle >= arenaBaseAddress && nativeHandle < arenaEndAddress) {
++            allocation.nativeHandle = 0L;
++            // Clear the retired wrapper before publishing a new live wrapper for the same slice.
++            Allocation recAllocation = new Allocation(allocation.buffer, allocation.offset, nativeHandle);
++            arenaPool.offer(recAllocation);
++            return;
++        }
++        allocation.nativeHandle = 0L;
++            try {
++                nativeFreeAllocation(nativeHandle);
++            } catch (UnsatisfiedLinkError e) {
++                isAvailable = false;
++            }
++    }
++
++    private static boolean isAvailable() {
++        if (loadAttempted) {
++            return isAvailable;
++        }
++        return loadLibrary();
++    }
++
++    private static synchronized boolean loadLibrary() {
++        if (loadAttempted) {
++            return isAvailable;
++        }
++        loadAttempted = true;
++        try {
++            System.loadLibrary(LIBRARY_NAME);
++            isAvailable = true;
++        } catch (SecurityException | UnsatisfiedLinkError e) {
++            isAvailable = false;
++        }
++        return isAvailable;
++    }
++
++    private DefaultAllocatorNative() {
++    }
++}
+--- a/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/video/MediaCodecVideoRenderer.java
++++ b/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/video/MediaCodecVideoRenderer.java
+@@ -1,5 +1,7 @@
+ /*
+  * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Syclop maintained reconstruction (2026): preserve the imported player API and behavior.
+  *
+  * Licensed under the Apache License, Version 2.0 (the "License");
+  * you may not use this file except in compliance with the License.
+@@ -187,6 +189,7 @@
+ 
+   private final PriorityQueue<Long> droppedDecoderInputBufferTimestamps;
+   private final boolean enableMediaCodecBufferDecodeOnlyFlag;
++  private final boolean mapDV7ToHevc;
+ 
+   private @MonotonicNonNull CodecMaxValues codecMaxValues;
+   private boolean codecNeedsSetOutputSurfaceWorkaround;
+@@ -227,6 +230,7 @@
+   /** A builder to create {@link MediaCodecVideoRenderer} instances. */
+   public static final class Builder {
+     private final Context context;
++    private boolean mapDV7ToHevc;
+     private boolean buildCalled;
+     private MediaCodecSelector mediaCodecSelector;
+     private MediaCodecAdapter.Factory codecAdapterFactory;
+@@ -407,6 +411,12 @@
+      * {@link #setEventListener event listener} are neither both {@code null} nor both non-{@code
+      * null}.
+      */
++    @CanIgnoreReturnValue
++    public Builder setMapDV7ToHevc(boolean mapDV7ToHevc) {
++      this.mapDV7ToHevc = mapDV7ToHevc;
++      return this;
++    }
++
+     public MediaCodecVideoRenderer build() {
+       checkState(!buildCalled);
+       checkState(
+@@ -600,6 +610,7 @@
+       videoFrameReleaseEarlyTimeForecaster = null;
+     }
+     enableMediaCodecBufferDecodeOnlyFlag = builder.enableMediaCodecBufferDecodeOnlyFlag;
++    mapDV7ToHevc = builder.mapDV7ToHevc;
+     scrubbingModeParameters = null;
+   }
+ 
+@@ -652,17 +663,17 @@
+   public static @Capabilities int supportsFormat(
+       Context context, MediaCodecSelector mediaCodecSelector, Format format)
+       throws DecoderQueryException {
+-    return supportsFormatInternal(context, mediaCodecSelector, format);
++    return supportsFormatInternal(context, mediaCodecSelector, format, false);
+   }
+ 
+   @Override
+   protected @Capabilities int supportsFormat(MediaCodecSelector mediaCodecSelector, Format format)
+       throws DecoderQueryException {
+-    return supportsFormatInternal(context, mediaCodecSelector, format);
++    return supportsFormatInternal(context, mediaCodecSelector, format, mapDV7ToHevc);
+   }
+ 
+   private static @Capabilities int supportsFormatInternal(
+-      Context context, MediaCodecSelector mediaCodecSelector, Format format)
++      Context context, MediaCodecSelector mediaCodecSelector, Format format, boolean mapDV7ToHevc)
+       throws DecoderQueryException {
+     String mimeType = format.sampleMimeType;
+     if (!MimeTypes.isVideo(mimeType)) {
+@@ -677,7 +688,8 @@
+             mediaCodecSelector,
+             format,
+             requiresSecureDecryption,
+-            /* requiresTunnelingDecoder= */ false);
++            /* requiresTunnelingDecoder= */ false,
++            mapDV7ToHevc);
+     if (requiresSecureDecryption && decoderInfos.isEmpty()) {
+       // No secure decoders are available. Fall back to non-secure decoders.
+       decoderInfos =
+@@ -686,7 +698,8 @@
+               mediaCodecSelector,
+               format,
+               /* requiresSecureDecoder= */ false,
+-              /* requiresTunnelingDecoder= */ false);
++              /* requiresTunnelingDecoder= */ false,
++            mapDV7ToHevc);
+     }
+     if (decoderInfos.isEmpty()) {
+       return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE);
+@@ -740,7 +753,8 @@
+               mediaCodecSelector,
+               format,
+               requiresSecureDecryption,
+-              /* requiresTunnelingDecoder= */ true);
++              /* requiresTunnelingDecoder= */ true,
++              mapDV7ToHevc);
+       if (!tunnelingDecoderInfos.isEmpty()) {
+         MediaCodecInfo tunnelingDecoderInfo =
+             MediaCodecUtil.getDecoderInfosSortedByFormatSupport(tunnelingDecoderInfos, format)
+@@ -765,7 +779,7 @@
+       MediaCodecSelector mediaCodecSelector, Format format, boolean requiresSecureDecoder)
+       throws DecoderQueryException {
+     return MediaCodecUtil.getDecoderInfosSortedByFormatSupport(
+-        getDecoderInfos(context, mediaCodecSelector, format, requiresSecureDecoder, tunneling),
++        getDecoderInfos(context, mediaCodecSelector, format, requiresSecureDecoder, tunneling, mapDV7ToHevc),
+         format);
+   }
+ 
+@@ -792,7 +806,8 @@
+       MediaCodecSelector mediaCodecSelector,
+       Format format,
+       boolean requiresSecureDecoder,
+-      boolean requiresTunnelingDecoder)
++      boolean requiresTunnelingDecoder,
++      boolean mapDV7ToHevc)
+       throws DecoderQueryException {
+     if (format.sampleMimeType == null) {
+       return ImmutableList.of();
+--- a/libraries/extractor/src/main/java/androidx/media3/extractor/DefaultExtractorInput.java
++++ b/libraries/extractor/src/main/java/androidx/media3/extractor/DefaultExtractorInput.java
+@@ -13,7 +13,12 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.extractor;
++
++import androidx.media3.common.ByteBufferDataReader;
++import androidx.media3.common.NuvioEngineConfig;
++import java.nio.ByteBuffer;
+ 
+ import static java.lang.Math.min;
+ 
+@@ -30,7 +35,7 @@
+ 
+ /** An {@link ExtractorInput} that wraps a {@link DataReader}. */
+ @UnstableApi
+-public final class DefaultExtractorInput implements ExtractorInput {
++public final class DefaultExtractorInput implements ExtractorInput, ByteBufferDataReader {
+ 
+   static {
+     MediaLibraryInfo.registerModule("media3.extractor");
+@@ -38,7 +43,7 @@
+ 
+   private static final int PEEK_MIN_FREE_SPACE_AFTER_RESIZE = 64 * 1024;
+   private static final int PEEK_MAX_FREE_SPACE = 512 * 1024;
+-  private static final int SCRATCH_SPACE_SIZE = 4096;
++  private static final int SCRATCH_SPACE_SIZE = NuvioEngineConfig.get().getExtractorScratchSize();
+ 
+   private final byte[] scratchSpace;
+   private final DataReader dataReader;
+@@ -315,4 +320,48 @@
+       position += bytesRead;
+     }
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return (this.dataReader instanceof ByteBufferDataReader) && ((ByteBufferDataReader) this.dataReader).supportsByteBufferRead();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws IOException {
++        if (length == 0) {
++            return 0;
++        }
++        int bytesRead = readFromPeekBuffer(buffer, length);
++        if (bytesRead == 0) {
++            if (!supportsByteBufferRead()) {
++                throw new UnsupportedOperationException();
++            }
++            bytesRead = readFromUpstream(buffer, length, 0, true);
++        }
++        commitBytesRead(bytesRead);
++        return bytesRead;
++    }
++
++    private int readFromPeekBuffer(ByteBuffer target, int length) {
++        if (this.peekBufferLength == 0) {
++            return 0;
++        }
++        int peekBytes = Math.min(this.peekBufferLength, Math.min(length, target.remaining()));
++        target.put(this.peekBuffer, 0, peekBytes);
++        updatePeekBuffer(peekBytes);
++        return peekBytes;
++    }
++
++    private int readFromUpstream(ByteBuffer target, int length, int bytesAlreadyRead, boolean allowEndOfInput) throws IOException {
++        if (Thread.interrupted()) {
++            throw new InterruptedIOException();
++        }
++        int bytesRead = ((ByteBufferDataReader) this.dataReader).read(target, length - bytesAlreadyRead);
++        if (bytesRead == -1) {
++            if (bytesAlreadyRead == 0 && allowEndOfInput) {
++                return -1;
++            }
++            throw new EOFException();
++        }
++        return bytesAlreadyRead + bytesRead;
++    }
+ }
+--- a/libraries/extractor/src/main/java/androidx/media3/extractor/ForwardingExtractorInput.java
++++ b/libraries/extractor/src/main/java/androidx/media3/extractor/ForwardingExtractorInput.java
+@@ -13,14 +13,18 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++// Syclop maintained reconstruction of custom Media3 transport changes; not historical private source.
+ package androidx.media3.extractor;
++
++import androidx.media3.common.ByteBufferDataReader;
++import java.nio.ByteBuffer;
+ 
+ import androidx.media3.common.util.UnstableApi;
+ import java.io.IOException;
+ 
+ /** An overridable {@link ExtractorInput} implementation forwarding all methods to another input. */
+ @UnstableApi
+-public class ForwardingExtractorInput implements ExtractorInput {
++public class ForwardingExtractorInput implements ExtractorInput, ByteBufferDataReader {
+ 
+   private final ExtractorInput input;
+ 
+@@ -109,4 +113,16 @@
+   public <E extends Throwable> void setRetryPosition(long position, E e) throws E {
+     input.setRetryPosition(position, e);
+   }
++
++
++    public boolean supportsByteBufferRead() {
++        return (this.input instanceof ByteBufferDataReader) && ((ByteBufferDataReader) this.input).supportsByteBufferRead();
++    }
++
++    public int read(ByteBuffer buffer, int length) throws IOException {
++        if (!supportsByteBufferRead()) {
++            throw new UnsupportedOperationException();
++        }
++        return ((ByteBufferDataReader) this.input).read(buffer, length);
++    }
+ }
+--- a/libraries/extractor/src/main/java/androidx/media3/extractor/mp4/Mp4Extractor.java
++++ b/libraries/extractor/src/main/java/androidx/media3/extractor/mp4/Mp4Extractor.java
+@@ -1,5 +1,7 @@
+ /*
+  * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Syclop maintained reconstruction (2026): preserve the imported player API and behavior.
+  *
+  * Licensed under the Apache License, Version 2.0 (the "License");
+  * you may not use this file except in compliance with the License.
+@@ -35,6 +37,7 @@
+ 
+ import androidx.annotation.IntDef;
+ import androidx.annotation.Nullable;
++import androidx.annotation.VisibleForTesting;
+ import androidx.media3.common.C;
+ import androidx.media3.common.Format;
+ import androidx.media3.common.Metadata;
+@@ -43,6 +46,7 @@
+ import androidx.media3.common.util.Assertions;
+ import androidx.media3.common.util.ParsableByteArray;
+ import androidx.media3.common.util.UnstableApi;
++import androidx.media3.common.util.Util;
+ import androidx.media3.container.MdtaMetadataEntry;
+ import androidx.media3.container.Mp4Box;
+ import androidx.media3.container.Mp4Box.ContainerBox;
+@@ -184,30 +188,11 @@
+             new Mp4Extractor(SubtitleParser.Factory.UNSUPPORTED, FLAG_EMIT_RAW_SUBTITLE_DATA)
+           };
+ 
+-  /** Parser states. */
+-  @Documented
+-  @Retention(RetentionPolicy.SOURCE)
+-  @Target(TYPE_USE)
+-  @IntDef({
+-    STATE_READING_ATOM_HEADER,
+-    STATE_READING_ATOM_PAYLOAD,
+-    STATE_READING_SAMPLE,
+-    STATE_READING_SEF,
+-  })
+-  private @interface State {}
+-
+   private static final int STATE_READING_ATOM_HEADER = 0;
+   private static final int STATE_READING_ATOM_PAYLOAD = 1;
+   private static final int STATE_READING_SAMPLE = 2;
+   private static final int STATE_READING_SEF = 3;
+ 
+-  /** Supported file types. */
+-  @Documented
+-  @Retention(RetentionPolicy.SOURCE)
+-  @Target(TYPE_USE)
+-  @IntDef({FILE_TYPE_MP4, FILE_TYPE_QUICKTIME, FILE_TYPE_HEIC})
+-  private @interface FileType {}
+-
+   private static final int FILE_TYPE_MP4 = 0;
+   private static final int FILE_TYPE_QUICKTIME = 1;
+   private static final int FILE_TYPE_HEIC = 2;
+@@ -223,6 +208,13 @@
+    * ahead before the source will be reloaded at a new position to read another track.
+    */
+   private static final long MAXIMUM_READ_AHEAD_BYTES_STREAM = 10 * 1024 * 1024;
++  private static final long MAXIMUM_CATCH_UP_AHEAD_TIME_US = 5_000_000;
++  private static final long TEXT_SAMPLE_RUN_BYTES = 1024 * 1024;
++  private static final long OUT_OF_BAND_TEXT_DISTANCE_BYTES = 2 * 1024 * 1024;
++  private static final int MAX_PREFETCHED_TEXT_SAMPLE_BYTES = 1024 * 1024;
++  private static final int MAX_PREFETCHED_TEXT_BYTES = 4 * 1024 * 1024;
++  private static final int MAX_OUT_OF_BAND_TEXT_RUNS = 32;
++  private static final int EMPTY_TX3G_SAMPLE_BYTES = 2;
+ 
+   private final SubtitleParser.Factory subtitleParserFactory;
+   private final @Flags int flags;
+@@ -238,7 +230,7 @@
+   private final List<Metadata.Entry> slowMotionMetadataEntries;
+ 
+   private ImmutableList<SniffFailure> lastSniffFailures;
+-  private @State int parserState;
++  private int parserState;
+   private int atomType;
+   private long atomSize;
+   private int atomHeaderBytesRead;
+@@ -257,6 +249,11 @@
+   // Used when auxiliary tracks samples are in the auxiliary tracks MP4 (inside axte atom).
+   private long sampleOffsetForAuxiliaryTracks;
+ 
++  @Nullable private byte[][][] prefetchedTextSamples;
++  @Nullable private List<OutOfBandTextSample> textPrefetchSamples;
++  private int textPrefetchReadIndex;
++  private boolean textPrefetchComplete;
++
+   // Extractor outputs.
+   private ExtractorOutput extractorOutput;
+   private Mp4Track[] tracks;
+@@ -264,7 +261,7 @@
+   private long @MonotonicNonNull [][] accumulatedSampleSizes;
+   private int firstVideoTrackIndex;
+   private long durationUs;
+-  private @FileType int fileType;
++  private int fileType;
+   @Nullable private MotionPhotoMetadata motionPhotoMetadata;
+ 
+   /**
+@@ -311,6 +308,7 @@
+     slowMotionMetadataEntries = new ArrayList<>();
+     atomHeader = new ParsableByteArray(Mp4Box.LONG_HEADER_SIZE);
+     containerAtoms = new ArrayDeque<>();
++    textPrefetchComplete = true;
+     nalStartCode = new ParsableByteArray(NalUnitUtil.NAL_START_CODE);
+     nalPrefix = new ParsableByteArray(6);
+     scratch = new ParsableByteArray();
+@@ -369,6 +367,7 @@
+     sampleCurrentNalBytesRemaining = 0;
+     isSampleDependedOn = false;
+     if (position == 0) {
++      clearOutOfBandTextPrefetch();
+       // Reading the SEF data occurs before normal MP4 parsing. Therefore we can not transition to
+       // reading the atom header until that has completed.
+       if (parserState != STATE_READING_SEF) {
+@@ -377,7 +376,10 @@
+         sefReader.reset();
+         slowMotionMetadataEntries.clear();
+       }
+-    } else {
++    } else if (!textPrefetchComplete) {
++      clearOutOfBandTextPrefetch();
++    }
++    if (position != 0) {
+       for (Mp4Track track : tracks) {
+         updateSampleIndex(track, timeUs);
+         if (track.trueHdSampleRechunker != null) {
+@@ -785,6 +787,7 @@
+     this.durationUs = durationUs;
+     this.tracks = tracks.toArray(new Mp4Track[0]);
+     accumulatedSampleSizes = calculateAccumulatedSampleSizes(this.tracks);
++    prepareOutOfBandTextPrefetch();
+ 
+     extractorOutput.endTracks();
+     extractorOutput.seekMap(this);
+@@ -873,6 +876,9 @@
+   private int readSample(ExtractorInput input, PositionHolder positionHolder) throws IOException {
+     long inputPosition = input.getPosition();
+     if (sampleTrackIndex == C.INDEX_UNSET) {
++      if (!textPrefetchComplete) {
++        return readOutOfBandTextPrefetch(input, positionHolder);
++      }
+       sampleTrackIndex = getTrackIndexOfNextReadSample(inputPosition);
+       if (sampleTrackIndex == C.INDEX_UNSET) {
+         return RESULT_END_OF_INPUT;
+@@ -881,6 +887,10 @@
+     Mp4Track track = tracks[sampleTrackIndex];
+     TrackOutput trackOutput = track.trackOutput;
+     int sampleIndex = track.sampleIndex;
++    byte[] prefetchedText = peekPrefetchedTextSample(sampleTrackIndex, sampleIndex);
++    if (prefetchedText != null) {
++      return outputPrefetchedTextSample(track, sampleIndex, prefetchedText);
++    }
+     long position = track.sampleTable.offsets[sampleIndex] + sampleOffsetForAuxiliaryTracks;
+     int sampleSize = track.sampleTable.sizes[sampleIndex];
+     @Nullable TrueHdSampleRechunker trueHdSampleRechunker = track.trueHdSampleRechunker;
+@@ -1032,11 +1042,14 @@
+     int minAccumulatedBytesTrackIndex = C.INDEX_UNSET;
+     for (int trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
+       Mp4Track track = tracks[trackIndex];
+-      int sampleIndex = track.sampleIndex;
++      int sampleIndex = skipEmptyOutOfBandTx3gSamples(track, trackIndex, inputPosition);
+       if (sampleIndex == track.sampleTable.sampleCount) {
+         continue;
+       }
+       long sampleOffset = track.sampleTable.offsets[sampleIndex];
++      if (hasPrefetchedTextSample(trackIndex, sampleIndex)) {
++        sampleOffset = inputPosition;
++      }
+       long sampleAccumulatedBytes = castNonNull(accumulatedSampleSizes)[trackIndex][sampleIndex];
+       long skipAmount = sampleOffset - inputPosition;
+       boolean requiresReload = skipAmount < 0 || skipAmount >= RELOAD_MINIMUM_SEEK_DISTANCE;
+@@ -1053,11 +1066,307 @@
+         minAccumulatedBytesTrackIndex = trackIndex;
+       }
+     }
+-    return minAccumulatedBytes == Long.MAX_VALUE
+-            || !minAccumulatedBytesRequiresReload
+-            || preferredAccumulatedBytes < minAccumulatedBytes + MAXIMUM_READ_AHEAD_BYTES_STREAM
+-        ? preferredTrackIndex
+-        : minAccumulatedBytesTrackIndex;
++    boolean catchUpSampleIsAheadInTime = false;
++    if (preferredTrackIndex != C.INDEX_UNSET
++        && minAccumulatedBytesTrackIndex != C.INDEX_UNSET
++        && preferredTrackIndex != minAccumulatedBytesTrackIndex) {
++      Mp4Track preferredTrack = tracks[preferredTrackIndex];
++      Mp4Track catchUpTrack = tracks[minAccumulatedBytesTrackIndex];
++      long preferredTimeUs = preferredTrack.sampleTable.timestampsUs[preferredTrack.sampleIndex];
++      long catchUpTimeUs = catchUpTrack.sampleTable.timestampsUs[catchUpTrack.sampleIndex];
++      catchUpSampleIsAheadInTime =
++          catchUpTimeUs > preferredTimeUs + MAXIMUM_CATCH_UP_AHEAD_TIME_US;
++    }
++    if (preferredTrackIndex != C.INDEX_UNSET
++        && !preferredRequiresReload
++        && tracks[preferredTrackIndex].track.type == C.TRACK_TYPE_TEXT) {
++      return preferredTrackIndex;
++    }
++    int chosenTrackIndex =
++        minAccumulatedBytes == Long.MAX_VALUE
++                || !minAccumulatedBytesRequiresReload
++                || preferredAccumulatedBytes < minAccumulatedBytes + MAXIMUM_READ_AHEAD_BYTES_STREAM
++                || catchUpSampleIsAheadInTime
++            ? preferredTrackIndex
++            : minAccumulatedBytesTrackIndex;
++    return maybeStartTextSampleRunAtEarliestSample(chosenTrackIndex, inputPosition);
++  }
++
++  private int skipEmptyOutOfBandTx3gSamples(Mp4Track track, int trackIndex, long inputPosition) {
++      int sampleIndex = track.sampleIndex;
++      if (!"application/x-quicktime-tx3g".equals(track.track.format.sampleMimeType)) {
++          return sampleIndex;
++      }
++      TrackSampleTable sampleTable = track.sampleTable;
++      while (sampleIndex < sampleTable.sampleCount && sampleTable.sizes[sampleIndex] <= EMPTY_TX3G_SAMPLE_BYTES && !hasPrefetchedTextSample(trackIndex, sampleIndex)) {
++          long skipAmount = sampleTable.offsets[sampleIndex] - inputPosition;
++          if (skipAmount >= 0 && skipAmount < RELOAD_MINIMUM_SEEK_DISTANCE) {
++              break;
++          }
++          sampleIndex++;
++      }
++      track.sampleIndex = sampleIndex;
++      return sampleIndex;
++  }
++
++  private int maybeStartTextSampleRunAtEarliestSample(int chosenTrackIndex, long inputPosition) {
++    if (chosenTrackIndex == C.INDEX_UNSET
++        || tracks[chosenTrackIndex].track.type != C.TRACK_TYPE_TEXT) {
++      return chosenTrackIndex;
++    }
++    Mp4Track chosenTrack = tracks[chosenTrackIndex];
++    long chosenOffset = chosenTrack.sampleTable.offsets[chosenTrack.sampleIndex];
++    long chosenSkip = chosenOffset - inputPosition;
++    if (chosenSkip <= TEXT_SAMPLE_RUN_BYTES && chosenSkip >= -TEXT_SAMPLE_RUN_BYTES) {
++      return chosenTrackIndex;
++    }
++    int earliestTrackIndex = chosenTrackIndex;
++    long earliestOffset = chosenOffset;
++    for (int trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
++      Mp4Track track = tracks[trackIndex];
++      if (track.track.type != C.TRACK_TYPE_TEXT) {
++        continue;
++      }
++      int sampleIndex = track.sampleIndex;
++      if (sampleIndex == track.sampleTable.sampleCount) {
++        continue;
++      }
++      long sampleOffset = track.sampleTable.offsets[sampleIndex];
++      if (sampleOffset < earliestOffset && chosenOffset - sampleOffset <= TEXT_SAMPLE_RUN_BYTES) {
++        earliestOffset = sampleOffset;
++        earliestTrackIndex = trackIndex;
++      }
++    }
++    return earliestTrackIndex;
++  }
++
++  @VisibleForTesting
++  boolean consumeNextSampleForTests(long inputPosition, long[] offsetAndSize) {
++    int trackIndex = getTrackIndexOfNextReadSample(inputPosition);
++    if (trackIndex == C.INDEX_UNSET) {
++      return false;
++    }
++    Mp4Track track = tracks[trackIndex];
++    int sampleIndex = track.sampleIndex++;
++    if (hasPrefetchedTextSample(trackIndex, sampleIndex)) {
++      offsetAndSize[0] = inputPosition;
++      offsetAndSize[1] = 0;
++    } else {
++      offsetAndSize[0] = track.sampleTable.offsets[sampleIndex];
++      offsetAndSize[1] = track.sampleTable.sizes[sampleIndex];
++    }
++    return true;
++  }
++
++  @VisibleForTesting
++  boolean isOutOfBandTextPrefetchPending() {
++      return !this.textPrefetchComplete;
++  }
++
++  @VisibleForTesting
++  int outOfBandTextSampleCountForTests() {
++    return textPrefetchSamples == null ? 0 : textPrefetchSamples.size();
++  }
++
++  private void prepareOutOfBandTextPrefetch() {
++    clearOutOfBandTextPrefetch();
++    int referenceTrackIndex = findInterleavedReferenceTrackIndex();
++    if (referenceTrackIndex == C.INDEX_UNSET) {
++      return;
++    }
++    TrackSampleTable referenceTable = tracks[referenceTrackIndex].sampleTable;
++    List<OutOfBandTextSample> samples = new ArrayList<>();
++    byte[][][] prefetched = new byte[tracks.length][][];
++    long totalBytes = 0;
++    boolean budgetExhausted = false;
++    for (int trackIndex = 0; trackIndex < tracks.length && !budgetExhausted; trackIndex++) {
++      Mp4Track track = tracks[trackIndex];
++      if (track.track.type != C.TRACK_TYPE_TEXT) {
++        continue;
++      }
++      TrackSampleTable sampleTable = track.sampleTable;
++      for (int sampleIndex = 0; sampleIndex < sampleTable.sampleCount; sampleIndex++) {
++        int sampleSize = sampleTable.sizes[sampleIndex];
++        if (sampleSize < 0 || sampleSize > MAX_PREFETCHED_TEXT_SAMPLE_BYTES) {
++          continue;
++        }
++        long sampleOffset = sampleTable.offsets[sampleIndex] + sampleOffsetForAuxiliaryTracks;
++        long referenceOffset =
++            sampleOffsetAtTimeUs(referenceTable, sampleTable.timestampsUs[sampleIndex])
++                + sampleOffsetForAuxiliaryTracks;
++        long delta = sampleOffset - referenceOffset;
++        if (delta <= OUT_OF_BAND_TEXT_DISTANCE_BYTES && delta >= -OUT_OF_BAND_TEXT_DISTANCE_BYTES) {
++          continue;
++        }
++        if (totalBytes + sampleSize > MAX_PREFETCHED_TEXT_BYTES) {
++          budgetExhausted = true;
++          break;
++        }
++        if (prefetched[trackIndex] == null) {
++          prefetched[trackIndex] = new byte[sampleTable.sampleCount][];
++        }
++        samples.add(new OutOfBandTextSample(trackIndex, sampleIndex, sampleOffset, sampleSize));
++        totalBytes += sampleSize;
++      }
++    }
++    if (samples.isEmpty() || countOutOfBandTextRuns(samples) > MAX_OUT_OF_BAND_TEXT_RUNS) {
++      return;
++    }
++    orderOutOfBandTextSamples(samples);
++    prefetchedTextSamples = prefetched;
++    textPrefetchSamples = samples;
++    textPrefetchReadIndex = 0;
++    textPrefetchComplete = false;
++  }
++
++  private static int countOutOfBandTextRuns(List<OutOfBandTextSample> samples) {
++      if (samples.size() <= 1) {
++          return samples.size();
++      }
++      samples.sort((first, second) -> {
++          return Long.compare(first.offset, second.offset);
++      });
++      int runs = 1;
++      for (int index = 1; index < samples.size(); index++) {
++          OutOfBandTextSample previous = samples.get(index - 1);
++          OutOfBandTextSample current = samples.get(index);
++          long gap = current.offset - (previous.offset + ((long) previous.size));
++          if (gap >= RELOAD_MINIMUM_SEEK_DISTANCE) {
++              runs++;
++          }
++      }
++      return runs;
++  }
++
++  private static void orderOutOfBandTextSamples(List<OutOfBandTextSample> samples) {
++    samples.sort((first, second) -> Long.compare(first.offset, second.offset));
++    List<OutOfBandTextSample> ordered = new ArrayList<>(samples.size());
++    int runEnd = samples.size() - 1;
++    while (runEnd >= 0) {
++      int runStart = runEnd;
++      while (runStart > 0) {
++        OutOfBandTextSample previous = samples.get(runStart - 1);
++        OutOfBandTextSample current = samples.get(runStart);
++        long gap = current.offset - (previous.offset + previous.size);
++        if (gap >= RELOAD_MINIMUM_SEEK_DISTANCE) {
++          break;
++        }
++        runStart--;
++      }
++      for (int index = runStart; index <= runEnd; index++) {
++        ordered.add(samples.get(index));
++      }
++      runEnd = runStart - 1;
++    }
++    samples.clear();
++    samples.addAll(ordered);
++  }
++
++  private int readOutOfBandTextPrefetch(ExtractorInput input, PositionHolder positionHolder) throws IOException {
++      List<OutOfBandTextSample> samples = Assertions.checkNotNull(this.textPrefetchSamples);
++      byte[][][] prefetched = (byte[][][]) Assertions.checkNotNull(this.prefetchedTextSamples);
++      while (this.textPrefetchReadIndex < samples.size()) {
++          OutOfBandTextSample sample = samples.get(this.textPrefetchReadIndex);
++          long skipAmount = sample.offset - input.getPosition();
++          if (skipAmount < 0 || skipAmount >= RELOAD_MINIMUM_SEEK_DISTANCE) {
++              positionHolder.position = sample.offset;
++              return 1;
++          }
++          if (skipAmount > 0) {
++              input.skipFully((int) skipAmount);
++          }
++          byte[] data = new byte[sample.size];
++          if (sample.size > 0) {
++              input.readFully(data, 0, sample.size);
++          }
++          prefetched[sample.trackIndex][sample.sampleIndex] = data;
++          this.textPrefetchReadIndex++;
++      }
++      this.textPrefetchComplete = true;
++      return 0;
++  }
++
++  private int outputPrefetchedTextSample(Mp4Track track, int sampleIndex, byte[] data) {
++      int sampleSize = data.length;
++      ParsableByteArray sampleData = new ParsableByteArray(data);
++      if (track.track.sampleTransformation == 1 && data.length >= 8) {
++          sampleData.setPosition(8);
++          sampleSize -= 8;
++      }
++      if (sampleSize > 0) {
++          track.trackOutput.sampleData(sampleData, sampleSize);
++      }
++      if (!canReadWithinGopSampleDependencies(track.track.format)) {
++          this.isSampleDependedOn = true;
++      }
++      long timeUs = track.sampleTable.timestampsUs[sampleIndex];
++      int sampleFlags = track.sampleTable.flags[sampleIndex];
++      if (!this.isSampleDependedOn) {
++          sampleFlags |= 67108864;
++      }
++      track.trackOutput.sampleMetadata(timeUs, sampleFlags, sampleSize, 0, null);
++      track.sampleIndex++;
++      this.sampleTrackIndex = -1;
++      this.sampleBytesRead = 0;
++      this.sampleBytesWritten = 0;
++      this.sampleCurrentNalBytesRemaining = 0;
++      this.isSampleDependedOn = false;
++      return 0;
++  }
++
++  private void clearOutOfBandTextPrefetch() {
++      this.prefetchedTextSamples = null;
++      this.textPrefetchSamples = null;
++      this.textPrefetchReadIndex = 0;
++      this.textPrefetchComplete = true;
++  }
++
++  private int findInterleavedReferenceTrackIndex() {
++      if (this.firstVideoTrackIndex != -1 && this.tracks[this.firstVideoTrackIndex].sampleTable.sampleCount > 0) {
++          return this.firstVideoTrackIndex;
++      }
++      for (int trackIndex = 0; trackIndex < this.tracks.length; trackIndex++) {
++          Mp4Track track = this.tracks[trackIndex];
++          if (track.track.type == 1 && track.sampleTable.sampleCount > 0) {
++              return trackIndex;
++          }
++      }
++      return -1;
++  }
++
++  private static long sampleOffsetAtTimeUs(TrackSampleTable sampleTable, long timeUs) {
++      int sampleIndex = Util.binarySearchFloor(sampleTable.timestampsUs, timeUs, true, true);
++      return sampleTable.offsets[sampleIndex];
++  }
++
++  @Nullable
++  private byte[] peekPrefetchedTextSample(int trackIndex, int sampleIndex) {
++      if (!hasPrefetchedTextSample(trackIndex, sampleIndex)) {
++          return null;
++      }
++      return ((byte[][][]) Assertions.checkNotNull(this.prefetchedTextSamples))[trackIndex][sampleIndex];
++  }
++
++  private boolean hasPrefetchedTextSample(int trackIndex, int sampleIndex) {
++    if (prefetchedTextSamples == null) {
++      return false;
++    }
++    byte[][] trackSamples = prefetchedTextSamples[trackIndex];
++    return trackSamples != null && trackSamples[sampleIndex] != null;
++  }
++
++  private static final class OutOfBandTextSample {
++      public final int trackIndex;
++      public final int sampleIndex;
++      public final long offset;
++      public final int size;
++
++      public OutOfBandTextSample(int trackIndex, int sampleIndex, long offset, int size) {
++          this.trackIndex = trackIndex;
++          this.sampleIndex = sampleIndex;
++          this.offset = offset;
++          this.size = size;
++      }
+   }
+ 
+   /** Updates a track's sample index to point its latest sync sample before/at {@code timeUs}. */
+@@ -1205,10 +1514,10 @@
+    * @param atomData The ftyp atom data.
+    * @return The {@link FileType}.
+    */
+-  private static @FileType int processFtypAtom(ParsableByteArray atomData) {
++  private static int processFtypAtom(ParsableByteArray atomData) {
+     atomData.setPosition(Mp4Box.HEADER_SIZE);
+     int majorBrand = atomData.readInt();
+-    @FileType int fileType = brandToFileType(majorBrand);
++    int fileType = brandToFileType(majorBrand);
+     if (fileType != FILE_TYPE_MP4) {
+       return fileType;
+     }
+@@ -1222,7 +1531,7 @@
+     return FILE_TYPE_MP4;
+   }
+ 
+-  private static @FileType int brandToFileType(int brand) {
++  private static int brandToFileType(int brand) {
+     switch (brand) {
+       case BRAND_QUICKTIME:
+         return FILE_TYPE_QUICKTIME;

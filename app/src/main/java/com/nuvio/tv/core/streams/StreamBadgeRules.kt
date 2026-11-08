@@ -2,8 +2,9 @@ package com.nuvio.tv.core.streams
 
 import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.model.StreamBadge
-import java.util.regex.Pattern
-import java.util.regex.Matcher
+import com.google.re2j.Pattern
+import com.google.re2j.Matcher
+import com.google.re2j.PatternSyntaxException
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
@@ -14,6 +15,11 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNames
 
 const val STREAM_BADGE_IMPORT_LIMIT = 3
+private const val MAX_BADGE_FILTERS = 512
+private const val MAX_BADGE_PATTERN_LENGTH = 2_048
+private const val MAX_BADGE_PATTERN_COST = 65_536
+private const val MAX_BADGE_PACK_COST = 262_144
+private const val MAX_BADGE_CANDIDATE_LENGTH = 32_768
 
 @Serializable
 data class StreamBadgeRules(
@@ -139,6 +145,132 @@ sealed interface StreamBadgeImportResult {
     data class Error(val message: String) : StreamBadgeImportResult
 }
 
+class StreamBadgePatternException(message: String) : IllegalArgumentException(message)
+
+private data class BadgePattern(
+    val include: Pattern,
+    val prefixExclusions: List<Pattern>,
+    val suffixExclusions: List<Pattern>,
+    val consumesBoundary: Boolean,
+    val cost: Int
+)
+
+private data class BadgePatternShape(val groups: List<IntRange>, val hasTopLevelAlternative: Boolean, val cost: Int)
+
+private val badgeFlags = Regex("^\\(\\?[ims-]+\\)")
+private val badgeRepeat = Regex("\\{([0-9]+)(?:,([0-9]*))?}")
+
+private fun badgePatternShape(text: String): BadgePatternShape {
+    if (text.length > MAX_BADGE_PATTERN_LENGTH) throw StreamBadgePatternException("Badge pattern exceeds the size limit.")
+    val groups = mutableListOf<IntRange>()
+    var depth = 0
+    var start = 0
+    var characterClass = false
+    var literal = false
+    var alternative = false
+    var repeatCost = 1
+    var index = 0
+    while (index < text.length) {
+        val char = text[index]
+        if (char == '\\') {
+            if (!characterClass && text.getOrNull(index + 1) == 'Q') literal = true
+            if (text.getOrNull(index + 1) == 'E') literal = false
+            index += 2
+            continue
+        }
+        if (!literal) when (char) {
+            '[' -> characterClass = true
+            ']' -> characterClass = false
+            '(' -> if (!characterClass) {
+                if (text.startsWith("(?", index)) {
+                    val flags = text.substring(index + 2).takeWhile { it.isLetter() || it == '-' }
+                    if ('U' in flags || 'u' in flags) {
+                        throw StreamBadgePatternException("Badge pattern uses unsupported Unicode regex flags.")
+                    }
+                }
+                if (depth++ == 0) start = index
+                if (depth > 32) throw StreamBadgePatternException("Badge pattern exceeds the nesting limit.")
+            }
+            ')' -> if (!characterClass) {
+                depth--
+                if (depth < 0) throw StreamBadgePatternException("Badge pattern has unbalanced groups.")
+                if (depth == 0) groups += start..index
+            }
+            '|' -> if (!characterClass && depth == 0) alternative = true
+            '{' -> if (!characterClass) {
+                val repeat = badgeRepeat.find(text, index)?.takeIf { it.range.first == index }
+                if (repeat != null) {
+                    val count = (repeat.groups[2]?.value?.ifEmpty { repeat.groupValues[1] }
+                        ?: repeat.groupValues[1]).toIntOrNull()
+                        ?: throw StreamBadgePatternException("Badge pattern repeat exceeds the limit.")
+                    val expansion = count.coerceAtLeast(1)
+                    if (expansion > MAX_BADGE_PATTERN_COST / repeatCost / text.length.coerceAtLeast(1)) {
+                        throw StreamBadgePatternException("Badge pattern is too complex.")
+                    }
+                    repeatCost *= expansion
+                    index = repeat.range.last
+                }
+            }
+        }
+        index++
+    }
+    if (depth != 0 || characterClass || literal) throw StreamBadgePatternException("Badge pattern is incomplete.")
+    return BadgePatternShape(groups, alternative, text.length * repeatCost)
+}
+
+private fun compileBadgePattern(text: String, remainingCost: Int = MAX_BADGE_PACK_COST): BadgePattern {
+    val shape = badgePatternShape(text)
+    if (shape.cost > remainingCost) throw StreamBadgePatternException("Badge pack is too complex.")
+    val flags = badgeFlags.find(text)?.value.orEmpty()
+    var body = text.removePrefix(flags)
+    val prefixExclusions = mutableListOf<String>()
+    val suffixExclusions = mutableListOf<String>()
+    if (body.startsWith('^')) {
+        var offset = 1
+        val groups = badgePatternShape(body).groups
+        while (body.startsWith("(?!.*", offset)) {
+            val group = groups.firstOrNull { it.first == offset }
+                ?: throw StreamBadgePatternException("Badge pattern has an unsupported assertion.")
+            prefixExclusions += body.substring(offset + 3, group.last)
+            offset = group.last + 1
+        }
+        if (offset > 1) body = "^" + body.substring(offset)
+    }
+    while (true) {
+        val group = badgePatternShape(body).groups.lastOrNull()
+        if (group == null || group.last != body.lastIndex || !body.startsWith("(?!.*", group.first)) break
+        suffixExclusions += body.substring(group.first + 3, group.last)
+        body = body.substring(0, group.first)
+    }
+    val consumesBoundary = body.endsWith("(?= |$)")
+    if (consumesBoundary) body = body.removeSuffix("(?= |$)") + "(?: |$)"
+    if ((prefixExclusions.isNotEmpty() || suffixExclusions.isNotEmpty() || consumesBoundary) &&
+        badgePatternShape(body).hasTopLevelAlternative) {
+        throw StreamBadgePatternException("Badge pattern has an unsupported assertion around alternatives.")
+    }
+    return try {
+        BadgePattern(
+            include = Pattern.compile(flags + body),
+            prefixExclusions = prefixExclusions.map { Pattern.compile(flags + it) },
+            suffixExclusions = suffixExclusions.map { Pattern.compile(flags + it) },
+            consumesBoundary = consumesBoundary,
+            cost = shape.cost
+        )
+    } catch (_: PatternSyntaxException) {
+        throw StreamBadgePatternException("Badge pattern uses unsupported syntax. Use regular expressions without backreferences or additional lookarounds.")
+    }
+}
+
+fun StreamBadgeRules.validatePatterns() {
+    var remainingCost = MAX_BADGE_PACK_COST
+    imports.forEach { imported ->
+        if (imported.filters.size > MAX_BADGE_FILTERS) throw StreamBadgePatternException("Badge pack has too many filters.")
+        imported.filters.filter { it.name.isNotBlank() && it.pattern.isNotBlank() }.forEach {
+            remainingCost -= compileBadgePattern(it.pattern, remainingCost).cost
+        }
+    }
+}
+
 internal object StreamBadgeRulesParser {
     @OptIn(ExperimentalSerializationApi::class)
     private val json = Json {
@@ -193,21 +325,24 @@ internal object StreamBadgeRulesParser {
             sourceUrl = sourceUrl.trim(),
             filters = filters,
             groups = groups
-        )
+        ).also { StreamBadgeRules(imports = listOf(it)).validatePatterns() }
     }
 }
 
 internal object StreamBadgeMatcher {
     fun compile(rules: StreamBadgeRules): List<CompiledStreamBadgeFilter> {
         if (!rules.hasImport) return emptyList()
+        var remainingCost = MAX_BADGE_PACK_COST
         return rules.normalized().imports.filter { it.isActive }.flatMap { import ->
+            if (import.filters.size > MAX_BADGE_FILTERS) return@flatMap emptyList()
             import.filters.mapNotNull { filter ->
                 if (!filter.isEnabled || filter.name.isBlank() || filter.pattern.isBlank()) {
                     return@mapNotNull null
                 }
-                val pattern = runCatching {
-                    Pattern.compile(filter.pattern)
-                }.getOrNull() ?: return@mapNotNull null
+                val pattern = try {
+                    compileBadgePattern(filter.pattern, remainingCost)
+                } catch (_: StreamBadgePatternException) { return@mapNotNull null }
+                remainingCost -= pattern.cost
                 CompiledStreamBadgeFilter(
                     name = filter.name,
                     badge = StreamBadge(
@@ -218,11 +353,14 @@ internal object StreamBadgeMatcher {
                         textColor = filter.textColor,
                         borderColor = filter.borderColor
                     ),
-                    pattern = pattern,
+                    pattern = pattern.include,
+                    prefixExclusions = pattern.prefixExclusions,
+                    suffixExclusions = pattern.suffixExclusions,
+                    consumesBoundary = pattern.consumesBoundary,
                     // Extract a short literal hint from the pattern for fast pre-screening.
                     // If the candidate doesn't contain this literal (case-insensitive),
                     // we skip the expensive regex entirely.
-                    literalHint = extractLiteralHint(filter.pattern)
+                    literalHint = extractLiteralHint(pattern.include.pattern())
                 )
             }
         }
@@ -323,11 +461,25 @@ internal object StreamBadgeMatcher {
     ): Boolean {
         val hint = filter.literalHint
         val matcher = filter.threadLocalMatcher.get() ?: return false
+        val prefixMatchers = filter.prefixMatchers.get()
+        val suffixMatchers = filter.suffixMatchers.get()
         for (candidate in candidates) {
+            if (candidate.length > MAX_BADGE_CANDIDATE_LENGTH) continue
             // Fast pre-screen: skip regex if the literal hint isn't present.
             if (hint != null && !containsIgnoreCase(candidate, hint)) continue
             matcher.reset(candidate)
-            if (matcher.find()) return true
+            var assertionBudget = candidate.length.coerceAtLeast(1).toLong() * 16
+            while (matcher.find()) {
+                val start = matcher.start()
+                val end = matcher.end() - if (filter.consumesBoundary && matcher.end() > start && candidate[matcher.end() - 1] == ' ') 1 else 0
+                val assertionCost = prefixMatchers.size.toLong() * (candidate.length - start) +
+                    suffixMatchers.size.toLong() * (candidate.length - end)
+                if (assertionCost > assertionBudget) break
+                assertionBudget -= assertionCost
+                val prefixExcluded = prefixMatchers.any { it.reset(candidate.substring(start)).lookingAt() }
+                val suffixExcluded = suffixMatchers.any { it.reset(candidate.substring(end)).lookingAt() }
+                if (!prefixExcluded && !suffixExcluded) return true
+            }
         }
         return false
     }
@@ -393,7 +545,10 @@ class CompiledStreamBadgeFilter(
     val name: String,
     val badge: StreamBadge,
     val pattern: Pattern,
-    val literalHint: String?
+    val literalHint: String?,
+    private val prefixExclusions: List<Pattern> = emptyList(),
+    private val suffixExclusions: List<Pattern> = emptyList(),
+    internal val consumesBoundary: Boolean = false
 ) {
     /**
      * Per-thread reusable Matcher. [Matcher.reset] is called before each use
@@ -403,6 +558,12 @@ class CompiledStreamBadgeFilter(
      */
     internal val threadLocalMatcher: ThreadLocal<Matcher> = ThreadLocal.withInitial {
         pattern.matcher("")
+    }
+    internal val prefixMatchers: ThreadLocal<List<Matcher>> = ThreadLocal.withInitial {
+        prefixExclusions.map { it.matcher("") }
+    }
+    internal val suffixMatchers: ThreadLocal<List<Matcher>> = ThreadLocal.withInitial {
+        suffixExclusions.map { it.matcher("") }
     }
 }
 

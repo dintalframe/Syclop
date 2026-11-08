@@ -26,7 +26,7 @@ class NativeMalDebridMappingIntegrationTest {
         Harness().use { h ->
             h.readyPack()
             val result = withTimeout(10_000) { h.resolver.resolve(source(), 1, 1, nativeVideoId = MAL, nativeMediaType = "series") }
-            assertEquals(DirectDebridResolveResult.Success(FILE, "Frieren.S02E01.mkv", 222L), result)
+            assertEquals(DirectDebridResolveResult.Success(FILE, "Frieren.S02E01.mkv", 222L, providerId = "realdebrid"), result)
             assertTrue(h.resolver.isPlaybackAuthorized(FILE, 1))
             assertEquals("realdebrid", h.settings.value.activeResolverProviderId)
             val requests = List(5) { h.rd.takeRequest() }

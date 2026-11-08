@@ -57,6 +57,7 @@ data class LibraryEntry(
 }
 
 enum class LibrarySourceMode {
+    AUTO,
     LOCAL,
     TRAKT,
     SIMKL,

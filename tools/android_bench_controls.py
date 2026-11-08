@@ -21,25 +21,34 @@ TESTS = {
     "com.nuvio.tv.ui.screens.settings.AppRestartSettingsTvTest": (
         "cancelIsInitiallyFocusedAndReturnsToTheSettingsAction",
         "backDismissesConfirmationWithoutRestarting",
-        "rightThenCenterConfirmsExactlyOneRestartRequest")
+        "rightThenCenterConfirmsExactlyOneRestartRequest"),
+    "com.nuvio.tv.ui.screens.settings.AppShutdownSettingsTvTest": (
+        "cancelIsInitiallyFocusedAndReturnsToTheSettingsAction",
+        "backDismissesConfirmationWithoutShuttingDown",
+        "confirmationRequestsShutdownOnceAndDisablesTheAction",
+        "failedShutdownRestoresTheActionAndAllowsRetry")
 }
 EXPECTED_TESTS = frozenset((group, method) for group, methods in TESTS.items() for method in methods)
 SCREENSHOTS = (
     "playback-movie-resume-and-start.png", "playback-episode-resume-and-start.png",
     "playback-labelled-start-and-next.png", "playback-final-episode-actions.png",
-    "restart-confirmation-cancel-focused.png", "restart-confirmation-restart-focused.png")
+    "restart-confirmation-cancel-focused.png", "restart-confirmation-restart-focused.png",
+    "shutdown-confirmation-cancel-focused.png", "shutdown-confirmation-shutdown-focused.png",
+    "shutdown-failure-action-restored.png")
 CATEGORY_TESTS = {
     "com.nuvio.tv.ui.screens.home.HomeCategoryNavigationTvTest": (
         "lateAnimeCatalogKeepsFocusedCardAndOneUpReturnsToHeader",
         "lateKidsGroupKeepsSafeEntryAndOneUpReturnsToHeader",
         "changingCategoriesKeepsHeaderFocusAndUsesNewCategoryRows",
         "newRequestRevisionRestoresConfiguredOrderWithoutOldFocus",
-        "lateHomeBodyCannotStealHeaderAndDownRestoresRememberedCard")
+        "lateHomeBodyCannotStealHeaderAndDownRestoresRememberedCard",
+        "repeatedUpAndLeftDoNotActivateHomeUntilExplicitCenter")
 }
 CATEGORY_SCREENSHOTS = (
     "category-anime-late-arrival.png", "category-kids-late-group.png",
     "category-change-anime-header.png", "category-request-order-reset.png",
-    "category-home-late-header.png", "category-home-remembered-entry.png")
+    "category-home-late-header.png", "category-home-remembered-entry.png",
+    "category-boundary-home-unselected.png")
 EPISODE_TESTS = {
     "com.nuvio.tv.ui.screens.stream.EpisodeSourceCardsTvTest": (
         "completeSeasonPackIsHiddenAndExactEpisodeCardKeepsRemoteFocus",
@@ -51,11 +60,13 @@ STARTUP_TESTS = {
     "com.nuvio.tv.ui.components.StartupInitializationScreenTvTest": (
         "lateBackgroundFocusCannotEscapeInitializationGate",
         "retryContinueAndBackKeepTheirActionsAndRestoreHomeFocus",
-        "repeatedGateTransitionsKeepTheSameNativeWindowRoots")
+        "repeatedGateTransitionsKeepTheSameNativeWindowRoots",
+        "retryThatRemovesFocusedActionKeepsContinueUsableUntilHomeReturns")
 }
 STARTUP_SCREENSHOTS = (
     "startup-gate-background-blocked.png", "startup-gate-actions.png",
-    "startup-gate-resumed-home.png", "startup-gate-same-window.png")
+    "startup-gate-resumed-home.png", "startup-gate-same-window.png",
+    "startup-gate-retry-focus-restored.png")
 PROGRESSIVE_TESTS = {
     "com.nuvio.tv.ui.screens.stream.ProgressiveSourcesTvTest": (
         "laterBetterResultDoesNotStealTheSelectedSourceFocus",
@@ -71,6 +82,33 @@ CONTINUE_WATCHING_TESTS = {
 CONTINUE_WATCHING_SCREENSHOTS = (
     "continue-watching-latest-episode.png", "continue-watching-next-up.png")
 SUITE_MIN_API = {"startup-initialization": 29}
+BADGE_TESTS = {
+    "com.nuvio.tv.ui.screens.player.PlayerTechnicalBadgesTvTest": (
+        "unknownMetadataAppearsOnlyAfterFormatsArrive",
+        "formatAndLanguageChangesRemoveStaleBadges",
+        "playerPackDrawsEmbeddedArtworkAndKeepsTextFallback",
+        "narrowLargeTextLayoutWrapsAllGroups",
+        "metadataDoesNotInterceptRemoteActionFocus",
+        "exoFormatsRequireExplicitAtmosSignal")
+}
+BADGE_SCREENSHOTS = (
+    "player-badges-reference.png", "player-badges-changed-track.png",
+    "player-badges-narrow-large-text.png", "player-badges-remote-focus.png")
+PLAYBACK_END_TESTS = {
+    "com.nuvio.tv.ui.screens.player.ExoStuckVideoEndRecoveryAndroidTest": (
+        "inputEofWithoutVideoEndedRecoversThroughNativeEndedAndRestoresVideoOnSeek",
+        "ordinaryRendererEofStillReachesNativeEndedWithoutRecovery")
+}
+HERO_DESCRIPTION_TESTS = {
+    "com.nuvio.tv.ui.screens.home.HeroDescriptionTvTest": (
+        "overflowScrollsAfterDwellWithinItsFixedViewport",
+        "selectionChangesAndOffscreenVisibilityResetTheReadingPosition",
+        "disabledMotionStopsScrollingAndKeepsFullAccessibleDescription",
+        "shortDescriptionNeverMoves")
+}
+HERO_DESCRIPTION_SCREENSHOTS = (
+    "home-description-overflow-top.png", "home-description-overflow-scrolled.png",
+    "home-description-motion-disabled.png", "home-description-short-still.png")
 SUITES = {
     "playback-controls": (TESTS, SCREENSHOTS),
     "category-navigation": (CATEGORY_TESTS, CATEGORY_SCREENSHOTS),
@@ -78,6 +116,9 @@ SUITES = {
     "startup-initialization": (STARTUP_TESTS, STARTUP_SCREENSHOTS),
     "progressive-sources": (PROGRESSIVE_TESTS, PROGRESSIVE_SCREENSHOTS),
     "continue-watching": (CONTINUE_WATCHING_TESTS, CONTINUE_WATCHING_SCREENSHOTS),
+    "playback-badges": (BADGE_TESTS, BADGE_SCREENSHOTS),
+    "playback-end": (PLAYBACK_END_TESTS, ()),
+    "hero-description": (HERO_DESCRIPTION_TESTS, HERO_DESCRIPTION_SCREENSHOTS),
 }
 
 

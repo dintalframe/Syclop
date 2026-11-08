@@ -25,32 +25,70 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DirectDebridResolutionBudgetTest {
-    @Test fun `per service deadline tries the next captured account within the overall deadline`() = runTest {
+    @Test fun `earlier valid parallel service wins without waiting for the stalled service deadline`() = runTest {
         val h = Harness(this)
-        coEvery { h.ad.resolve(any(), any(), any(), any()) } coAnswers { awaitCancellation() }
-        coEvery { h.rd.resolve(any(), any(), any(), any()) } returns h.success
+        var stalledCancelled = false
+        var winnerStartedAt = -1L
+        coEvery { h.ad.resolve(any(), any(), any(), any()) } coAnswers {
+            try { awaitCancellation() } finally { stalledCancelled = true }
+        }
+        coEvery { h.rd.resolve(any(), any(), any(), any()) } coAnswers {
+            winnerStartedAt = testScheduler.currentTime
+            delay(500L)
+            h.success
+        }
         val request = async { h.resolver.resolve(source(), null, null) }
-        runCurrent(); advanceTimeBy(1_000); runCurrent()
-        assertEquals(h.success, request.await())
+        runCurrent()
+        assertEquals(h.success.copy(providerId = DebridProviders.REAL_DEBRID_ID), request.await())
+        runCurrent()
         coVerify(exactly = 1) { h.ad.resolve(any(), any(), any(), any()) }
         coVerify(exactly = 1) { h.rd.resolve(any(), any(), any(), any()) }
-        assertEquals(1_000L, testScheduler.currentTime)
+        assertTrue(stalledCancelled)
+        assertEquals(winnerStartedAt + 500L, testScheduler.currentTime)
+        assertTrue(testScheduler.currentTime < 1_000L)
+        assertTrue(h.resolver.isPlaybackAuthorized(h.success.url))
+    }
+
+    @Test fun `per service deadlines cancel every stalled operation before the overall deadline`() = runTest {
+        val h = Harness(this, overall = 3_000L, service = 1_000L)
+        val cancelled = mutableSetOf<String>()
+        coEvery { h.ad.resolve(any(), any(), any(), any()) } coAnswers {
+            try { awaitCancellation() } finally { cancelled += DebridProviders.ALL_DEBRID_ID }
+        }
+        coEvery { h.rd.resolve(any(), any(), any(), any()) } coAnswers {
+            try { awaitCancellation() } finally { cancelled += DebridProviders.REAL_DEBRID_ID }
+        }
+        val result = h.resolver.resolve(source(), null, null)
+        runCurrent()
+        assertEquals(DirectDebridFailureReason.TIMED_OUT, (result as DirectDebridResolveResult.Failure).detail.reason)
+        assertEquals(1_250L, testScheduler.currentTime)
+        assertEquals(setOf(DebridProviders.ALL_DEBRID_ID, DebridProviders.REAL_DEBRID_ID), cancelled)
+        assertFalse(h.resolver.isPlaybackAuthorized(h.success.url))
+        coVerify(exactly = 1) { h.ad.resolve(any(), any(), any(), any()) }
+        coVerify(exactly = 1) { h.rd.resolve(any(), any(), any(), any()) }
     }
 
     @Test fun `overall deadline bounds all fallback attempts and never grants a timed out result`() = runTest {
-        val h = Harness(this, overall = 1_500L)
-        coEvery { h.ad.resolve(any(), any(), any(), any()) } coAnswers { awaitCancellation() }
-        coEvery { h.rd.resolve(any(), any(), any(), any()) } coAnswers { awaitCancellation() }
+        val h = Harness(this, overall = 1_500L, service = 5_000L)
+        val cancelled = mutableSetOf<String>()
+        coEvery { h.ad.resolve(any(), any(), any(), any()) } coAnswers {
+            try { awaitCancellation() } finally { cancelled += DebridProviders.ALL_DEBRID_ID }
+        }
+        coEvery { h.rd.resolve(any(), any(), any(), any()) } coAnswers {
+            try { awaitCancellation() } finally { cancelled += DebridProviders.REAL_DEBRID_ID }
+        }
         val result = h.resolver.resolve(source(), null, null)
+        runCurrent()
         assertEquals(DirectDebridFailureReason.TIMED_OUT, (result as DirectDebridResolveResult.Failure).detail.reason)
         assertEquals(1_500L, testScheduler.currentTime)
+        assertEquals(setOf(DebridProviders.ALL_DEBRID_ID, DebridProviders.REAL_DEBRID_ID), cancelled)
         assertFalse(h.resolver.isPlaybackAuthorized(h.success.url))
         coVerify(exactly = 1) { h.ad.resolve(any(), any(), any(), any()) }
         coVerify(exactly = 1) { h.rd.resolve(any(), any(), any(), any()) }
     }
 
     @Test fun `cancelling the only waiter cancels its service work and cannot start fallback`() = runTest {
-        val h = Harness(this)
+        val h = Harness(this, fallback = false)
         val cancelled = CompletableDeferred<Unit>()
         coEvery { h.ad.resolve(any(), any(), any(), any()) } coAnswers {
             try { awaitCancellation() } finally { cancelled.complete(Unit) }
@@ -63,7 +101,7 @@ class DirectDebridResolutionBudgetTest {
     }
 
     @Test fun `a second waiter retains the bounded shared service operation when first cancels`() = runTest {
-        val h = Harness(this)
+        val h = Harness(this, fallback = false)
         val response = CompletableDeferred<DirectDebridResolveResult>()
         coEvery { h.ad.resolve(any(), any(), any(), any()) } coAnswers { response.await() }
         val first = async { h.resolver.resolve(source(), null, null) }
@@ -71,7 +109,8 @@ class DirectDebridResolutionBudgetTest {
         val second = async { h.resolver.resolve(source(), null, null) }
         runCurrent(); first.cancelAndJoin(); runCurrent()
         response.complete(h.success)
-        assertEquals(h.success, second.await())
+        assertEquals(h.success.copy(providerId = DebridProviders.ALL_DEBRID_ID), second.await())
+        assertTrue(h.resolver.isPlaybackAuthorized(h.success.url))
         coVerify(exactly = 1) { h.ad.resolve(any(), any(), any(), any()) }
         coVerify(exactly = 0) { h.rd.resolve(any(), any(), any(), any()) }
     }
@@ -94,12 +133,24 @@ class DirectDebridResolutionBudgetTest {
         coVerify(exactly = 3) { h.ad.resolve(any(), any(), any(), any()) }
     }
 
-    @Test fun `wrong episode is terminal without service fallback or a playback grant`() = runTest {
+    @Test fun `first wrong episode response cancels pending service dispatch without a playback grant`() = runTest {
         val h = Harness(this)
+        val attempted = mutableListOf<String>()
         coEvery { h.ad.resolve(any(), any(), any(), any()) } returns failure(DirectDebridFailureReason.WRONG_EPISODE)
-        val result = h.resolver.resolve(source(), 1, 4)
+        coEvery { h.rd.resolve(any(), any(), any(), any()) } returns DirectDebridResolveResult.Failure(
+            DirectDebridFailure(DirectDebridFailureReason.WRONG_EPISODE, DebridProviders.REAL_DEBRID_ID))
+        val result = h.resolver.resolve(source(), 1, 4, onProviderAttempt = { attempted += it })
         assertEquals(DirectDebridFailureReason.WRONG_EPISODE, (result as DirectDebridResolveResult.Failure).detail.reason)
-        coVerify(exactly = 0) { h.rd.resolve(any(), any(), any(), any()) }
+        assertEquals(1, attempted.size)
+        assertEquals(attempted.single(), result.detail.providerId)
+        assertEquals(0L, testScheduler.currentTime)
+        if (attempted.single() == DebridProviders.ALL_DEBRID_ID) {
+            coVerify(exactly = 1) { h.ad.resolve(any(), any(), any(), any()) }
+            coVerify(exactly = 0) { h.rd.resolve(any(), any(), any(), any()) }
+        } else {
+            coVerify(exactly = 0) { h.ad.resolve(any(), any(), any(), any()) }
+            coVerify(exactly = 1) { h.rd.resolve(any(), any(), any(), any()) }
+        }
         assertFalse(h.resolver.isPlaybackAuthorized(h.success.url))
     }
 
@@ -112,7 +163,8 @@ class DirectDebridResolutionBudgetTest {
         coEvery { h.tb.resolve(any(), any(), any(), any()) } coAnswers {
             selected = firstArg(); h.success
         }
-        assertEquals(h.success, h.resolver.resolve(source().copy(infoHash = "A".repeat(32)), null, null))
+        assertEquals(h.success.copy(providerId = DebridProviders.TORBOX_ID),
+            h.resolver.resolve(source().copy(infoHash = "A".repeat(32)), null, null))
         coVerify(exactly = 1) { h.local.isCached(any(), canonical) }
         assertEquals(canonical, selected!!.clientResolve!!.infoHash)
         assertEquals("magnet:?xt=urn:btih:$canonical", selected!!.clientResolve!!.magnetUri)
@@ -121,13 +173,20 @@ class DirectDebridResolutionBudgetTest {
     @Test fun `selected cache rate limit skips service resolve and uses account cooldown before fallback`() = runTest {
         val h = Harness(this, initialSettings = DebridSettings(enabled = true,
             preferredResolverProviderId = "torbox", torboxApiKey = "synthetic-tb", realDebridApiKey = "synthetic-rd"))
-        coEvery { h.local.isCached(any(), any()) } throws DirectDebridHttpException(429, 120L)
-        coEvery { h.rd.resolve(any(), any(), any(), any()) } returns h.success
-        assertEquals(h.success, h.resolver.resolve(source(), null, null))
-        assertEquals(h.success, h.resolver.resolve(source("b"), null, null))
+        var rateLimitedAt = -1L
+        coEvery { h.local.isCached(any(), any()) } coAnswers {
+            rateLimitedAt = testScheduler.currentTime
+            throw DirectDebridHttpException(429, 120L)
+        }
+        coEvery { h.rd.resolve(any(), any(), any(), any()) } coAnswers { delay(500L); h.success }
+        val winner = h.success.copy(providerId = DebridProviders.REAL_DEBRID_ID)
+        assertEquals(winner, h.resolver.resolve(source(), null, null))
+        assertEquals(winner, h.resolver.resolve(source("b"), null, null))
         val rateLimited = h.resolver.resolve(source("c"), null, null, allowFallback = false) as DirectDebridResolveResult.Failure
         assertEquals(DirectDebridFailureReason.RATE_LIMITED, rateLimited.detail.reason)
-        assertEquals(120L, rateLimited.detail.retryAfterSeconds)
+        val remainingSeconds = (rateLimitedAt + 120_000L - testScheduler.currentTime + 999L) / 1_000L
+        assertEquals(remainingSeconds, rateLimited.detail.retryAfterSeconds)
+        assertTrue(remainingSeconds in 1L..120L)
         coVerify(exactly = 1) { h.local.isCached(any(), any()) }
         coVerify(exactly = 0) { h.tb.resolve(any(), any(), any(), any()) }
         coVerify(exactly = 2) { h.rd.resolve(any(), any(), any(), any()) }
@@ -161,10 +220,11 @@ class DirectDebridResolutionBudgetTest {
         coVerify(exactly = 2) { h.ad.resolve(any(), any(), any(), any()) }
     }
 
-    private class Harness(scope: TestScope, overall: Long = 3_000L,
+    private class Harness(scope: TestScope, overall: Long = 3_000L, service: Long = 1_000L,
+        fallback: Boolean = true,
         initialSettings: DebridSettings = DebridSettings(enabled = true, preferredResolverProviderId = "alldebrid",
             allDebridApiKey = "synthetic-ad", realDebridApiKey = "synthetic-rd")) {
-        val settings = MutableStateFlow(initialSettings)
+        val settings = MutableStateFlow(initialSettings.copy(connectedServiceFallbackEnabled = fallback))
         val profile = MutableStateFlow(1)
         val credentials = AtomicLong(1L)
         val ad = mockk<AllDebridDirectDebridResolver>()
@@ -183,7 +243,7 @@ class DirectDebridResolutionBudgetTest {
             val grants = ServicePlaybackGrantRegistry({ scope.testScheduler.currentTime }, requireLiveOrigin = true)
             grants.bindLiveOrigin { ServicePlaybackOrigin(profile.value, 1L, credentials.get()) }
             resolver = DirectDebridResolver(store, tb, rd, ad, mockk(), local, scope.backgroundScope, grants,
-                overallBudgetMillis = overall, serviceBudgetMillis = 1_000L, clock = { scope.testScheduler.currentTime })
+                overallBudgetMillis = overall, serviceBudgetMillis = service, clock = { scope.testScheduler.currentTime })
         }
     }
 

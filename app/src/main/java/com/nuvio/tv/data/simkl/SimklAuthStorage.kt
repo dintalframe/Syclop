@@ -17,6 +17,10 @@ data class SimklAuthorization(
 interface SimklAuthStorage {
     val state: StateFlow<SimklAuthState>
 
+    /** Legacy storage cannot attest a durable playback origin. */
+    suspend fun capturePlaybackGrantId(profileId: Int): String? = null
+    fun isPlaybackGrantCurrent(profileId: Int, grantId: String): Boolean = false
+
     fun currentScope(): SimklAuthScope
     fun isCurrent(scope: SimklAuthScope): Boolean
     fun authorization(): SimklAuthorization?

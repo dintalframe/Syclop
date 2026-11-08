@@ -2,6 +2,7 @@ package com.nuvio.tv.core.player
 
 import android.content.Context
 import android.util.Log
+import androidx.activity.result.ActivityResultRegistry
 import com.nuvio.tv.core.cloud.CloudLibraryPlaybackResult
 import com.nuvio.tv.core.cloud.CloudLibraryPlaybackProgressStore
 import com.nuvio.tv.core.cloud.CloudLibraryPlaybackSessionStore
@@ -10,7 +11,13 @@ import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.tracking.TrackingMediaKind
 import com.nuvio.tv.core.tracking.TrackingMediaReference
 import com.nuvio.tv.core.tracking.TrackingScrobbleAction
+import com.nuvio.tv.core.tracking.TrackingPlaybackOrigin
+import com.nuvio.tv.core.tracking.TrackingPlaybackOriginRecord
 import com.nuvio.tv.core.tracking.TrackingScrobbleCoordinator
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.nuvio.tv.core.tracking.TrackingScrobbleEvent
 import com.nuvio.tv.core.tracking.buildTrackingMediaReference
 import com.nuvio.tv.core.util.parseRuntimeMinutes
@@ -23,6 +30,8 @@ import com.nuvio.tv.domain.repository.WatchProgressRepository
 import com.nuvio.tv.data.repository.SkipIntroRepository
 import com.nuvio.tv.data.repository.SkipInterval
 import com.nuvio.tv.ui.screens.player.PlayerNextEpisodeRules
+import com.nuvio.tv.ui.screens.player.PlayerProgressWriteAuthority
+import com.nuvio.tv.ui.screens.player.PlayerProgressWriteOwner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -195,7 +204,8 @@ class ExternalPlaybackTracker @Inject constructor(
     private val cloudLibraryRepository: CloudLibraryRepository,
     private val cloudPlaybackProgressStore: CloudLibraryPlaybackProgressStore,
     private val cloudPlaybackSessionStore: CloudLibraryPlaybackSessionStore,
-    private val profileManager: com.nuvio.tv.core.profile.ProfileManager
+    private val profileManager: com.nuvio.tv.core.profile.ProfileManager,
+    private val progressWriteAuthority: PlayerProgressWriteAuthority
 ) {
     companion object {
         private const val TAG = "ExtPlaybackTracker"
@@ -258,20 +268,43 @@ class ExternalPlaybackTracker @Inject constructor(
     private var nextEpisodeSnapshot: ExternalNextEpisodeSnapshot = ExternalNextEpisodeSnapshot.Unknown
     private var autoNextEnabledForPendingLaunch: Boolean? = null
     private var pendingCloudSessionToken: String? = null
-    // Local continuation ownership only; this is not a durable/internal-player progress lease.
+    // Tracking generations reject replaced continuations; progress leases also order internal playback.
     private var trackingGeneration = 0L
+    private class ProgressOwnership(
+        val reservation: PlayerProgressWriteAuthority.ExternalReservation?,
+        var request: PlayerProgressWriteAuthority.Request? = null
+    )
+    private var pendingProgressOwnership: ProgressOwnership? = null
+    private class PlaybackOriginOwnership(
+        private var runtime: TrackingPlaybackOrigin? = null,
+        val record: TrackingPlaybackOriginRecord? = runtime?.record()
+    ) {
+        private val mutex = Mutex()
+        suspend fun resolve(coordinator: TrackingScrobbleCoordinator): TrackingPlaybackOrigin? = mutex.withLock {
+            runtime ?: record?.let { coordinator.recoverPlaybackOrigin(it) }?.also { runtime = it }
+        }
+    }
+    private var pendingPlaybackOrigin: PlaybackOriginOwnership? = null
+    private var pendingHandoffId: String? = null
     private data class TrackingSession(
         val metadata: ExternalPlaybackMetadata,
         val generation: Long,
-        val cloudSessionToken: String?
+        val cloudSessionToken: String?,
+        val progressOwnership: ProgressOwnership,
+        val handoffId: String,
+        val playbackOrigin: PlaybackOriginOwnership
     )
+    // The ActivityResult contract does not echo a request ID. Keep one physical handoff outstanding.
+    private var outstandingResultSession: TrackingSession? = null
 
     private fun currentTrackingSession(): TrackingSession? = pendingMetadata?.let {
-        TrackingSession(it, trackingGeneration, pendingCloudSessionToken)
+        TrackingSession(it, trackingGeneration, pendingCloudSessionToken, checkNotNull(pendingProgressOwnership),
+            checkNotNull(pendingHandoffId), checkNotNull(pendingPlaybackOrigin))
     }
 
     private fun generationIsCurrent(session: TrackingSession): Boolean =
-        session.generation == trackingGeneration
+        session.generation == trackingGeneration &&
+            (session.progressOwnership.request?.let(progressWriteAuthority::isCurrent) != false)
 
     private fun trackingSessionIsCurrent(session: TrackingSession): Boolean =
         generationIsCurrent(session) && pendingMetadata === session.metadata
@@ -279,11 +312,15 @@ class ExternalPlaybackTracker @Inject constructor(
     private fun trackingSessionOrRecover(): TrackingSession? {
         currentTrackingSession()?.let { return it }
         val metadata = loadPersistedMetadata() ?: return null
+        val handoffId = loadPersistedHandoffId() ?: run { clearPersistedMetadata(); return null }
         trackingGeneration++
         pendingMetadata = metadata
         nextEpisodeSnapshot = loadPersistedNextEpisodeSnapshot()
         autoNextEnabledForPendingLaunch = loadPersistedAutoNextEnabled()
         pendingCloudSessionToken = loadPersistedCloudSessionToken()
+        pendingProgressOwnership = ProgressOwnership(loadPersistedProgressReservation(metadata))
+        pendingHandoffId = handoffId
+        pendingPlaybackOrigin = PlaybackOriginOwnership(record = loadPersistedPlaybackOrigin(metadata.profileId))
         return currentTrackingSession()
     }
 
@@ -307,11 +344,33 @@ class ExternalPlaybackTracker @Inject constructor(
         appContext.getSharedPreferences("external_playback_pending", Context.MODE_PRIVATE)
     }
 
-    /**
-     * The ActivityResultLauncher registered in MainActivity.
-     * Set during Activity.onCreate, used to launch external players with result tracking.
-     */
-    var activityLauncher: androidx.activity.result.ActivityResultLauncher<ExternalPlayerInput>? = null
+    private var resultBroker: ExternalPlayerResultBroker? = null
+
+    /** Bind after ComponentActivity restores its registry request-code mapping. */
+    fun bindActivityResultRegistry(registry: ActivityResultRegistry) {
+        resultBroker?.close()
+        val broker = ExternalPlayerResultBroker(registry, initiallyActive = false,
+            onBuffered = ::persistBufferedResult, onResult = ::onActivityResult)
+        resultBroker = broker
+        val outstanding = outstandingResultSession?.handoffId ?: loadPersistedHandoffId()
+            ?.takeIf { persistedPrefs.getBoolean("externalResultOutstanding", false) }
+        if (outstanding != null) broker.recover(outstanding, loadBufferedResult(outstanding))
+        else clearBufferedResult()
+    }
+
+    fun unbindActivityResultRegistry(registry: ActivityResultRegistry) {
+        val broker = resultBroker?.takeIf { it.registry === registry } ?: return
+        broker.close()
+        resultBroker = null
+    }
+
+    fun onActivityResultRegistryStarted(registry: ActivityResultRegistry) {
+        resultBroker?.takeIf { it.registry === registry }?.activate()
+    }
+
+    fun onActivityResultRegistryStopped(registry: ActivityResultRegistry) {
+        resultBroker?.takeIf { it.registry === registry }?.deactivate()
+    }
 
     /** Currently pending external playback metadata, or null if nothing is playing externally. */
     var pendingMetadata: ExternalPlaybackMetadata? = null
@@ -324,15 +383,19 @@ class ExternalPlaybackTracker @Inject constructor(
     val isTracking: Boolean get() = pendingMetadata != null
 
     /**
-     * Called before launching an external player. Stores metadata and starts keep-alive service.
+     * Low-level setup for an accepted handoff. launchPlayer passes handoffAccepted=false while
+     * preparing, and claims shared progress ownership only after Android accepts its intent.
      */
-    fun startTracking(
+    internal fun startTracking(
         metadata: ExternalPlaybackMetadata,
         autoLaunch: Boolean = false,
         startFromBeginning: Boolean = false,
         nextEpisodeSnapshot: ExternalNextEpisodeSnapshot? = null,
         autoNextEnabled: Boolean? = null,
-        cloudSessionToken: String? = null
+        cloudSessionToken: String? = null,
+        progressReservation: PlayerProgressWriteAuthority.ExternalReservation? = null,
+        handoffAccepted: Boolean = true,
+        playbackOrigin: TrackingPlaybackOrigin? = null
     ) {
         trackingGeneration++
         // A manual stream choice supersedes any completion handoff still resolving for the
@@ -348,6 +411,15 @@ class ExternalPlaybackTracker @Inject constructor(
         awaitingExternalPlayerResult = true
         pendingMetadata = metadata
         pendingCloudSessionToken = cloudSessionToken
+        pendingPlaybackOrigin = PlaybackOriginOwnership(playbackOrigin)
+        val reservation = if (metadata.contentType.equals("cloud", ignoreCase = true)) null else
+            progressReservation ?: PlayerProgressWriteAuthority.ExternalReservation(
+                progressOwner(metadata), java.util.UUID.randomUUID().toString(), null)
+        pendingProgressOwnership = ProgressOwnership(reservation)
+        pendingHandoffId = reservation?.nonce ?: java.util.UUID.randomUUID().toString()
+        if (handoffAccepted && reservation != null) {
+            pendingProgressOwnership!!.request = progressWriteAuthority.acceptExternal(reservation)
+        }
         isAutoLaunch = autoLaunch
         // A manual launch is always fresh; only an auto-launch within the window is a continuation
         // that keeps a user's abort in effect (so one Back press stops a runaway chain).
@@ -367,9 +439,14 @@ class ExternalPlaybackTracker @Inject constructor(
         this.nextEpisodeSnapshot = nextEpisodeSnapshot ?: ExternalNextEpisodeSnapshot.Unknown
         autoNextEnabledForPendingLaunch = autoNextEnabled
         // Persist so progress-save + auto-next survive the player killing our process.
-        persistMetadata(metadata, cloudSessionToken)
+        persistMetadata(metadata, cloudSessionToken, pendingProgressOwnership!!)
         persistAutoNextState(this.nextEpisodeSnapshot, autoNextEnabled)
         val session = checkNotNull(currentTrackingSession())
+        if (handoffAccepted) {
+            outstandingResultSession = session
+            persistResultOutstanding(true)
+            checkpointProgressOwnership(session)
+        }
         startNextEpisodePrefetch(session)
 
         // Keep the process alive while the external player is foregrounded. Some boxes
@@ -426,21 +503,45 @@ class ExternalPlaybackTracker @Inject constructor(
             Log.d(AUTO_NEXT_TAG, "auto launch cancelled before tracker setup")
             return false
         }
+        // Pin all native accounts before any settings/lease/metadata work can suspend.
+        val originCapture = trackingScrobbleCoordinator.preparePlaybackOrigin(metadata.profileId)
+        val localPlaybackScope = try {
+            watchProgressRepository.captureLocalPlaybackScope(metadata.profileId)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { null }
+        val playbackOrigin = originCapture.resolve(localPlaybackScope)
         val launchSettings = playerSettingsDataStore.playerSettings.first()
         val autoNextEnabled = launchSettings.streamAutoPlayNextEpisodeEnabled
         if (!launchStillCurrent() || shouldCancelPendingAutoLaunch(autoLaunch)) {
             Log.d(AUTO_NEXT_TAG, "auto launch cancelled while reading player settings")
             return false
         }
-        startTracking(
-            metadata = metadata,
-            autoLaunch = autoLaunch,
-            startFromBeginning = startFromBeginning,
-            nextEpisodeSnapshot = nextEpisodeSnapshot,
-            autoNextEnabled = autoNextEnabled,
-            cloudSessionToken = cloudSessionToken
-        )
-        val session = checkNotNull(currentTrackingSession())
+        if (outstandingResultSession != null ||
+            persistedPrefs.getBoolean("externalResultOutstanding", false)) {
+            Log.w(TAG, "An external player result is still outstanding; refusing an overlapping handoff")
+            return false
+        }
+        val reservation = if (metadata.contentType.equals("cloud", ignoreCase = true)) null else
+            progressWriteAuthority.prepareExternal(progressOwner(metadata))
+        val session = withContext(Dispatchers.Main.immediate) {
+            // Check again after checkpoint IO: another request may have launched while it suspended.
+            if (!launchStillCurrent() || shouldCancelPendingAutoLaunch(autoLaunch) ||
+                outstandingResultSession != null || persistedPrefs.getBoolean("externalResultOutstanding", false)) null
+            else {
+                startTracking(
+                    metadata = metadata,
+                    autoLaunch = autoLaunch,
+                    startFromBeginning = startFromBeginning,
+                    nextEpisodeSnapshot = nextEpisodeSnapshot,
+                    autoNextEnabled = autoNextEnabled,
+                    cloudSessionToken = cloudSessionToken,
+                    progressReservation = reservation,
+                    handoffAccepted = false,
+                    playbackOrigin = playbackOrigin
+                )
+                checkNotNull(currentTrackingSession())
+            }
+        } ?: return false
 
         // Resolve resume position (if not given) and intro/outro skip segments off the main
         // thread, then launch. Skip resolution is bounded so it never stalls the launch for long
@@ -473,8 +574,18 @@ class ExternalPlaybackTracker @Inject constructor(
                             subtitles = subtitles,
                             skipSegmentsJson = skipSegmentsJson,
                             playerPackage = launchSettings.externalPlayerPackage,
-                            context = context
-                        )
+                            context = context,
+                            handoffId = session.handoffId
+                        ).also { accepted ->
+                            if (accepted) {
+                                reservation?.let { session.progressOwnership.request = progressWriteAuthority.acceptExternal(it) }
+                                if (awaitingExternalPlayerResult) {
+                                    outstandingResultSession = session
+                                    persistResultOutstanding(true)
+                                }
+                                checkpointProgressOwnership(session)
+                            }
+                        }
                     }
                 }
             }
@@ -570,7 +681,8 @@ class ExternalPlaybackTracker @Inject constructor(
         subtitles: List<SubtitleInput>?,
         skipSegmentsJson: String?,
         playerPackage: String?,
-        context: Context
+        context: Context,
+        handoffId: String
     ): Boolean {
         if (!com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.permits(url)) return false
 
@@ -588,10 +700,10 @@ class ExternalPlaybackTracker @Inject constructor(
         // Always prefer ActivityResult, including on Zidoo hardware. A Zidoo may launch Vimu,
         // Just Player, or another third-party player that does return progress. Treating the
         // device itself as the player bypasses that contract and loses resume updates (#3269).
-        val launcher = activityLauncher
-        if (launcher != null) {
+        val broker = resultBroker
+        if (broker != null) {
             return try {
-                launcher.launch(input)
+                broker.launch(handoffId, input)
                 true
             } catch (e: Exception) {
                 awaitingExternalPlayerResult = false
@@ -611,7 +723,7 @@ class ExternalPlaybackTracker @Inject constructor(
         }
 
         awaitingExternalPlayerResult = false
-        Log.w(TAG, "No activityLauncher registered, using fire-and-forget")
+        Log.w(TAG, "No ActivityResult registry registered, using fire-and-forget")
         return ExternalPlayerLauncher.launch(
             context = context,
             url = url,
@@ -629,7 +741,20 @@ class ExternalPlaybackTracker @Inject constructor(
 
     /** Entry point for the player's ActivityResult: recover metadata, backfill a missing
      *  duration if needed, save progress, and auto-advance on completion. */
-    fun onActivityResult(result: ExternalPlayerResult?) {
+    internal fun onActivityResult(result: ExternalPlayerResult?) {
+        val handoffId = outstandingResultSession?.handoffId ?: pendingHandoffId ?: loadPersistedHandoffId() ?: return
+        onActivityResult(handoffId, result)
+    }
+
+    internal fun onActivityResult(handoffId: String, result: ExternalPlayerResult?) {
+        val expected = outstandingResultSession?.handoffId ?: pendingHandoffId ?: loadPersistedHandoffId()
+        if (handoffId != expected) {
+            Log.d(TAG, "Ignoring result for a retired external handoff")
+            clearBufferedResult(handoffId)
+            return
+        }
+        clearBufferedResult(handoffId)
+        resultBroker?.retire(handoffId)
         awaitingExternalPlayerResult = false
         // The result arrived, so this is a live session, not a dead one — stand down the watchdog
         // before it can clear the persisted copy out from under the recovery below.
@@ -638,7 +763,16 @@ class ExternalPlaybackTracker @Inject constructor(
         // If the player killed our process, pendingMetadata is null after recreation —
         // fall back to the persisted copy so we still save progress and auto-advance.
         val recoveredFromDisk = pendingMetadata == null
-        val session = trackingSessionOrRecover()
+        val captured = outstandingResultSession.also { outstandingResultSession = null }
+        if (captured != null && captured.generation == trackingGeneration && pendingMetadata == null) {
+            pendingMetadata = captured.metadata
+            pendingCloudSessionToken = captured.cloudSessionToken
+            pendingProgressOwnership = captured.progressOwnership
+            pendingHandoffId = captured.handoffId
+            pendingPlaybackOrigin = captured.playbackOrigin
+        }
+        val session = captured ?: trackingSessionOrRecover()
+        persistResultOutstanding(false)
         if (session == null) {
             Log.d(TAG, "onActivityResult but no pending metadata (in-memory or persisted)")
             clearPersistedMetadata()
@@ -682,7 +816,10 @@ class ExternalPlaybackTracker @Inject constructor(
         if ((result.durationMs == null || result.durationMs <= 0L) && result.positionMs > 0L) {
             scope.launch {
                 val fallback = resolveFallbackDurationMs(metadata)
-                if (!trackingSessionIsCurrent(session)) return@launch
+                if (!trackingSessionIsCurrent(session)) {
+                    retireSupersededResult(session)
+                    return@launch
+                }
                 val enriched = if (fallback > 0L) {
                     Log.d(TAG, "Backfilled missing duration: ${fallback}ms")
                     result.copy(durationMs = fallback)
@@ -699,8 +836,25 @@ class ExternalPlaybackTracker @Inject constructor(
 
     /** Completion check + save + auto-next + cleanup for a result with a resolved duration. */
     private fun processResult(session: TrackingSession, result: ExternalPlayerResult) {
-        if (!trackingSessionIsCurrent(session)) return
+        if (!trackingSessionIsCurrent(session)) {
+            retireSupersededResult(session)
+            return
+        }
         val metadata = session.metadata
+        if (!metadata.contentType.equals("cloud", ignoreCase = true) && session.progressOwnership.request == null) {
+            scope.launch {
+                val reservation = session.progressOwnership.reservation
+                val recovered = reservation?.let { progressWriteAuthority.recoverExternal(it) }
+                if (session.generation != trackingGeneration || pendingMetadata !== metadata) return@launch
+                if (recovered == null) {
+                    retireSupersededResult(session)
+                    return@launch
+                }
+                session.progressOwnership.request = recovered
+                processResult(session, result)
+            }
+            return
+        }
         // Debrid cache-sync placeholders (e.g. Comet) play a few-second clip to its end and report
         // a normal completion. Ignore an implausibly short playback so it isn't marked watched and
         // doesn't chain auto-next through the season. A missing/zero duration is left to the normal
@@ -804,7 +958,7 @@ class ExternalPlaybackTracker @Inject constructor(
 
     // --- Disk persistence for pendingMetadata (survives process death) -------------
 
-    private fun persistMetadata(m: ExternalPlaybackMetadata, cloudSessionToken: String?) {
+    private fun persistMetadata(m: ExternalPlaybackMetadata, cloudSessionToken: String?, ownership: ProgressOwnership) {
         persistedPrefs.edit()
             .putString("contentId", m.contentId)
             .putString("contentType", m.contentType)
@@ -819,7 +973,115 @@ class ExternalPlaybackTracker @Inject constructor(
             .putString("year", m.year)
             .putInt("profileId", m.profileId)
             .putString("cloudSessionToken", cloudSessionToken)
+            .putString("progressLeaseNonce", ownership.reservation?.nonce)
+            .putString("progressLeaseBaseline", ownership.reservation?.baseline)
+            .putBoolean("externalResultOutstanding", false)
+            .putString("externalHandoffId", pendingHandoffId)
+            .putString("playbackOrigin", pendingPlaybackOrigin?.record?.let { Json.encodeToString(it) })
+            .remove("bufferedResultReceived").remove("bufferedResultHandoffId").remove("bufferedResultIsNull")
+            .remove("bufferedResultPositionMs").remove("bufferedResultDurationPresent")
+            .remove("bufferedResultDurationMs").remove("bufferedResultEndedByUser")
             .apply()
+    }
+
+    private fun loadPersistedPlaybackOrigin(profileId: Int): TrackingPlaybackOriginRecord? {
+        val raw = persistedPrefs.getString("playbackOrigin", null)?.takeIf { it.length <= 4096 } ?: return null
+        val record = runCatching { Json.decodeFromString<TrackingPlaybackOriginRecord>(raw) }.getOrNull() ?: return null
+        if (record.profileId != profileId || record.grants.size > 4 ||
+            record.grants.any { (provider, id) ->
+                com.nuvio.tv.core.tracking.TrackingProviderId.fromStorage(provider) == null ||
+                    !id.matches(Regex("[a-fA-F0-9-]{36}"))
+            } || (record.localPlaybackScope?.length ?: 0) > 1024) return null
+        return record
+    }
+
+    private fun progressOwner(metadata: ExternalPlaybackMetadata) = PlayerProgressWriteOwner(
+        metadata.profileId, metadata.contentId, metadata.contentType, metadata.videoId, metadata.season, metadata.episode)
+
+    private fun loadPersistedProgressReservation(metadata: ExternalPlaybackMetadata): PlayerProgressWriteAuthority.ExternalReservation? {
+        val nonce = persistedPrefs.getString("progressLeaseNonce", null) ?: return null
+        if (!nonce.matches(Regex("[a-fA-F0-9-]{36}"))) return null
+        return PlayerProgressWriteAuthority.ExternalReservation(progressOwner(metadata), nonce,
+            persistedPrefs.getString("progressLeaseBaseline", null))
+    }
+
+    private fun persistResultOutstanding(value: Boolean) {
+        persistedPrefs.edit().putBoolean("externalResultOutstanding", value).apply()
+    }
+
+    private fun persistBufferedResult(handoffId: String, result: ExternalPlayerResult?) {
+        val expected = outstandingResultSession?.handoffId ?: pendingHandoffId ?: loadPersistedHandoffId()
+        if (handoffId != expected) { clearBufferedResult(handoffId); return }
+        // A real result is no longer a dead return; persist only parsed scalars, never its Intent/URLs.
+        persistedPrefs.edit().putBoolean("bufferedResultReceived", true)
+            .putString("bufferedResultHandoffId", handoffId).putBoolean("bufferedResultIsNull", result == null)
+            .putLong("bufferedResultPositionMs", result?.positionMs ?: 0L)
+            .putBoolean("bufferedResultDurationPresent", result?.durationMs != null)
+            .putLong("bufferedResultDurationMs", result?.durationMs ?: 0L)
+            .putBoolean("bufferedResultEndedByUser", result?.endedByUser ?: true).apply()
+        staleReturnWatchdogJob?.cancel()
+        staleReturnWatchdogJob = null
+        // Native Zidoo can return null before its REST monitor observes final progress.
+        if (result != null) {
+            zidooMonitorJob?.cancel()
+            zidooMonitorJob = null
+        }
+        // Keep the existing foreground service until foreground processing consumes this journal.
+        // apply() is asynchronous; stopping it here could make the process killable before disk IO.
+    }
+
+    private fun loadBufferedResult(handoffId: String): BufferedExternalPlayerResult? {
+        if (!persistedPrefs.getBoolean("bufferedResultReceived", false)) return null
+        if (persistedPrefs.getString("bufferedResultHandoffId", null) != handoffId) {
+            clearBufferedResult()
+            return null
+        }
+        if (persistedPrefs.getBoolean("bufferedResultIsNull", false)) return BufferedExternalPlayerResult(null)
+        if (!persistedPrefs.contains("bufferedResultPositionMs") || !persistedPrefs.contains("bufferedResultEndedByUser")) {
+            clearBufferedResult(handoffId)
+            return null
+        }
+        val position = persistedPrefs.getLong("bufferedResultPositionMs", -1L)
+        val duration = if (persistedPrefs.getBoolean("bufferedResultDurationPresent", false))
+            persistedPrefs.getLong("bufferedResultDurationMs", -1L) else null
+        if (position < 0L || (duration != null && duration <= 0L)) {
+            clearBufferedResult(handoffId)
+            return null
+        }
+        return BufferedExternalPlayerResult(ExternalPlayerResult(position, duration,
+            persistedPrefs.getBoolean("bufferedResultEndedByUser", true)))
+    }
+
+    private fun clearBufferedResult(handoffId: String? = null) {
+        if (handoffId != null && persistedPrefs.getString("bufferedResultHandoffId", null) != handoffId) return
+        persistedPrefs.edit().remove("bufferedResultReceived").remove("bufferedResultHandoffId").remove("bufferedResultIsNull")
+            .remove("bufferedResultPositionMs").remove("bufferedResultDurationPresent")
+            .remove("bufferedResultDurationMs").remove("bufferedResultEndedByUser").apply()
+    }
+
+    private fun loadPersistedHandoffId(): String? = persistedPrefs.getString("externalHandoffId", null)
+        ?.takeIf { it.matches(Regex("[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}")) }
+
+    private fun retirePhysicalHandoff(session: TrackingSession) {
+        if (outstandingResultSession?.handoffId == session.handoffId) outstandingResultSession = null
+        resultBroker?.retire(session.handoffId)
+        clearBufferedResult(session.handoffId)
+    }
+
+    private fun checkpointProgressOwnership(session: TrackingSession) {
+        val lease = session.progressOwnership.request ?: return
+        scope.launch {
+            try { progressWriteAuthority.checkpointIfCurrent(lease) }
+            catch (error: IOException) { Log.w(TAG, "External playback lease could not be checkpointed", error) }
+        }
+    }
+
+    private fun retireSupersededResult(session: TrackingSession) {
+        if (session.generation != trackingGeneration || pendingMetadata !== session.metadata) return
+        retirePhysicalHandoff(session)
+        clearPersistedMetadata()
+        _autoNextOverlay.value = null
+        stopTracking()
     }
 
     private fun loadPersistedCloudSessionToken(): String? =
@@ -1339,26 +1601,25 @@ class ExternalPlaybackTracker @Inject constructor(
      *  parsed and the window repaints) so there's no episode-list flash. No-op for non-episodes;
      *  idempotent. Kept for a completion, dismissed by onActivityResult otherwise. */
     fun raiseAutoNextOverlayOnReturn() {
-        val recoveredFromDisk = pendingMetadata == null
         val session = trackingSessionOrRecover() ?: return
+        if (!trackingSessionIsCurrent(session)) { retireSupersededResult(session); return }
         raiseAutoNextOverlay(session.metadata, allowUnknownNextEpisode = true)
-        // In-process handoffs keep pendingMetadata, so onActivityResult is guaranteed to run and
-        // clear the loader. A disk-recovered session has no in-memory state: if the player killed us
-        // without leaving a redeliverable result, onActivityResult never fires and this loader would
-        // re-raise on every launch forever. Guard that dead case with a watchdog; a live redelivered
-        // result cancels it at the top of onActivityResult before it can fire.
-        if (recoveredFromDisk) armStaleReturnWatchdog(session)
+        // Some players foreground Syclop without ever returning a result, even in the same process.
+        // Bound both live and recovered waits. Retiring this unique result key makes a later callback
+        // harmless while allowing the user to start a fresh handoff after the watchdog expires.
+        armStaleReturnWatchdog(session)
     }
 
     private fun armStaleReturnWatchdog(session: TrackingSession) {
         staleReturnWatchdogJob?.cancel()
         staleReturnWatchdogJob = scope.launch {
             delay(STALE_RETURN_WATCHDOG_MS)
-            if (!trackingSessionIsCurrent(session)) return@launch
+            if (!trackingSessionIsCurrent(session)) { retireSupersededResult(session); return@launch }
             Log.d(
                 AUTO_NEXT_TAG,
                 "stale-return watchdog fired: no ActivityResult after recovery -> clearing dead session"
             )
+            retirePhysicalHandoff(session)
             clearPersistedMetadata()
             nextEpisodeSnapshot = ExternalNextEpisodeSnapshot.Unknown
             autoNextEnabledForPendingLaunch = null
@@ -1418,12 +1679,33 @@ class ExternalPlaybackTracker @Inject constructor(
     // ===================== Tracking lifecycle + Zidoo =====================
 
     /** Stop tracking and clean up resources. */
+    /** Explicit app close/restart discards a physical request whose Activity task is removed. */
+    fun prepareForAppTaskExit() {
+        dismissAutoNextOverlay()
+        staleReturnWatchdogJob?.cancel()
+        staleReturnWatchdogJob = null
+        nextEpisodePrefetchJob?.cancel()
+        nextEpisodePrefetchJob = null
+        autoNextJob?.cancel()
+        autoNextJob = null
+        val id = outstandingResultSession?.handoffId ?: pendingHandoffId ?: loadPersistedHandoffId()
+        id?.let { resultBroker?.retire(it) }
+        outstandingResultSession = null
+        trackingGeneration++
+        clearPersistedMetadata()
+        _autoNextOverlay.value = null
+        stopTracking()
+    }
+
     fun stopTracking() {
         zidooMonitorJob?.cancel()
         zidooMonitorJob = null
         awaitingExternalPlayerResult = false
         pendingMetadata = null
         pendingCloudSessionToken = null
+        pendingProgressOwnership = null
+        pendingHandoffId = null
+        pendingPlaybackOrigin = null
         isAutoLaunch = false
         ExternalPlaybackKeepAliveService.stop(appContext)
         Log.d(TAG, "Stopped tracking")
@@ -1463,6 +1745,7 @@ class ExternalPlaybackTracker @Inject constructor(
                 Log.d(TAG, "Zidoo monitor: pos=${result.positionMs}ms, dur=${result.durationMs}ms")
                 saveProgress(session, result.positionMs, result.durationMs)
             }
+            retirePhysicalHandoff(session)
             clearPersistedMetadata()
             _autoNextOverlay.value = null
             stopTracking()
@@ -1510,9 +1793,10 @@ class ExternalPlaybackTracker @Inject constructor(
         val effectiveDuration = durationMs ?: 0L
 
         scope.launch {
-            // A consumed current result may save after stopTracking; only a newer start/recovery
-            // invalidates this queued write. Already-entered persistence is a separate boundary.
+            // Normal result cleanup may precede this save. The captured shared lease rejects a
+            // newer internal/external visit and serializes an entered save before its successor.
             if (!generationIsCurrent(session)) return@launch
+            val origin = session.playbackOrigin.resolve(trackingScrobbleCoordinator)
             val progress = WatchProgress(
                 contentId = metadata.contentId,
                 contentType = metadata.contentType,
@@ -1527,20 +1811,24 @@ class ExternalPlaybackTracker @Inject constructor(
                 position = positionMs,
                 duration = effectiveDuration,
                 progressPercent = explicitPercent,
-                lastWatched = System.currentTimeMillis()
+                lastWatched = System.currentTimeMillis(),
+                localPlaybackScope = origin?.localPlaybackScope
             )
             Log.d(TAG, "Saving progress: pos=${positionMs}ms, dur=${effectiveDuration}ms, " +
                 "content=${metadata.contentId}, video=${metadata.videoId}, " +
                 "progressPct=${progress.progressPercentage}, isInProgress=${progress.isInProgress()}")
             try {
-                watchProgressRepository.saveProgress(progress, metadata.profileId)
+                val lease = session.progressOwnership.request ?: return@launch
+                progressWriteAuthority.writeIfCurrent(lease, progress.isCompleted()) {
+                    watchProgressRepository.savePlaybackProgress(progress, metadata.profileId, origin)
+                }
             } catch (error: IOException) {
                 Log.w(TAG, "Watch progress could not be saved", error)
             }
 
             if (!generationIsCurrent(session)) return@launch
 
-            val progressPercent = if (effectiveDuration > 0L) {
+            val progressPercent = explicitPercent ?: if (effectiveDuration > 0L) {
                 (positionMs.toFloat() / effectiveDuration.toFloat() * 100f).coerceIn(0f, 100f)
             } else {
                 0f
@@ -1550,12 +1838,14 @@ class ExternalPlaybackTracker @Inject constructor(
                 if (scrobbleItem != null) {
                     trackingScrobbleCoordinator.scrobble(
                         TrackingScrobbleAction.START,
-                        TrackingScrobbleEvent(scrobbleItem, 0.0)
+                        TrackingScrobbleEvent(scrobbleItem, 0.0),
+                        origin = origin
                     )
                     if (!generationIsCurrent(session)) return@launch
                     trackingScrobbleCoordinator.scrobble(
                         TrackingScrobbleAction.STOP,
-                        TrackingScrobbleEvent(scrobbleItem, progressPercent.toDouble())
+                        TrackingScrobbleEvent(scrobbleItem, progressPercent.toDouble()),
+                        origin = origin
                     )
                 }
             }

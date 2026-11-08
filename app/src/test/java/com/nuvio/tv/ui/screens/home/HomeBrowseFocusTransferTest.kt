@@ -7,6 +7,28 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HomeBrowseFocusTransferTest {
+    @Test fun `repeated focus at the Home boundary does not reset any selected category`() {
+        for (selected in HomeBrowseSection.entries.filterNot { it == HomeBrowseSection.HOME }) {
+            var visible = selected
+            repeat(20) {
+                if (HomeBrowseFocusTransfer.selectsTabOnFocus(visible, HomeBrowseSection.HOME)) {
+                    visible = HomeBrowseSection.HOME
+                }
+            }
+            assertEquals(selected, visible)
+        }
+    }
+
+    @Test fun `category focus browsing still changes categories without reselecting the current tab`() {
+        var visible = HomeBrowseSection.HOME
+        for (focused in HomeBrowseSection.entries.drop(1)) {
+            assertTrue(HomeBrowseFocusTransfer.selectsTabOnFocus(visible, focused))
+            visible = focused
+            assertFalse(HomeBrowseFocusTransfer.selectsTabOnFocus(visible, focused))
+        }
+        assertEquals(HomeBrowseSection.KIDS, visible)
+    }
+
     @Test fun `restored card is clamped when a catalog shrinks`() {
         assertEquals(0, HomeBrowseFocusTransfer.cardIndex(null, 12))
         assertEquals(7, HomeBrowseFocusTransfer.cardIndex(7, 12))

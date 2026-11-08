@@ -67,9 +67,6 @@ import com.nuvio.tv.core.poster.withCustomPosterUrls
 import com.nuvio.tv.domain.model.ContinueWatchingCardStyle
 import com.nuvio.tv.ui.components.HeroCarousel
 import com.nuvio.tv.ui.components.HeroCarouselBackdrop
-import com.nuvio.tv.ui.components.SyclopBrandAnimation
-import com.nuvio.tv.ui.components.SyclopBrandState
-import com.nuvio.tv.ui.components.LocalStartupSplashEnabled
 import com.nuvio.tv.ui.components.PosterCardStyle
 import androidx.compose.ui.res.stringResource
 import androidx.tv.material3.MaterialTheme
@@ -216,6 +213,7 @@ fun ClassicHomeContent(
     val rowStates = remember { mutableMapOf<String, LazyListState>() }
     val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val rowFocusedItemIndex = remember { mutableMapOf<String, Int>() }
+    val watchedHistoryFocusKeys = remember { mutableMapOf<String, String>() }
     // Item keys of each row as they were when its focused index was last recorded, so the index
     // can be relocated when a refresh shifts the row instead of pointing at a new card.
     val previousRowItemKeys = remember { mutableMapOf<String, List<String>>() }
@@ -300,7 +298,7 @@ fun ClassicHomeContent(
                 columnListState.firstVisibleItemIndex,
                 columnListState.firstVisibleItemScrollOffset,
                 currentFocusSnapshot.rowKey,
-                emptyMap(), // Classic doesn't use ID-based restoration for inner rows yet
+                watchedHistoryFocusKeys.toMap(),
                 focusState.catalogRowScrollStates + rowStates.mapValues { it.value.firstVisibleItemIndex },
                 focusState.catalogRowScrollAnchors,
                 currentFocusSnapshot.rowIndex,
@@ -413,16 +411,7 @@ fun ClassicHomeContent(
     }
 
     if (deferContentFocus) {
-        // When the startup splash is active it already shows a spinner,
-        // so skip the redundant loading indicator underneath.
-        if (!LocalStartupSplashEnabled.current) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                SyclopBrandAnimation(SyclopBrandState.Loading)
-            }
-        }
+        HomeStartupIndicator()
         return
     }
 
@@ -816,6 +805,7 @@ fun ClassicHomeContent(
                     val catalogRow = homeRow.row
                     val catalogKey = catalogRow.stableKey()
                     val currentItemKeys = catalogRow.stableItemKeys()
+                    val isWatchedHistory = catalogRow.addonId == WATCHED_HISTORY_ADDON_ID
                     rowFocusedItemIndex[catalogKey]?.let { storedIdx ->
                         previousRowItemKeys[catalogKey]
                             ?.getOrNull(storedIdx)
@@ -833,6 +823,8 @@ fun ClassicHomeContent(
                             (!uiState.continueWatchingEnabled || uiState.continueWatchingItems.isEmpty()) &&
                             index == 0
                     val focusedItemIndex = when {
+                        shouldRestoreFocus && isWatchedHistory -> focusState.focusedItemKeyByRow[catalogKey]
+                            ?.let(currentItemKeys::indexOf)?.takeIf { it >= 0 } ?: focusState.focusedItemIndex
                         shouldRestoreFocus -> focusState.focusedItemIndex
                         shouldInitialFocusFirstCatalogRow -> 0
                         else -> -1
@@ -843,15 +835,15 @@ fun ClassicHomeContent(
                             firstVisibleItemIndex = focusState.catalogRowScrollStates[catalogKey] ?: 0
                         )
                     }
-                    val rowFocusRequester = rowFocusRequesters.getOrPut(catalogKey) { FocusRequester() }
+                    val rowFocusRequester = rowFocusRequesters.getOrPut(catalogKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
 
                     CatalogRowSection(
                         catalogRow = catalogRow,
                         posterCardStyle = classicCatalogPosterCardStyle,
-                        showPosterLabels = uiState.posterLabelsEnabled,
+                        showPosterLabels = uiState.posterLabelsEnabled || isWatchedHistory,
                         showImdbRatings = uiState.homeImdbRatingsVisibility.showRatings,
                         showAddonName = uiState.catalogAddonNameEnabled,
-                        showCatalogTypeSuffix = uiState.catalogTypeSuffixEnabled,
+                        showCatalogTypeSuffix = uiState.catalogTypeSuffixEnabled && catalogRow.addonId != WATCHED_HISTORY_ADDON_ID,
                         focusedPosterBackdropExpandEnabled = uiState.focusedPosterBackdropExpandEnabled,
                         focusedPosterBackdropExpandDelaySeconds = uiState.focusedPosterBackdropExpandDelaySeconds,
                         focusedPosterBackdropTrailerEnabled = uiState.focusedPosterBackdropTrailerEnabled,
@@ -887,6 +879,9 @@ fun ClassicHomeContent(
                                 activeRowKeyState.value = catalogKey
                                 onFocusedRowKeyChanged(catalogKey)
                                 rowFocusedItemIndex[catalogKey] = itemIndex
+                                if (isWatchedHistory) {
+                                    currentItemKeys.getOrNull(itemIndex)?.let { watchedHistoryFocusKeys[catalogKey] = it }
+                                }
                             }
                         }
                     )
@@ -914,7 +909,7 @@ fun ClassicHomeContent(
                         listState = listState,
                         posterCardStyle = classicSecondaryPosterCardStyle,
                         focusedItemIndex = collectionFocusedItemIndex,
-                        rowFocusRequester = rowFocusRequesters.getOrPut(collectionKey) { FocusRequester() },
+                        rowFocusRequester = rowFocusRequesters.getOrPut(collectionKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() },
                         onItemFocused = { itemIndex ->
                             if (restoringFocus) restoringFocus = false
                             currentFocusSnapshot.rowIndex = index

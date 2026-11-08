@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.source.ClippingMediaPeriod.ClippingSampleStream int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException IllegalClippingException(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_INVALID_PERIOD_COUNT, androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_NOT_SEEKABLE_TO_START, androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_START_EXCEEDS_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException IllegalClippingException(int, long, long) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_INVALID_PERIOD_COUNT, androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_NOT_SEEKABLE_TO_START, androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_START_EXCEEDS_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException java.lang.String getReasonDescription(int, long, long) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_INVALID_PERIOD_COUNT, androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_NOT_SEEKABLE_TO_START, androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_START_EXCEEDS_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException reason">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_INVALID_PERIOD_COUNT, androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_NOT_SEEKABLE_TO_START, androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_START_EXCEEDS_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.Reason">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_INVALID_PERIOD_COUNT, androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_NOT_SEEKABLE_TO_START, androidx.media3.exoplayer.source.ClippingMediaSource.IllegalClippingException.REASON_START_EXCEEDS_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.CompositeMediaSource.ForwardingEventListener void onDrmSessionAcquired(int, androidx.media3.exoplayer.source.MediaSource.MediaPeriodId, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmSession.STATE_RELEASED, androidx.media3.exoplayer.drm.DrmSession.STATE_ERROR, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENING, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED_WITH_KEYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.EmptySampleStream int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ExternallyLoadedMediaPeriod.SampleStreamImpl int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.MergingMediaSource.IllegalMergeException IllegalMergeException(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.MergingMediaSource.IllegalMergeException.REASON_PERIOD_COUNT_MISMATCH}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.MergingMediaSource.IllegalMergeException reason">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.MergingMediaSource.IllegalMergeException.REASON_PERIOD_COUNT_MISMATCH}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.MergingMediaSource.IllegalMergeException.Reason">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.MergingMediaSource.IllegalMergeException.REASON_PERIOD_COUNT_MISMATCH}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ProgressiveMediaPeriod int readData(int, androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ProgressiveMediaPeriod.SampleStreamImpl int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.SampleQueue int read(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int, boolean) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.SampleStream int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.SampleStream.ReadDataResult">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.C.RESULT_NOTHING_READ, androidx.media3.common.C.RESULT_FORMAT_READ, androidx.media3.common.C.RESULT_BUFFER_READ}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.SampleStream.ReadFlags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.SilenceMediaSource.SilenceSampleStream int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.SingleSampleMediaPeriod.SampleStreamImpl int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.TimeOffsetMediaPeriod.TimeOffsetSampleStream int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+</root>
+

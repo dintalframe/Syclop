@@ -409,6 +409,7 @@ fun MetaDetailsScreen(
     playOnLoad: Boolean = false,
     playOnLoadManually: Boolean = false,
     onBackPress: () -> Unit,
+    onSetupPlayback: (() -> Unit)? = null,
     onReturnFocusConsumed: () -> Unit = {},
     onNavigateToCastDetail: (personId: Int, personName: String, preferCrew: Boolean) -> Unit = { _, _, _ -> },
     onNavigateToTmdbEntityBrowse: (entityKind: String, entityId: Int, entityName: String, sourceType: String) -> Unit = { _, _, _, _ -> },
@@ -869,6 +870,7 @@ fun MetaDetailsScreen(
                     onDetailReturnEpisodeFocusConsumed = onReturnFocusConsumed,
                     lastFocusedEpisodeIdBySeason = viewModel.lastFocusedEpisodeIdBySeason,
                     heroRestoreToken = heroRestoreToken,
+                    onSetupPlayback = onSetupPlayback.takeIf { viewModel.canManagePlaybackSources },
                     seasons = uiState.seasons,
                     selectedSeason = uiState.selectedSeason,
                     episodesForSeason = uiState.episodesForSeason,
@@ -1217,6 +1219,7 @@ private fun MetaDetailsContent(
     onDetailReturnEpisodeFocusConsumed: () -> Unit,
     lastFocusedEpisodeIdBySeason: MutableMap<Int, String>,
     heroRestoreToken: Int = 0,
+    onSetupPlayback: (() -> Unit)?,
     seasons: List<Int>,
     selectedSeason: Int,
     episodesForSeason: List<Video>,
@@ -1342,6 +1345,7 @@ private fun MetaDetailsContent(
         )
     }
     val isPlayEnabled = playbackAvailability.canStream(meta.apiType, heroVideo?.id ?: meta.id, meta.id, heroVideo)
+    val showPlaybackSetup = !isPlayEnabled && !shufflePoolEmpty && playbackAvailability.needsPlaybackSetup
     val canPlayEpisode = remember(playbackAvailability, meta.apiType, meta.id) {
         { video: Video -> playbackAvailability.canStream(meta.apiType, video.id, meta.id, video) }
     }
@@ -2497,6 +2501,12 @@ private fun MetaDetailsContent(
                         nextToWatch = nextToWatch,
                         onPlayClick = { if (shufflePoolEmpty) showRandomEpisodeOverlay = true else heroPlayClick() },
                         isPlayEnabled = shufflePoolEmpty || isPlayEnabled,
+                        onSetupPlayback = onSetupPlayback?.takeIf { showPlaybackSetup }?.let { openSetup ->
+                            {
+                                markHeroRestore()
+                                openSetup()
+                            }
+                        },
                         onPlayLongPress = if (!shufflePoolEmpty && isPlayEnabled && (showManualPlayOption || nextToWatch?.isResume == true)) {
                             { showHeroPlayOptionsDialog = true }
                         } else {

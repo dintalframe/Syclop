@@ -10,6 +10,7 @@ import com.nuvio.tv.core.tracking.TrackingScrobbleAction
 import com.nuvio.tv.core.tracking.TrackingScrobbleEvent
 import com.nuvio.tv.core.tracking.TrackingScrobbler
 import com.nuvio.tv.core.tracking.scrobbleDiagnosticSummary
+import com.nuvio.tv.core.tracking.*
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -23,14 +24,33 @@ import kotlinx.coroutines.flow.stateIn
 class SimklTrackingScrobbler @Inject constructor(
     private val authRepository: SimklAuthRepository,
     private val syncRepository: SimklSyncRepository,
-    private val mutationService: SimklMutationService
+    private val mutationService: SimklMutationService,
+    private val authStorage: SimklAuthStorage? = null
 ) : TrackingScrobbler {
+    override fun preparePlaybackGrant(profileId: Int): TrackingPlaybackGrantCapture? {
+        val store = authStorage ?: return null
+        val native = store.currentScope()
+        if (native.profileId != profileId || !store.state.value.isAuthenticated) return null
+        return TrackingPlaybackGrantCapture {
+            val id = store.capturePlaybackGrantId(profileId) ?: return@TrackingPlaybackGrantCapture null
+            TrackingPlaybackGrant(providerId, profileId, id, {
+                store.isCurrent(native) && store.isPlaybackGrantCurrent(profileId, id)
+            }, SimklPlaybackAuthScope(native))
+        }
+    }
+
+    override suspend fun recoverPlaybackGrant(profileId: Int, grantId: String): TrackingPlaybackGrant? =
+        recoverTrackingPlaybackGrant(profileId, grantId, { authStorage?.currentScope()?.profileId ?: -1 }) {
+            preparePlaybackGrant(profileId)
+        }
+
     override val providerId = TrackingProviderId.SIMKL
 
     override suspend fun scrobble(
         action: TrackingScrobbleAction,
         event: TrackingScrobbleEvent
     ) {
+        checkpointTrackingPlaybackOrigin(providerId)
         val authenticated = authRepository.state.value.isAuthenticated
         Log.d(
             TRACKING_SCROBBLE_DIAGNOSTIC_TAG,
@@ -45,6 +65,7 @@ class SimklTrackingScrobbler @Inject constructor(
             return
         }
         syncRepository.ensureLoaded()
+        checkpointTrackingPlaybackOrigin(providerId)
         val enrichedEvent = event.copy(
             media = syncRepository.state.value.snapshot
                 .enrichMediaReference(event.media)
@@ -58,6 +79,7 @@ class SimklTrackingScrobbler @Inject constructor(
             action = action,
             event = enrichedEvent
         )
+        checkpointTrackingPlaybackOrigin(providerId)
         if (action != TrackingScrobbleAction.START) {
             syncRepository.commitScrobble(result)
         }

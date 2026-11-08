@@ -360,17 +360,19 @@ class WatchProgressRepositoryImpl @Inject constructor(
     ) { states -> states.toMap() }
     @Volatile private var activeProgressProviderId: TrackingProviderId? = null
 
-    @OptIn(FlowPreview::class)
-    private val activeProgressProviderState: StateFlow<TrackingProgressProvider?> = combine(
+    override val effectiveProgressSource: StateFlow<WatchProgressSource> = combine(
         traktSettingsDataStore.watchProgressSource,
         progressProviderConnections
     ) { requested, connections ->
         effectiveWatchProgressSource(requested) { providerId -> connections[providerId] == true }
-            .providerId
-            ?.let(trackingProgressProviders::provider)
-    }.debounce { provider ->
-        if (provider == null) 100L else 0L
     }.distinctUntilChanged()
+        .stateIn(syncScope, SharingStarted.Eagerly, WatchProgressSource.NUVIO_SYNC)
+
+    @OptIn(FlowPreview::class)
+    private val activeProgressProviderState: StateFlow<TrackingProgressProvider?> = effectiveProgressSource
+        .map { source -> source.providerId?.let(trackingProgressProviders::provider) }
+        .debounce { provider -> if (provider == null) 100L else 0L }
+        .distinctUntilChanged()
         .stateIn(syncScope, SharingStarted.Eagerly, null)
 
     init {
@@ -432,6 +434,20 @@ class WatchProgressRepositoryImpl @Inject constructor(
             provider?.remoteProgressLoaded ?: flowOf(true)
         }.distinctUntilChanged()
     }
+
+    override fun observeWatchedHistory(): Flow<List<com.nuvio.tv.domain.model.WatchedHistoryItem>> =
+        profileManager.activeProfileId.flatMapLatest { profileId ->
+            combine(traktSettingsDataStore.watchProgressSource, effectiveProgressSource,
+                profileProgressProviderFlow(profileId)) { selected, effective, provider ->
+                provider?.takeIf {
+                    (selected == WatchProgressSource.AUTO || selected == WatchProgressSource.TRAKT) &&
+                        effective == WatchProgressSource.TRAKT && it.providerId == TrackingProviderId.TRAKT
+                }
+            }.flatMapLatest { provider ->
+                if (provider != null) provider.watchedHistory
+                else flowOf(emptyList())
+            }.onStart { emit(emptyList()) }
+        }.distinctUntilChanged()
 
     override val allProgress: Flow<List<WatchProgress>>
         get() = profileManager.activeProfileId.flatMapLatest { profileId ->
@@ -837,6 +853,46 @@ class WatchProgressRepositoryImpl @Inject constructor(
 
                 provider.isWatched(contentId, videoId, season, episode)
             }
+    }
+
+    override suspend fun savePlaybackProgress(
+        progress: WatchProgress,
+        profileId: Int,
+        origin: com.nuvio.tv.core.tracking.TrackingPlaybackOrigin?,
+        completed: Boolean,
+        syncRemote: Boolean
+    ) {
+        if (progress.contentType.equals("series", ignoreCase = true) || progress.contentType.equals("tv", ignoreCase = true)) {
+            traktSettingsDataStore.removeDismissedNextUpKeysForContent(progress.contentId, profileId)
+        }
+        val saved = if (completed) {
+            val duration = progress.duration.takeIf { it > 1L }
+                ?: watchProgressPreferences.getAllRawEntries(profileId)[progressKey(progress)]?.duration?.takeIf { it > 1L }
+                ?: 1L
+            progress.copy(position = duration, duration = duration, progressPercent = 100f)
+        } else progress
+        // This build has no app-cloud account. A profile-only outbox cannot prove the owner of
+        // delayed playback and must not be rebound to a future app sign-in. Service tracking is
+        // sent separately under its captured grant by TrackingScrobbleCoordinator.
+        watchProgressPreferences.saveProgress(saved, profileId = profileId)
+        if (saved.isCompleted()) watchedItemsPreferences.markAsWatched(saved.toWatchedItem(), profileId = profileId)
+
+        if (origin?.profileId != profileId || !origin.isProfileCurrent() || profileManager.activeProfileId.value != profileId) return
+        val selection = profileManager.activeProfileSelectionRevision
+        val provider = activeProgressProvider()
+        if (provider == null && origin.localPlaybackScope != null) return
+        if (provider != null) {
+            val grant = origin.grant(provider.providerId) ?: return
+            val capturedScope = origin.localPlaybackScope ?: return
+            val currentScope = provider.captureLocalPlaybackScope(profileId)
+            if (currentScope != capturedScope || !grant.isCurrent() ||
+                profileManager.activeProfileId.value != profileId ||
+                profileManager.activeProfileSelectionRevision != selection ||
+                activeProgressProviderState.value !== provider) return
+            provider.applyOptimisticProgress(saved, quiet = !syncRemote)
+        }
+        if (saved.isCompleted() && profileManager.activeProfileId.value == profileId &&
+            profileManager.activeProfileSelectionRevision == selection) optimisticContinueWatchingUpdates.tryEmit(saved)
     }
 
     override suspend fun saveProgress(progress: WatchProgress, syncRemote: Boolean) {

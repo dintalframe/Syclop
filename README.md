@@ -9,7 +9,7 @@ Syclop is built for the TV remote. Browse and play media from sources you config
 
 ## Availability
 
-Syclop is in active development and private testing. Public APKs and a stable release are pending. The [Releases page](https://github.com/dintalframe/Syclop/releases) is the place to check for published builds. You can [build from source](SYCLOP_BUILD.md) today.
+Syclop is in active development. Release assets carry their exact artifact identity and qualification status; check the [Releases page](https://github.com/dintalframe/Syclop/releases) for available builds and their stated scope. You can [build from source](SYCLOP_BUILD.md); [native source preparation and qualification limits](SYCLOP_NATIVE_SOURCES.md) are documented separately.
 
 The declared minimum is Android 7.0 (API 24). The universal APK packages ARM64 (`arm64-v8a`), ARMv7 (`armeabi-v7a`), `x86`, and `x86_64`. Development runtime testing has focused on ARM64, including NVIDIA Shield TV and Android TV emulators. Device firmware, connected services, and media formats can affect playback. See the [project status and verification audit](SYCLOP_FEATURE_AUDIT.md).
 

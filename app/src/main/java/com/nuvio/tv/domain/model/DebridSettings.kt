@@ -5,7 +5,8 @@ import com.nuvio.tv.core.debrid.DebridStreamFormatterDefaults
 import com.nuvio.tv.core.debrid.supports
 
 data class DebridSettings(
-    val enabled: Boolean = false,
+    // Retained for serialized/constructor compatibility; resolving is automatic for connected services.
+    val enabled: Boolean = true,
     val cloudLibraryEnabled: Boolean = true,
     val torboxApiKey: String = "",
     val premiumizeApiKey: String = "",
@@ -22,7 +23,8 @@ data class DebridSettings(
     val streamCodecFilter: DebridStreamCodecFilter = DebridStreamCodecFilter.ANY,
     val streamPreferences: DebridStreamPreferences = DebridStreamPreferences(),
     val streamNameTemplate: String = DebridStreamFormatterDefaults.NAME_TEMPLATE,
-    val streamDescriptionTemplate: String = DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE
+    val streamDescriptionTemplate: String = DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE,
+    val cloudDeleteAfterPlayback: Boolean = false
 ) {
     val hasAnyApiKey: Boolean
         get() = DebridProviders.configuredServices(this).isNotEmpty()
@@ -40,7 +42,7 @@ data class DebridSettings(
         get() = activeResolverCredential != null
 
     val canResolvePlayableLinks: Boolean
-        get() = enabled && hasResolverProvider
+        get() = hasResolverProvider
 
     val hasCloudLibraryProvider: Boolean
         get() = DebridProviders.configuredServices(this)

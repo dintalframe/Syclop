@@ -65,6 +65,24 @@ class RatedKidsPublicHttpTest {
             }
         }
     }
+    @Test fun `new popular genre feed sends actual genre and locally rejects unproven and older records`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(json("""[
+                {"title":"Accepted","ids":{"imdb":"tt1234567"},"certification":"G","genres":["family","animation"]},
+                {"title":"Missing genre","ids":{"imdb":"tt2345678"},"certification":"G","genres":["family"]},
+                {"title":"Older rating","ids":{"imdb":"tt3456789"},"certification":"PG","genres":["family","animation"]},
+                {"title":"No family proof","ids":{"imdb":"tt4567890"},"certification":"G","genres":["animation"]}
+            ]""", 1))
+            val page = source(server).page(RatedKidsCatalogCodecTest.descriptor("family-animation-movies"), 1)
+            assertEquals(listOf("tt1234567"), page.items.map { it.id })
+            val request = server.takeRequest(2, TimeUnit.SECONDS)!!
+            assertEquals("/movies/popular", request.requestUrl!!.encodedPath)
+            assertEquals("animation", request.requestUrl!!.queryParameter("genres"))
+            assertEquals("g", request.requestUrl!!.queryParameter("certifications"))
+            assertNull(request.getHeader("Authorization"))
+            assertNull(request.getHeader("Cookie"))
+        }
+    }
     @Test fun `known and chunked successful or error bodies are bounded before Retrofit or Moshi buffering`() = runBlocking {
         for (status in listOf(200, 403)) for (chunked in listOf(false, true)) MockWebServer().use { server ->
             val content = " ".repeat(RatedKidsHttpClient.MAX_RESPONSE_BYTES.toInt() + 1)

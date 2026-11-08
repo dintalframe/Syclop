@@ -1,6 +1,7 @@
 package com.nuvio.tv.core.debrid
 
 import android.util.Log
+import com.nuvio.tv.core.cloud.CloudLibraryFile
 import com.nuvio.tv.data.local.DebridSettingsDataStore
 import com.nuvio.tv.data.remote.api.RealDebridApi
 import com.nuvio.tv.data.remote.dto.RealDebridTorrentInfoDto
@@ -61,11 +62,12 @@ class RealDebridDirectDebridResolver @Inject constructor(
                 return finish(DirectDebridResolveResult.Success(url, body.filename, body.filesize))
             }
             stage = "magnet_add"
+            val beforeCreate = operation?.torrentIdsBeforeCreate()
             val add = scopedDebridRequest(operation) { api.addMagnet(authorization, magnet) }
             httpStatus = add.code()
             val torrentId = add.body()?.id?.takeIf { add.isSuccessful && it.isNotBlank() }
                 ?: return finish(add.toFailureForAdd())
-            // addMagnet does not guarantee a new, app-owned cloud job. Never delete on failure.
+            // Only an ID absent from a complete pre-create inventory can qualify for cleanup.
             stage = "info_before"
             httpStatus = null
             val infoBefore = scopedDebridRequest(operation) { api.getTorrentInfo(authorization, torrentId) }
@@ -133,7 +135,11 @@ class RealDebridDirectDebridResolver @Inject constructor(
                 url = url,
                 filename = unrestrict.body()?.filename?.takeIf { it.isNotBlank() }
                     ?: file.displayName().takeIf { it.isNotBlank() },
-                videoSize = unrestrict.body()?.filesize ?: file.bytes
+                videoSize = unrestrict.body()?.filesize ?: file.bytes,
+                createdCloudItem = if (add.code() == 201 && diagnosticInfo?.files?.size == 1) {
+                    newSingleFileCloudTorrent(beforeCreate, DebridProviders.RealDebrid, torrentId,
+                        CloudLibraryFile(fileId.toString(), file.path.orEmpty(), file.bytes))
+                } else null
             ))
         } catch (error: Exception) {
             if (error is CancellationException) throw error

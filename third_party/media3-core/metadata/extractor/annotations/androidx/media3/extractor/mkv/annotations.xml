@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.mkv.DefaultEbmlReader elementState">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.mkv.DefaultEbmlReader.ELEMENT_STATE_READ_ID, androidx.media3.extractor.mkv.DefaultEbmlReader.ELEMENT_STATE_READ_CONTENT_SIZE, androidx.media3.extractor.mkv.DefaultEbmlReader.ELEMENT_STATE_READ_CONTENT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.mkv.EbmlProcessor.ElementType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.mkv.EbmlProcessor.ELEMENT_TYPE_UNKNOWN, androidx.media3.extractor.mkv.EbmlProcessor.ELEMENT_TYPE_MASTER, androidx.media3.extractor.mkv.EbmlProcessor.ELEMENT_TYPE_UNSIGNED_INT, androidx.media3.extractor.mkv.EbmlProcessor.ELEMENT_TYPE_STRING, androidx.media3.extractor.mkv.EbmlProcessor.ELEMENT_TYPE_BINARY, androidx.media3.extractor.mkv.EbmlProcessor.ELEMENT_TYPE_FLOAT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.mkv.MatroskaExtractor MatroskaExtractor(androidx.media3.extractor.mkv.EbmlReader, int, androidx.media3.extractor.text.SubtitleParser.Factory) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.mkv.MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES, androidx.media3.extractor.mkv.MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.mkv.MatroskaExtractor MatroskaExtractor(androidx.media3.extractor.text.SubtitleParser.Factory, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.mkv.MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES, androidx.media3.extractor.mkv.MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.mkv.MatroskaExtractor MatroskaExtractor(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.mkv.MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES, androidx.media3.extractor.mkv.MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.mkv.MatroskaExtractor.Flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.mkv.MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES, androidx.media3.extractor.mkv.MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA}" />
+    </annotation>
+  </item>
+</root>
+

@@ -1901,6 +1901,7 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
         return
     }
 
+    if (!state.playbackEnded) suppressPlaybackCleanup()
     if (type.equals("cloud", ignoreCase = true)) {
         playNextCloudLibraryFile(nextVideo = nextVideo, userInitiated = userInitiated)
         return

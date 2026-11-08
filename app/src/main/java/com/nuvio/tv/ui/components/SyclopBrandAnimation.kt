@@ -136,6 +136,8 @@ private object BrandImageDecoder {
 }
 
 /** Stops native frame scheduling when detached, hidden, paused or removed from composition. */
+// Platform-decoded decorative drawables do not use AppCompat tint or theme attributes.
+@android.annotation.SuppressLint("AppCompatCustomView")
 private class BrandAnimationView(context: Context) : ImageView(context) {
     private var motionAllowed = false
     private var playOnce = false

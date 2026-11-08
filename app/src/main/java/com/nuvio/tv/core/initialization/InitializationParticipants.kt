@@ -69,9 +69,15 @@ class TraktInitializationParticipant @Inject constructor(
 ) : InitializationParticipant {
     override val provider = InitializationProvider.TRAKT
     private val events = AccountImportEvents(preferences, provider)
-    private fun identity(state: com.nuvio.tv.data.local.TraktAuthState) =
-        state.userSlug?.trim()?.takeIf { it.isNotEmpty() }?.let { "slug:$it" }
-            ?: state.username?.trim()?.takeIf { it.isNotEmpty() }?.let { "name:$it" }
+    private fun identity(state: com.nuvio.tv.data.local.TraktAuthState): String? {
+        fun part(raw: String?, prefix: String): String? {
+            val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            return "$prefix:$value".takeIf {
+                InitializationMarkerKey.fromAccount(state.profileId, provider, it) != null
+            }
+        }
+        return part(state.userSlug, "slug") ?: part(state.username, "name")
+    }
     override val accountChanges: Flow<String> = data.state.map { state ->
         val selection = profiles.activeProfileSelectionRevision
         val revision = data.grantRevision(state.profileId)
@@ -94,7 +100,13 @@ class TraktInitializationParticipant @Inject constructor(
         events.ensureReady(profileId) { profiles.owns(profileId, selectionRevision) && expected.isCurrent() }
         if (!account.isAuthenticated) return null
         if (!auth.hasRequiredCredentials()) throw InitializationReadException(InitializationFailure.UNAVAILABLE)
-        val marker = identity(account)?.let { InitializationMarkerKey.fromAccount(profileId, provider, it) }
+        // OAuth approval can persist tokens before /users/settings succeeds. Retry must finish
+        // that same grant's identity read instead of requiring the viewer to disconnect/reconnect.
+        val initializedAccount = if (identity(account) == null) auth.hydrateInitializationIdentity(expected) else account
+        expected.checkpoint()
+        if (!profiles.owns(profileId, selectionRevision) || initializedAccount.profileId != profileId)
+            throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
+        val marker = identity(initializedAccount)?.let { InitializationMarkerKey.fromAccount(profileId, provider, it) }
             ?: throw InitializationReadException(InitializationFailure.UNAVAILABLE)
         val captured = InitializationReadScope(provider, expected.operationKey) {
             profiles.owns(profileId, selectionRevision) && expected.isCurrent()

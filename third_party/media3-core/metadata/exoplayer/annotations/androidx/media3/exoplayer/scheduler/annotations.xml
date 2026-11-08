@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.scheduler.Requirements Requirements(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.scheduler.Requirements int getNotMetNetworkRequirements(android.content.Context)">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.scheduler.Requirements int getNotMetRequirements(android.content.Context)">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.scheduler.Requirements int getRequirements()">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.scheduler.Requirements requirements">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.scheduler.Requirements.RequirementFlags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.scheduler.RequirementsWatcher int start()">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.scheduler.RequirementsWatcher notMetRequirements">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.scheduler.RequirementsWatcher.Listener void onRequirementsStateChanged(androidx.media3.exoplayer.scheduler.RequirementsWatcher, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.scheduler.Requirements.NETWORK, androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING, androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW}" />
+    </annotation>
+  </item>
+</root>
+

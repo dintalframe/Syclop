@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCssStyle androidx.media3.extractor.text.webvtt.WebvttCssStyle setFontSizeUnit(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCssStyle.UNSPECIFIED, androidx.media3.extractor.text.webvtt.WebvttCssStyle.FONT_SIZE_UNIT_PIXEL, androidx.media3.extractor.text.webvtt.WebvttCssStyle.FONT_SIZE_UNIT_EM, androidx.media3.extractor.text.webvtt.WebvttCssStyle.FONT_SIZE_UNIT_PERCENT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCssStyle bold">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCssStyle.UNSPECIFIED, androidx.media3.extractor.text.webvtt.WebvttCssStyle.OFF, androidx.media3.extractor.text.webvtt.WebvttCssStyle.ON}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCssStyle fontSizeUnit">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCssStyle.UNSPECIFIED, androidx.media3.extractor.text.webvtt.WebvttCssStyle.FONT_SIZE_UNIT_PIXEL, androidx.media3.extractor.text.webvtt.WebvttCssStyle.FONT_SIZE_UNIT_EM, androidx.media3.extractor.text.webvtt.WebvttCssStyle.FONT_SIZE_UNIT_PERCENT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCssStyle italic">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCssStyle.UNSPECIFIED, androidx.media3.extractor.text.webvtt.WebvttCssStyle.OFF, androidx.media3.extractor.text.webvtt.WebvttCssStyle.ON}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCssStyle linethrough">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCssStyle.UNSPECIFIED, androidx.media3.extractor.text.webvtt.WebvttCssStyle.OFF, androidx.media3.extractor.text.webvtt.WebvttCssStyle.ON}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCssStyle underline">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCssStyle.UNSPECIFIED, androidx.media3.extractor.text.webvtt.WebvttCssStyle.OFF, androidx.media3.extractor.text.webvtt.WebvttCssStyle.ON}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCssStyle.FontSizeUnit">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCssStyle.UNSPECIFIED, androidx.media3.extractor.text.webvtt.WebvttCssStyle.FONT_SIZE_UNIT_PIXEL, androidx.media3.extractor.text.webvtt.WebvttCssStyle.FONT_SIZE_UNIT_EM, androidx.media3.extractor.text.webvtt.WebvttCssStyle.FONT_SIZE_UNIT_PERCENT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCssStyle.StyleFlags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCssStyle.UNSPECIFIED, androidx.media3.extractor.text.webvtt.WebvttCssStyle.STYLE_NORMAL, androidx.media3.extractor.text.webvtt.WebvttCssStyle.STYLE_BOLD, androidx.media3.extractor.text.webvtt.WebvttCssStyle.STYLE_ITALIC, androidx.media3.extractor.text.webvtt.WebvttCssStyle.STYLE_BOLD_ITALIC}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCueParser.WebvttCueInfoBuilder android.text.Layout.Alignment convertTextAlignment(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_START, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_CENTER, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_END, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_LEFT, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCueParser.WebvttCueInfoBuilder float derivePosition(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_START, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_CENTER, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_END, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_LEFT, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCueParser.WebvttCueInfoBuilder int derivePositionAnchor(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_START, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_CENTER, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_END, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_LEFT, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_RIGHT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.webvtt.WebvttCueParser.WebvttCueInfoBuilder textAlignment">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_START, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_CENTER, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_END, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_LEFT, androidx.media3.extractor.text.webvtt.WebvttCueParser.TEXT_ALIGNMENT_RIGHT}" />
+    </annotation>
+  </item>
+</root>
+

@@ -77,6 +77,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.request.transformations
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import com.nuvio.tv.ui.util.contentTextDirection
 import com.nuvio.tv.ui.util.localizeEpisodeTitle
 import kotlinx.coroutines.delay
@@ -214,7 +215,7 @@ private fun EpisodeStreamsView(
     val firstStreamKey = streamKeys.firstOrNull()
     val streamFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     streamKeys.forEach { key ->
-        streamFocusRequesters.getOrPut(key) { FocusRequester() }
+        streamFocusRequesters.getOrPut(key) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
     }
     var firstCardHasFocus by remember(firstStreamKey) { mutableStateOf(false) }
 
@@ -767,15 +768,16 @@ private fun EpisodeItem(
     var isFocused by remember { mutableStateOf(false) }
     val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     val context = LocalContext.current
-    val episodeTitle = episode.title.localizeEpisodeTitle(context).ifBlank { context.getString(R.string.episodes_episode) }
+    val resources = LocalResources.current
+    val episodeTitle = episode.title.localizeEpisodeTitle(context).ifBlank { resources.getString(R.string.episodes_episode) }
     val formattedDate = remember(episode.released) {
         episode.released?.let { formatReleaseDate(it) }?.takeIf { it.isNotBlank() }
     }
-    val episodeCode = remember(episode.season, episode.episode) {
+    val episodeCode = remember(episode.season, episode.episode, resources.configuration.locales[0]) {
         val s = episode.season
         val e = episode.episode
         if (s != null && e != null) {
-            context.getString(R.string.season_episode_format, s, e)
+            resources.getString(R.string.season_episode_format, s, e)
         } else {
             null
         }

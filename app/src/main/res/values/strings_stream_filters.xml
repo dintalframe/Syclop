@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="stream_hidden_by_filters">Sources hidden by filters</string>
+    <plurals name="stream_hidden_by_filters_hint">
+        <item quantity="one">%d source was hidden by your stream filters. Review Filters &amp; Sorting in Settings → Sources.</item>
+        <item quantity="other">%d sources were hidden by your stream filters. Review Filters &amp; Sorting in Settings → Sources.</item>
+    </plurals>
+</resources>

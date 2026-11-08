@@ -1,6 +1,8 @@
 package com.nuvio.tv.data.mal
 
 import android.content.Context
+import com.nuvio.tv.core.tracking.TrackingPlaybackGrant
+import com.nuvio.tv.core.tracking.TrackingProviderId
 import com.nuvio.tv.core.server.DeviceIpAddress
 import com.nuvio.tv.core.profile.ProfileManager
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -227,7 +229,9 @@ class MalAuthRepository internal constructor(
     }
     suspend fun <T> authorized(expected: MalScope = state.value.scope, block: suspend (String) -> T): T {
         val selection = liveSelection?.invoke()
-        fun current() = store.isCurrent(expected) && (selection == null ||
+        val origin = currentCoroutineContext()[TrackingPlaybackGrant]?.takeIf { it.providerId == TrackingProviderId.MAL }
+        origin?.checkpoint()
+        fun current() = (origin == null || origin.isCurrent()) && store.isCurrent(expected) && (selection == null ||
             (selection.first == expected.profileId && liveSelection?.invoke() == selection))
         require(current()) { "The active profile changed." }
         val token = accessToken(expected, selectionCurrent = ::current)

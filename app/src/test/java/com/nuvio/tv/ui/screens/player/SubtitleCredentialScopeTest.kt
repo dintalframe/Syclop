@@ -5,14 +5,18 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetAddress
+import java.net.ProtocolException
 import java.net.ServerSocket
 import java.security.KeyStore
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLPeerUnverifiedException
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 import kotlin.concurrent.thread
@@ -132,13 +136,6 @@ class SubtitleCredentialScopeTest {
         assertEquals("subtitle-own", request.header("X-Api-Key"))
         assertEquals(setOf("x-api-key"), request.tag(SubtitleOwnHeaders::class.java)?.names)
         assertTrue(request.tag(ForwardedStreamHeaders::class.java)?.names.orEmpty().none { it.lowercase() == "x-api-key" })
-
-        // The TLS retry drops both sets, but keeps cross-host headers.
-        val retry = request.withoutCredentialHeaders()
-        assertNull(retry.header("X-Api-Key"))
-        assertNull(retry.header("Authorization"))
-        assertEquals("https://subs.example/", retry.header("Referer"))
-        assertEquals("Player", retry.header("User-Agent"))
     }
 
     @Test
@@ -173,13 +170,12 @@ class SubtitleCredentialScopeTest {
     }
 
     @Test
-    fun `a redirect chain through http on the stream's host drops the headers only on the http hop`() {
+    fun `an https subtitle redirect stops before contacting the http target`() {
         val tls = testTls()
         HeaderRecordingServer(tls).use { httpsServer ->
             HeaderRecordingServer().use { httpServer ->
                 val httpsBase = "https://127.0.0.1:${httpsServer.port}"
                 httpsServer.redirects["/redirect.srt"] = "http://127.0.0.1:${httpServer.port}/middle.srt"
-                httpServer.redirects["/middle.srt"] = "$httpsBase/landed.srt"
                 val request = buildSubtitleRequest(
                     "$httpsBase/redirect.srt".toHttpUrl(),
                     "$httpsBase/v.mkv".toHttpUrl(),
@@ -191,7 +187,9 @@ class SubtitleCredentialScopeTest {
                     .sslSocketFactory(tls.socketFactory, tls.trustManager)
                     .build()
 
-                client.newCall(request).execute().use { assertEquals(200, it.code) }
+                assertThrows(ProtocolException::class.java) {
+                    client.newCall(request).execute().close()
+                }
 
                 httpsServer.assertEvery("/redirect.srt") {
                     assertEquals("secret", it["x-api-key"])
@@ -199,25 +197,7 @@ class SubtitleCredentialScopeTest {
                     assertEquals("own", it["x-subtitle-key"])
                     assertEquals("https://subs.example/", it["referer"])
                 }
-                httpServer.assertEvery("/middle.srt") {
-                    assertNull(it["x-api-key"])
-                    assertNull(it["cookie"])
-                    // Downgraded hop drops Referer and Origin too, the subtitle's own included.
-                    assertNull(it["x-subtitle-key"])
-                    assertNull(it["referer"])
-                    assertNull(it["origin"])
-                    assertEquals("Player", it["user-agent"])
-                    assertEquals("en", it["accept-language"])
-                }
-                // Back on the stream's HTTPS host, so they are allowed again. Authorization isn't: OkHttp
-                // drops it after a scheme change.
-                httpsServer.assertEvery("/landed.srt") {
-                    assertEquals("secret", it["x-api-key"])
-                    assertEquals("session=1", it["cookie"])
-                    assertEquals("own", it["x-subtitle-key"])
-                    assertEquals("https://subs.example/", it["referer"])
-                    assertNull(it["authorization"])
-                }
+                assertTrue(httpServer.requestsTo("/middle.srt").isEmpty())
             }
         }
     }
@@ -252,7 +232,7 @@ class SubtitleCredentialScopeTest {
     }
 
     @Test
-    fun `a redirect to a host failing hostname verification is retried without credentials`() {
+    fun `a subtitle redirect to a host failing hostname verification stops before sending headers`() {
         val tls = testTls()
         // Cert only covers 127.0.0.1, so localhost fails verification. DNS is pinned to IPv4, otherwise
         // OkHttp reports the refused ::1 route instead.
@@ -268,110 +248,99 @@ class SubtitleCredentialScopeTest {
                 streamHeaders,
                 explicitHeaders = mapOf("X-Subtitle-Key" to "own")
             )
-            // No connection retries, so request counts are exact.
-            val validated = subtitleHttpClient.newBuilder()
+            val client = subtitleHttpClient.newBuilder()
                 .dns(loopbackOnly)
-                .retryOnConnectionFailure(false)
                 .sslSocketFactory(tls.socketFactory, tls.trustManager)
                 .build()
-            val permissive = subtitleUnvalidatedTlsHttpClient.newBuilder()
-                .dns(loopbackOnly)
-                .retryOnConnectionFailure(false)
-                .build()
 
-            executeSubtitleRequest(request, validated, permissive).use { assertEquals(200, it.code) }
+            assertThrows(SSLPeerUnverifiedException::class.java) {
+                client.newCall(request).execute().close()
+            }
 
-            // Validated attempt, with credentials.
-            val redirectHops = server.requestsTo("/redirect.srt")
-            assertEquals(2, redirectHops.size)
-            assertEquals("secret", redirectHops[0]["x-api-key"])
-            assertEquals("own", redirectHops[0]["x-subtitle-key"])
-            // Retry, without them.
-            assertNull(redirectHops[1]["x-api-key"])
-            assertNull(redirectHops[1]["cookie"])
-            assertNull(redirectHops[1]["x-subtitle-key"])
-            val landed = server.requestsTo("/landed.srt").single()
-            assertNull(landed["x-api-key"])
-            assertNull(landed["cookie"])
-            assertNull(landed["authorization"])
-            assertNull(landed["x-subtitle-key"])
-            assertEquals("https://addon.example/", landed["referer"])
+            val redirect = server.requestsTo("/redirect.srt").single()
+            assertEquals("secret", redirect["x-api-key"])
+            assertEquals("own", redirect["x-subtitle-key"])
+            assertTrue(server.requestsTo("/landed.srt").isEmpty())
         }
     }
+}
 
-    private class TestTls(val serverContext: SSLContext, val trustManager: X509TrustManager) {
-        val socketFactory = SSLContext.getInstance("TLS")
-            .apply { init(null, arrayOf(trustManager), null) }
-            .socketFactory
-    }
+internal class TestTls(val serverContext: SSLContext, val trustManager: X509TrustManager) {
+    val socketFactory = SSLContext.getInstance("TLS")
+        .apply { init(null, arrayOf(trustManager), null) }
+        .socketFactory
+}
 
-    /** Self-signed cert for 127.0.0.1, valid until 2126. */
-    private fun testTls(): TestTls {
-        val password = "changeit".toCharArray()
-        val resource = requireNotNull(
-            SubtitleCredentialScopeTest::class.java.getResourceAsStream("/subtitle-redirect-test.p12")
-        ) { "subtitle-redirect-test.p12 missing from test resources" }
-        val keyStore = KeyStore.getInstance("PKCS12").apply { resource.use { load(it, password) } }
-        val keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-            .apply { init(keyStore, password) }.keyManagers
-        val trustManager = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-            .apply { init(keyStore) }.trustManagers.filterIsInstance<X509TrustManager>().first()
-        val serverContext = SSLContext.getInstance("TLS").apply { init(keyManagers, null, null) }
-        return TestTls(serverContext, trustManager)
-    }
+/** Self-signed cert for 127.0.0.1, valid until 2126. */
+internal fun testTls(): TestTls {
+    val password = "changeit".toCharArray()
+    val resource = requireNotNull(
+        SubtitleCredentialScopeTest::class.java.getResourceAsStream("/subtitle-redirect-test.p12")
+    ) { "subtitle-redirect-test.p12 missing from test resources" }
+    val keyStore = KeyStore.getInstance("PKCS12").apply { resource.use { load(it, password) } }
+    val keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+        .apply { init(keyStore, password) }.keyManagers
+    val trustManager = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+        .apply { init(keyStore) }.trustManagers.filterIsInstance<X509TrustManager>().first()
+    val serverContext = SSLContext.getInstance("TLS").apply { init(keyManagers, null, null) }
+    return TestTls(serverContext, trustManager)
+}
 
-    private class RecordedRequest(val path: String, val headers: Map<String, String>)
+private class RecordedRequest(val path: String, val headers: Map<String, String>)
 
-    /** Records request headers; 302 for [redirects], a subtitle otherwise. */
-    private class HeaderRecordingServer(tls: TestTls? = null) : AutoCloseable {
-        private val socket: ServerSocket = tls?.serverContext?.serverSocketFactory
-            ?.createServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
-            ?: ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
-        val port: Int = socket.localPort
-        val redirects: MutableMap<String, String> = java.util.concurrent.ConcurrentHashMap()
-        private val requests: MutableList<RecordedRequest> = Collections.synchronizedList(mutableListOf())
+/** Records request headers; 302 for [redirects], a subtitle otherwise. */
+internal class HeaderRecordingServer(tls: TestTls? = null) : AutoCloseable {
+    private val socket: ServerSocket = tls?.serverContext?.serverSocketFactory
+        ?.createServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
+        ?: ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
+    val port: Int = socket.localPort
+    val redirects: MutableMap<String, String> = java.util.concurrent.ConcurrentHashMap()
+    private val requests: MutableList<RecordedRequest> = Collections.synchronizedList(mutableListOf())
+    private val acceptedConnections = AtomicInteger()
+    val connectionCount: Int get() = acceptedConnections.get()
 
-        private val acceptor = thread(isDaemon = true) {
-            while (!socket.isClosed) {
-                val client = runCatching { socket.accept() }.getOrNull() ?: break
-                runCatching {
-                    client.use { connection ->
-                        val reader = connection.getInputStream().bufferedReader()
-                        val path = reader.readLine()?.split(' ')?.getOrNull(1) ?: return@use
-                        val headers = generateSequence { reader.readLine() }
-                            .takeWhile { it.isNotEmpty() }
-                            .associate { line ->
-                                line.substringBefore(':').trim().lowercase() to line.substringAfter(':').trim()
-                            }
-                        requests.add(RecordedRequest(path, headers))
-                        val location = redirects[path]
-                        val response = if (location != null) {
-                            "HTTP/1.1 302 Found\r\nLocation: $location\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                        } else {
-                            val body = "1\n00:00:01,000 --> 00:00:02,000\ntest\n"
-                            "HTTP/1.1 200 OK\r\nContent-Type: application/x-subrip\r\n" +
-                                "Content-Length: ${body.length}\r\nConnection: close\r\n\r\n$body"
+    private val acceptor = thread(isDaemon = true) {
+        while (!socket.isClosed) {
+            val client = runCatching { socket.accept() }.getOrNull() ?: break
+            acceptedConnections.incrementAndGet()
+            runCatching {
+                client.use { connection ->
+                    connection.soTimeout = 5_000
+                    val reader = connection.getInputStream().bufferedReader()
+                    val path = reader.readLine()?.split(' ')?.getOrNull(1) ?: return@use
+                    val headers = generateSequence { reader.readLine() }
+                        .takeWhile { it.isNotEmpty() }
+                        .associate { line ->
+                            line.substringBefore(':').trim().lowercase() to line.substringAfter(':').trim()
                         }
-                        connection.getOutputStream().apply { write(response.toByteArray()); flush() }
+                    requests.add(RecordedRequest(path, headers))
+                    val location = redirects[path]
+                    val response = if (location != null) {
+                        "HTTP/1.1 302 Found\r\nLocation: $location\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    } else {
+                        val body = "1\n00:00:01,000 --> 00:00:02,000\ntest\n"
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/x-subrip\r\n" +
+                            "Content-Length: ${body.length}\r\nConnection: close\r\n\r\n$body"
                     }
+                    connection.getOutputStream().apply { write(response.toByteArray()); flush() }
                 }
             }
         }
+    }
 
-        fun requestsTo(path: String): List<Map<String, String>> =
-            synchronized(requests) { requests.filter { it.path == path }.map { it.headers } }
+    fun requestsTo(path: String): List<Map<String, String>> =
+        synchronized(requests) { requests.filter { it.path == path }.map { it.headers } }
 
-        /** Runs [check] on every request to [path]; at least one is required. */
-        fun assertEvery(path: String, check: (Map<String, String>) -> Unit) {
-            val matching = synchronized(requests) { requests.filter { it.path == path } }
-            assertTrue("no request to $path", matching.isNotEmpty())
-            // OkHttp may retry, so check them all.
-            matching.forEach { check(it.headers) }
-        }
+    /** Runs [check] on every request to [path]; at least one is required. */
+    fun assertEvery(path: String, check: (Map<String, String>) -> Unit) {
+        val matching = synchronized(requests) { requests.filter { it.path == path } }
+        assertTrue("no request to $path", matching.isNotEmpty())
+        // OkHttp may retry, so check them all.
+        matching.forEach { check(it.headers) }
+    }
 
-        override fun close() {
-            socket.close()
-            acceptor.join(1_000)
-        }
+    override fun close() {
+        socket.close()
+        acceptor.join(1_000)
     }
 }

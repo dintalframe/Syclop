@@ -231,7 +231,7 @@ fun CollectionRowSection(
                         modifier = if (isEntryTarget) Modifier.focusRequester(entryFocusRequester!!) else Modifier,
                         focusRequester = itemFocusRequesters.getOrPut(
                             folderFocusKey(index, folder)
-                        ) { FocusRequester() }
+                        ) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                     )
                 }
             }

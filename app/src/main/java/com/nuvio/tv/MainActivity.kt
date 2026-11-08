@@ -97,6 +97,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
@@ -114,7 +115,6 @@ import com.nuvio.tv.ui.screens.ambient.AmbientIdleController
 import com.nuvio.tv.ui.screens.ambient.AmbientModeHost
 import com.nuvio.tv.ui.screens.ambient.LocalAmbientIdleController
 import com.nuvio.tv.ui.components.LocalStartupLoadingState
-import com.nuvio.tv.ui.components.LocalStartupSplashEnabled
 import com.nuvio.tv.ui.components.StartupLoadingState
 import com.nuvio.tv.ui.components.StartupDestination
 import com.nuvio.tv.ui.components.shouldShowStartupSplash
@@ -127,6 +127,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.os.ConfigurationCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.metrics.performance.JankStats
 import androidx.metrics.performance.PerformanceMetricsState
@@ -147,6 +148,7 @@ import androidx.tv.material3.rememberDrawerState
 import com.nuvio.tv.R
 import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.core.auth.DeviceSessionRegistration
+import com.nuvio.tv.core.deeplink.AddonLinkInstallRequest
 import com.nuvio.tv.core.deeplink.DeepLinkHandler
 import com.nuvio.tv.core.deeplink.DeepLinkParser
 import com.nuvio.tv.core.player.PlayerWindowBackdrop
@@ -193,6 +195,7 @@ import com.nuvio.tv.ui.navigation.rememberNavSessionViewModelStoreOwner
 import com.nuvio.tv.ui.screens.party.PartyEffects
 import com.nuvio.tv.ui.membership.LocalMemberAccess
 import com.nuvio.tv.ui.screens.account.AuthQrSignInScreen
+import com.nuvio.tv.ui.screens.addon.AddonDeepLinkConfirmationDialog
 import com.nuvio.tv.ui.screens.addon.EssentialAddonSetupScreen
 import com.nuvio.tv.ui.screens.profile.ProfileSelectionScreen
 import com.nuvio.tv.ui.theme.NuvioComponents
@@ -337,20 +340,15 @@ open class MainActivity : ComponentActivity() {
     lateinit var deepLinkHandler: DeepLinkHandler
 
     @Inject
+    lateinit var tvCardLaunches: com.nuvio.tv.core.sync.androidtv.TvCardLaunchAuthenticator
+
+    @Inject
     lateinit var partyRepository: PartyRepository
 
     private val pendingDeepLinkUrl = MutableStateFlow<String?>(null)
     private val pendingLaunchIntent = MutableStateFlow<Intent?>(null)
 
     private lateinit var jankStats: JankStats
-
-    /** Activity-level launcher for external video players. Survives all navigation changes. */
-    private val externalPlayerLauncher = registerForActivityResult(
-        com.nuvio.tv.core.player.ExternalPlayerResultContract()
-    ) { result ->
-        Log.d("MainActivity", "External player ActivityResult: $result")
-        externalPlaybackTracker.onActivityResult(result)
-    }
 
     /** True until the first onResume after onCreate completes. */
     private var isFirstResumeAfterCreate = false
@@ -382,8 +380,8 @@ open class MainActivity : ComponentActivity() {
         isFirstResumeAfterCreate = true
         window?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
 
-        // Wire the Activity-level launcher to the tracker
-        externalPlaybackTracker.activityLauncher = externalPlayerLauncher
+        // Recover per-handoff result keys after Android restores this Activity's registry.
+        externalPlaybackTracker.bindActivityResultRegistry(activityResultRegistry)
 
         PluginRuntimeHooks.onActivityCreate(this)
 
@@ -392,19 +390,8 @@ open class MainActivity : ComponentActivity() {
             com.nuvio.tv.core.player.DisplayCapabilities.logSummary(snapshot)
         }
 
-        // Extract extras set by the Continue Watching launcher channel preview programs.
-        val launchContentId = intent?.getStringExtra("contentId")
-        val launchContentType = intent?.getStringExtra("contentType")
-        val launchMode = intent?.getStringExtra("launchMode")
-        val launchVideoId = intent?.getStringExtra("videoId")
-        val launchName = intent?.getStringExtra("name")
-        val launchPoster = intent?.getStringExtra("poster")
-        val launchBackdrop = intent?.getStringExtra("backdrop")
-        val launchLogo = intent?.getStringExtra("logo")
-        val launchSeason = intent?.getIntExtra("season", -1)?.takeIf { it >= 0 }
-        val launchEpisode = intent?.getIntExtra("episode", -1)?.takeIf { it >= 0 }
-        val launchEpisodeTitle = intent?.getStringExtra("episodeTitle")
         captureDeepLinkIntent(intent)
+        captureLaunchIntent(intent)
 
         setContent {
             var hasSelectedProfileThisSession by rememberSaveable { mutableStateOf(false) }
@@ -425,13 +412,14 @@ open class MainActivity : ComponentActivity() {
             val hasSeenAuthQrOnFirstLaunch by hasSeenAuthQrFlow.collectAsState(initial = null)
             val authState by authManager.authState.collectAsState()
             val context = LocalContext.current
+            val resources = LocalResources.current
 
             LaunchedEffect(authSessionNoticeDataStore, context) {
                 authSessionNoticeDataStore.pendingNotice.collect { notice ->
                     if (notice == StartupAuthNotice.NUVIO) {
                         Toast.makeText(
                             context,
-                            context.getString(R.string.auth_notice_nuvio_logged_out),
+                            resources.getString(R.string.auth_notice_nuvio_logged_out),
                             Toast.LENGTH_LONG
                         ).show()
                         authSessionNoticeDataStore.consumeNotice(notice)
@@ -728,8 +716,7 @@ open class MainActivity : ComponentActivity() {
                     LocalAmbientIdleController provides ambientIdleController,
                     com.nuvio.tv.core.player.LocalTrailerPlayerPool provides trailerPlayerPool,
                     LocalSplashBackground provides splashBackground,
-                    LocalStartupLoadingState provides startupLoadingState,
-                    LocalStartupSplashEnabled provides startupSplashEnabled
+                    LocalStartupLoadingState provides startupLoadingState
                 ) {
                 val transparentPlayerBackdrop = PlayerWindowBackdrop.isTransparentRequested
                 Surface(
@@ -845,18 +832,47 @@ open class MainActivity : ComponentActivity() {
                             installedAddons.orEmpty().isEmpty() &&
                             !mainUiPrefs.addonSetupSkipped
                     val pendingDeepLink by pendingDeepLinkUrl.collectAsState()
+                    val addonLinkProfileRevision = profileManager.activeProfileSelectionRevision
+                    var addonLinkConfirmation by remember(activeProfileId, addonLinkProfileRevision, startupSession) {
+                        mutableStateOf<AddonLinkInstallRequest?>(null)
+                    }
+                    var confirmedAddonLink by remember(activeProfileId, addonLinkProfileRevision, startupSession) {
+                        mutableStateOf<AddonLinkInstallRequest?>(null)
+                    }
 
                     LaunchedEffect(pendingDeepLink) {
                         val url = pendingDeepLink ?: return@LaunchedEffect
-                        val deepLink = DeepLinkParser.parse(url)
-                        if (deepLink is AppDeepLink.AddonInstall && (needsEssentialAddonSetup || !layoutChosen)) {
-                            Toast.makeText(context, context.getString(R.string.addon_installing), Toast.LENGTH_SHORT).show()
-                            val installResult = deepLinkHandler.installAddon(deepLink.manifestUrl)
-                            if (pendingDeepLinkUrl.value == url) {
-                                pendingDeepLinkUrl.value = null
-                            }
-                            Toast.makeText(context, installResult.message, Toast.LENGTH_LONG).show()
+                        val link = DeepLinkParser.parse(url) as? AppDeepLink.AddonInstall ?: return@LaunchedEffect
+                        if (!pendingDeepLinkUrl.compareAndSet(url, null) || addonLinkConfirmation != null || confirmedAddonLink != null) {
+                            return@LaunchedEffect
                         }
+                        addonLinkConfirmation = AddonLinkInstallRequest.create(link.manifestUrl, activeProfileId, addonLinkProfileRevision)
+                        if (addonLinkConfirmation == null) {
+                            Toast.makeText(context, R.string.provider_install_invalid_url, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    LaunchedEffect(confirmedAddonLink) {
+                        val request = confirmedAddonLink ?: return@LaunchedEffect
+                        try {
+                            Toast.makeText(context, resources.getString(R.string.addon_installing), Toast.LENGTH_SHORT).show()
+                            deepLinkHandler.installAddon(request)?.let { result ->
+                                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                            }
+                        } finally {
+                            if (confirmedAddonLink === request) confirmedAddonLink = null
+                        }
+                    }
+                    addonLinkConfirmation?.let { request ->
+                        AddonDeepLinkConfirmationDialog(
+                            host = request.host,
+                            onCancel = { if (addonLinkConfirmation === request) addonLinkConfirmation = null },
+                            onAdd = {
+                                if (addonLinkConfirmation === request && confirmedAddonLink == null) {
+                                    addonLinkConfirmation = null
+                                    confirmedAddonLink = request
+                                }
+                            }
+                        )
                     }
 
                     if (needsEssentialAddonSetup) {
@@ -934,48 +950,16 @@ open class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // Navigate to content when launched from the Continue Watching channel row.
-                    LaunchedEffect(navController) {
-                        if (launchContentId != null && launchContentType != null && layoutChosen) {
-                            if (launchMode == "stream" && launchVideoId != null && launchName != null) {
-                                navController.navigate(
-                                    Screen.Stream.createRoute(
-                                        videoId = launchVideoId,
-                                        contentType = launchContentType,
-                                        title = launchName,
-                                        poster = launchPoster,
-                                        backdrop = launchBackdrop,
-                                        logo = launchLogo,
-                                        season = launchSeason,
-                                        episode = launchEpisode,
-                                        episodeName = launchEpisodeTitle,
-                                        contentId = launchContentId,
-                                        contentName = launchName,
-                                        returnToDetailOnBack = launchContentType.equals("series", ignoreCase = true),
-                                        returnToHomeOnBack = true
-                                    )
-                                )
-                            } else {
-                                navController.navigate(
-                                    Screen.Detail.createRoute(
-                                        itemId = launchContentId,
-                                        itemType = launchContentType
-                                    )
-                                )
-                            }
-                        }
-                    }
-
                     val pendingLaunch by pendingLaunchIntent.collectAsState()
                     LaunchedEffect(navController, layoutChosen, pendingLaunch) {
                         val intent = pendingLaunch ?: return@LaunchedEffect
                         if (!layoutChosen) return@LaunchedEffect
-                        pendingLaunchIntent.value = null
+                        if (!pendingLaunchIntent.compareAndSet(intent, null)) return@LaunchedEffect
                         val contentId = intent.getStringExtra("contentId") ?: return@LaunchedEffect
                         val contentType = intent.getStringExtra("contentType") ?: return@LaunchedEffect
-                        val videoId = intent.getStringExtra("videoId")
-                        val name = intent.getStringExtra("name")
-                        if (videoId != null && name != null) {
+                        if (tvCardLaunches.isCurrentCard(intent)) {
+                            val videoId = intent.getStringExtra("videoId") ?: return@LaunchedEffect
+                            val name = intent.getStringExtra("name") ?: return@LaunchedEffect
                             navController.navigate(
                                 Screen.Stream.createRoute(
                                     videoId = videoId,
@@ -1008,7 +992,7 @@ open class MainActivity : ComponentActivity() {
                         if (!layoutChosen) return@LaunchedEffect
                         when (val deepLink = DeepLinkParser.parse(url)) {
                             is AppDeepLink.Meta -> {
-                                pendingDeepLinkUrl.value = null
+                                if (!pendingDeepLinkUrl.compareAndSet(url, null)) return@LaunchedEffect
                                 navController.navigate(
                                     Screen.Detail.createRoute(
                                         itemId = deepLink.id,
@@ -1020,25 +1004,13 @@ open class MainActivity : ComponentActivity() {
                                 }
                             }
                             is AppDeepLink.Party -> {
-                                pendingDeepLinkUrl.value = null
+                                if (!pendingDeepLinkUrl.compareAndSet(url, null)) return@LaunchedEffect
                                 navController.navigate(Screen.WatchParty.createRoute(deepLink.code)) {
                                     launchSingleTop = true
                                 }
                             }
-                            is AppDeepLink.AddonInstall -> {
-                                navController.navigate(Screen.AddonManager.route) {
-                                    launchSingleTop = true
-                                }
-                                Toast.makeText(context, context.getString(R.string.addon_installing), Toast.LENGTH_SHORT).show()
-                                val installResult = deepLinkHandler.installAddon(deepLink.manifestUrl)
-                                if (pendingDeepLinkUrl.value == url) {
-                                    pendingDeepLinkUrl.value = null
-                                }
-                                Toast.makeText(context, installResult.message, Toast.LENGTH_LONG).show()
-                            }
-                            null -> {
-                                pendingDeepLinkUrl.value = null
-                            }
+                            is AppDeepLink.AddonInstall -> Unit // Handled by the shared consent prompt above.
+                            null -> pendingDeepLinkUrl.compareAndSet(url, null)
                         }
                     }
 
@@ -1156,21 +1128,29 @@ open class MainActivity : ComponentActivity() {
 
                     val updateViewModel: UpdateViewModel = hiltViewModel(this@MainActivity)
                     val updateState by updateViewModel.uiState.collectAsState()
-                    val updateBannerState = updateState.copy(
-                        showBanner = updateState.showBanner && currentRoute?.startsWith("player/") != true
-                    )
-
                     val initializationBlocksContent = startupInitializationBlocksHome(initializationHomeEntry,
                         activeProfileId, profileManager.activeProfileSelectionRevision, initializationState)
+                    val automaticUpdateCheckReady = !initializationBlocksContent &&
+                        (startupDestination == StartupDestination.Home || startupDestination == StartupDestination.Content) &&
+                        currentRoute?.startsWith("player/") != true
+                    val showUpdatePrompt = !initializationBlocksContent && startupLoadingState.complete &&
+                        (currentRoute == Screen.Home.route || (updateState.manualPrompt && currentRoute == Screen.Settings.route))
                     StartupInitializationContent(blocked = initializationBlocksContent) {
                     UpdateBannerHost(
-                        state = updateBannerState,
+                        state = updateState.copy(showBanner = updateState.showBanner && showUpdatePrompt),
                         onDismissBanner = updateViewModel::dismissBanner,
-                        onDownload = updateViewModel::downloadUpdate,
-                        onInstall = updateViewModel::installUpdateOrRequestPermission,
+                        onDownload = {
+                            val updateRoute = navController.currentDestination?.route
+                            updateViewModel.downloadUpdate {
+                                this@MainActivity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                                    navController.currentDestination?.route == updateRoute
+                            }
+                        },
                         onDismissUnknownSources = updateViewModel::dismissUnknownSourcesDialog,
                         onOpenUnknownSources = updateViewModel::openUnknownSourcesSettings,
-                        onFeedbackShown = updateViewModel::consumeFeedbackMessage
+                        onFeedbackShown = updateViewModel::consumeFeedbackMessage,
+                        automaticCheckReady = automaticUpdateCheckReady,
+                        onAutomaticCheck = updateViewModel::checkForUpdatesAutomatically
                     ) {
                         val handleSwitchProfile = {
                             startupSession++
@@ -1283,28 +1263,22 @@ open class MainActivity : ComponentActivity() {
                         complete = startupLoadingState.complete,
                         destination = startupDestination
                     )
-                    val animatedSplashAlpha by animateFloatAsState(
-                        targetValue = if (showSplash) 1f else 0f,
-                        animationSpec = tween(if (showSplash) 0 else 400),
-                        label = "startupSplashAlpha"
-                    )
-                    val splashAlpha = if (showSplash) 1f else animatedSplashAlpha
-                    LaunchedEffect(splashAlpha, startupDestination) {
-                        if (splashAlpha == 0f && startupDestination != StartupDestination.ProfileSelection) {
+                    LaunchedEffect(showSplash, startupDestination) {
+                        if (!showSplash && startupDestination != StartupDestination.ProfileSelection) {
                             focusedSplashColor = null
                             focusedSplashBgUrl = null
                             focusedSplashCacheKey = null
                             focusedSplashTheme = null
                         }
                     }
-                    if (splashAlpha > 0f) {
+                    if (showSplash) {
                         com.nuvio.tv.ui.components.StartupSplashScreen(
                             profileColorHex = splashBackground.profileColorHex,
                             profileBackgroundUrl = splashBackground.backgroundUrl,
+                            statusText = if (surfaceContentReady) R.string.startup_loading_profile else R.string.startup_opening,
                             backgroundCacheKey = splashBackground.backgroundCacheKey,
                             skipGradient = splashBackground.skipGradient,
-                            brandWordmarkRes = splashBackground.brandWordmarkRes,
-                            modifier = Modifier.graphicsLayer { alpha = splashAlpha }
+                            brandWordmarkRes = splashBackground.brandWordmarkRes
                         )
                     }
                     if (blockHomeForInitialization) {
@@ -1366,10 +1340,14 @@ open class MainActivity : ComponentActivity() {
     }
 
     private fun captureLaunchIntent(intent: Intent?) {
-        val contentId = intent?.getStringExtra("contentId") ?: return
-        val launchMode = intent.getStringExtra("launchMode") ?: return
-        if (launchMode != "stream") return
-        pendingLaunchIntent.value = intent
+        val launch = runCatching {
+            if (intent?.action != Intent.ACTION_VIEW) return
+            val contentId = intent.getStringExtra("contentId") ?: return
+            val type = intent.getStringExtra("contentType") ?: return
+            if (contentId.length !in 1..1024 || contentId.any(Char::isISOControl) || type !in setOf("movie", "series")) return
+            Intent(intent)
+        }.getOrNull() ?: return
+        pendingLaunchIntent.value = launch
     }
 
     override fun onPause() {
@@ -1393,6 +1371,8 @@ open class MainActivity : ComponentActivity() {
         ambientIdleController.onInteraction()
     }
 
+    // Physical TV BACK repeat/up events are needed for loader priority and long-press gating.
+    @android.annotation.SuppressLint("GestureBackNavigation", "RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // The same-window startup gate has the input priority its previous Dialog had.
         if (startupInitializationGateVisible) return super.dispatchKeyEvent(event)
@@ -1422,11 +1402,13 @@ open class MainActivity : ComponentActivity() {
         // tracked; onActivityResult keeps it for a completion or dismisses it otherwise.
         externalPlaybackTracker.raiseAutoNextOverlayOnReturn()
         super.onStart()
+        externalPlaybackTracker.onActivityResultRegistryStarted(activityResultRegistry)
         startupSyncService.startPeriodicSurfacePulls()
         androidTvChannelSyncService.onForegroundChanged(true)
     }
 
     override fun onStop() {
+        externalPlaybackTracker.onActivityResultRegistryStopped(activityResultRegistry)
         externalPlaybackTracker.onExternalPlayerCoveredApp()
         super.onStop()
         startupSyncService.stopPeriodicSurfacePulls()
@@ -1436,6 +1418,7 @@ open class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        externalPlaybackTracker.unbindActivityResultRegistry(activityResultRegistry)
         super.onDestroy()
         PluginRuntimeHooks.onActivityDestroy()
     }

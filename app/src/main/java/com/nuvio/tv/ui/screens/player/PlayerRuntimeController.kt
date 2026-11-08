@@ -21,6 +21,7 @@ import com.nuvio.tv.core.cloud.CloudLibraryPlaybackSessionStore
 import com.nuvio.tv.core.cloud.CloudLibraryRepository
 import com.nuvio.tv.core.plugin.PluginManager
 import com.nuvio.tv.core.tracking.TrackingMediaReference
+import com.nuvio.tv.core.tracking.TrackingPlaybackOrigin
 import com.nuvio.tv.core.tracking.TrackingScrobbleCoordinator
 import com.nuvio.tv.core.torrent.TorrentService
 import com.nuvio.tv.data.local.AutoSkipSegmentType
@@ -118,15 +119,18 @@ class PlayerRuntimeController(
     internal val context: Context = context.withAppLocale()
 
     // Start synchronously so a later save can never capture a replacement account's identity.
-    internal val localPlaybackScope = scope.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-        try {
-            watchProgressRepository.captureLocalPlaybackScope(profileId)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            android.util.Log.w("PlayerProgress", "Playback account scope unavailable", error)
-            null
-        }
+    internal var playbackOriginOwner: PlayerProgressWriteOwner? = null
+    internal var playbackOrigin = capturePlaybackOrigin()
+
+    internal fun capturePlaybackOrigin() = trackingScrobbleCoordinator.capturePlaybackOrigin(profileId) {
+        watchProgressRepository.captureLocalPlaybackScope(profileId)
+    }
+
+    internal fun preparePlaybackOriginForCurrentOwner() {
+        val owner = currentProgressWriteOwner() ?: return
+        val previous = playbackOriginOwner
+        playbackOriginOwner = owner
+        if (previous != null && previous != owner) playbackOrigin = capturePlaybackOrigin()
     }
 
     companion object {
@@ -430,6 +434,8 @@ class PlayerRuntimeController(
     internal var playbackSpeedAwareAudioSink: PlaybackSpeedAwareAudioSink? = null
 
     internal var progressJob: Job? = null
+    internal val exoEndOfStreamRecovery = ExoStuckVideoEndRecovery()
+    internal val playbackCleanupGate = PlaybackCleanupGate()
     internal var vodTelemetryJob: Job? = null
     internal var firstFrameWatchdogJob: Job? = null
     internal var stallWatchdogJob: Job? = null

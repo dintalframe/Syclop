@@ -203,6 +203,14 @@ class LibraryViewModel @Inject constructor(
         }
         observeCloudLibrarySettings()
         viewModelScope.launch {
+            cloudLibraryRepository.completedDeletions.collect {
+                _uiState.update { state ->
+                    state.copy(cloudLibrary = cloudLibraryRepository.withoutDeletedItems(state.cloudLibrary))
+                        .withVisibleCloudItems()
+                }
+            }
+        }
+        viewModelScope.launch {
             watchProgressRepository.observeWatchedMovieIds()
                 .collect { ids ->
                     _watchedMovieIds.value = ids
@@ -371,7 +379,7 @@ class LibraryViewModel @Inject constructor(
                 cloudLibraryRepository.refresh()
             }.onSuccess { refreshed ->
                 _uiState.update { state ->
-                    state.copy(cloudLibrary = refreshed).withVisibleCloudItems()
+                    state.copy(cloudLibrary = cloudLibraryRepository.withoutDeletedItems(refreshed)).withVisibleCloudItems()
                 }
             }.onFailure { error ->
                 if (error is CancellationException) return@launch
@@ -424,6 +432,7 @@ class LibraryViewModel @Inject constructor(
                         return@launch
                     }
                     val sessionToken = cloudPlaybackSessionStore.create(playbackContext)
+                    cloudLibraryRepository.rememberCloudCleanup(sessionToken, result.url, item, file)
                     onResolved(
                         CloudLibraryPlaybackInfo(
                             item = item,

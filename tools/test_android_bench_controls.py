@@ -47,6 +47,10 @@ CASES = (
     ("com.nuvio.tv.ui.screens.settings.AppRestartSettingsTvTest", "cancelIsInitiallyFocusedAndReturnsToTheSettingsAction"),
     ("com.nuvio.tv.ui.screens.settings.AppRestartSettingsTvTest", "backDismissesConfirmationWithoutRestarting"),
     ("com.nuvio.tv.ui.screens.settings.AppRestartSettingsTvTest", "rightThenCenterConfirmsExactlyOneRestartRequest"),
+    ("com.nuvio.tv.ui.screens.settings.AppShutdownSettingsTvTest", "cancelIsInitiallyFocusedAndReturnsToTheSettingsAction"),
+    ("com.nuvio.tv.ui.screens.settings.AppShutdownSettingsTvTest", "backDismissesConfirmationWithoutShuttingDown"),
+    ("com.nuvio.tv.ui.screens.settings.AppShutdownSettingsTvTest", "confirmationRequestsShutdownOnceAndDisablesTheAction"),
+    ("com.nuvio.tv.ui.screens.settings.AppShutdownSettingsTvTest", "failedShutdownRestoresTheActionAndAllowsRetry"),
 )
 
 
@@ -56,7 +60,7 @@ def event(index, case, status):
         f"INSTRUMENTATION_STATUS: class={group}\n"
         f"INSTRUMENTATION_STATUS: current={index}\n"
         "INSTRUMENTATION_STATUS: id=AndroidJUnitRunner\n"
-        "INSTRUMENTATION_STATUS: numtests=11\n"
+        "INSTRUMENTATION_STATUS: numtests=15\n"
         "INSTRUMENTATION_STATUS: stream=.\n"
         f"INSTRUMENTATION_STATUS: test={method}\n"
         f"INSTRUMENTATION_STATUS_CODE: {status}\n"
@@ -64,7 +68,7 @@ def event(index, case, status):
 
 
 SUCCESS = "".join(event(i, case, 1) + event(i, case, 0) for i, case in enumerate(CASES, 1)) + (
-    "INSTRUMENTATION_RESULT: stream=\n\nTime: 89.933\n\nOK (11 tests)\n\n"
+    "INSTRUMENTATION_RESULT: stream=\n\nTime: 89.933\n\nOK (15 tests)\n\n"
     "INSTRUMENTATION_CODE: -1\n"
     "s_glBindAttribLocation: bind attrib 0 name position\n"
 )
@@ -157,21 +161,21 @@ class InstrumentationProtocolTest(unittest.TestCase):
     def reject(self, output, returncode=0):
         facts = controls.instrumentation_result(output, returncode)
         self.assertFalse(facts["passed"])
-        self.assertEqual(11, facts["expected"])
+        self.assertEqual(15, facts["expected"])
         self.assertIsInstance(facts["completed"], int)
 
     def test_complete_recorded_shape_passes_with_harmless_renderer_output(self):
-        self.assertEqual({"expected": 11, "completed": 11, "passed": True},
+        self.assertEqual({"expected": 15, "completed": 15, "passed": True},
                          controls.instrumentation_result(SUCCESS, 0))
         self.assertEqual(frozenset(CASES), controls.EXPECTED_TESTS)
-        self.assertEqual(6, len(set(controls.SCREENSHOTS)))
+        self.assertEqual(9, len(set(controls.SCREENSHOTS)))
 
     def test_transport_failure_cannot_be_overridden_by_passing_text(self):
         self.reject(SUCCESS, 1)
         self.reject(SUCCESS, -9)
 
     def test_summary_and_exit_code_alone_do_not_prove_execution(self):
-        self.reject("OK (11 tests)\nINSTRUMENTATION_CODE: -1\n")
+        self.reject("OK (15 tests)\nINSTRUMENTATION_CODE: -1\n")
         self.reject("INSTRUMENTATION_CODE: -1\n")
 
     def test_failure_skip_and_assumption_statuses_do_not_pass(self):
@@ -186,13 +190,18 @@ class InstrumentationProtocolTest(unittest.TestCase):
         self.reject(SUCCESS.replace(event(1, CASES[0], 0), event(1, CASES[0], 0) * 2, 1))
         self.reject(SUCCESS.replace("current=2\n", "current=1\n", 1))
 
+    def test_each_new_shutdown_case_is_required_even_with_a_passing_summary(self):
+        for index, case in enumerate(CASES[-4:], len(CASES) - 3):
+            with self.subTest(method=case[1]):
+                self.reject(SUCCESS.replace(event(index, case, 1) + event(index, case, 0), "", 1))
+
     def test_unknown_class_method_runner_or_count_fails(self):
         for old, new in [
             (CASES[0][0], "com.example.OtherTest"),
             (CASES[0][1], "testSomethingElse"),
             ("id=AndroidJUnitRunner", "id=OtherRunner"),
-            ("numtests=11", "numtests=12"),
-            ("OK (11 tests)", "OK (10 tests)"),
+            ("numtests=15", "numtests=12"),
+            ("OK (15 tests)", "OK (10 tests)"),
         ]:
             with self.subTest(replacement=new):
                 self.reject(SUCCESS.replace(old, new))
@@ -201,13 +210,13 @@ class InstrumentationProtocolTest(unittest.TestCase):
         for replacement in ["", "INSTRUMENTATION_CODE: 0\n", "INSTRUMENTATION_CODE: -1\n" * 2]:
             with self.subTest(replacement=replacement):
                 self.reject(SUCCESS.replace("INSTRUMENTATION_CODE: -1\n", replacement))
-        self.reject(SUCCESS.replace("OK (11 tests)", ""))
-        self.reject(SUCCESS + "OK (11 tests)\n")
+        self.reject(SUCCESS.replace("OK (15 tests)", ""))
+        self.reject(SUCCESS + "OK (15 tests)\n")
 
     def test_a_summary_outside_the_final_result_stream_is_not_success(self):
-        no_summary = SUCCESS.replace("OK (11 tests)\n", "")
-        self.reject("OK (11 tests)\n" + no_summary)
-        self.reject(no_summary + "OK (11 tests)\n")
+        no_summary = SUCCESS.replace("OK (15 tests)\n", "")
+        self.reject("OK (15 tests)\n" + no_summary)
+        self.reject(no_summary + "OK (15 tests)\n")
 
     def test_crash_failure_or_error_marker_cannot_be_hidden_after_success(self):
         for error in [
@@ -221,7 +230,7 @@ class InstrumentationProtocolTest(unittest.TestCase):
 
     def test_pending_fields_after_final_and_duplicate_status_fields_fail(self):
         self.reject(SUCCESS + "INSTRUMENTATION_STATUS: class=" + CASES[0][0] + "\n")
-        self.reject(SUCCESS.replace("INSTRUMENTATION_STATUS: numtests=11\n", "INSTRUMENTATION_STATUS: numtests=11\n" * 2, 1))
+        self.reject(SUCCESS.replace("INSTRUMENTATION_STATUS: numtests=15\n", "INSTRUMENTATION_STATUS: numtests=15\n" * 2, 1))
         self.reject(SUCCESS[:SUCCESS.index("INSTRUMENTATION_STATUS_CODE: 0")])
 
 

@@ -1,0 +1,12 @@
+Syclop AV1 decoder
+
+The Android Open Source Project's Media3 1.8.0 AV1 wrapper and
+libgav1 0.20.0 use the included Apache License, Version 2.0 text.
+Google cpu_features 0.10.1 has a separate included license file.
+
+Syclop modified Media3's gav1_jni.cc to track ownership of decoded
+Surface frames and reject unsupported output layouts before writing.
+
+Media3: https://github.com/androidx/media/tree/b7bbc6e2bc3e45ff3ed99884c114c50f03bba5c9/libraries/decoder_av1
+libgav1: https://chromium.googlesource.com/codecs/libgav1/+/c05bf9be660cf170d7c26bd06bb42b3322180e58
+cpu_features: https://github.com/google/cpu_features/tree/d3b2440fcfc25fe8e6d0d4a85f06d68e98312f5b

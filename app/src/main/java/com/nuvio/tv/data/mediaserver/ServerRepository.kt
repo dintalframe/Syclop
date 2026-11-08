@@ -80,6 +80,10 @@ class ServerRepository(
 
     fun session(connectionId: String): ServerSession? {
         val connection = connection(connectionId)?.takeIf { it.enabled } ?: return null
+        if (!ServerTransportPolicy.allowsCredentials(connection.address, connection.localHttpApproved)) {
+            setFailure(connectionId, ServerFailure.INSECURE_CONNECTION)
+            return null
+        }
         val token = synchronized(lock) { tokens[connection.credentialRef] } ?: return null
         return ServerSession(connection, token)
     }
@@ -91,7 +95,9 @@ class ServerRepository(
         val startedGeneration = generation
         val connection = connection(connectionId) ?: throw ServerException(ServerFailure.NOT_FOUND)
         if (!connection.enabled) throw ServerException(ServerFailure.UNREACHABLE)
-        val session = session(connectionId) ?: throw ServerException(ServerFailure.AUTH_REQUIRED)
+        val session = session(connectionId) ?: throw ServerException(
+            mutableState.value.failures[connectionId] ?: ServerFailure.AUTH_REQUIRED
+        )
         val provider = provider(session.connection) ?: throw ServerException(ServerFailure.UNSUPPORTED)
         return try {
             block(provider, session).also {
@@ -108,11 +114,15 @@ class ServerRepository(
         }
     }
 
-    suspend fun connect(provider: ServerProvider, address: String, username: String, password: String): ServerConnection {
+    suspend fun connect(provider: ServerProvider, address: String, username: String, password: String,
+        localHttpApproved: Boolean = false): ServerConnection {
         ensureLoaded()
+        if (!ServerTransportPolicy.allowsCredentials(address, localHttpApproved)) {
+            throw ServerException(ServerFailure.INSECURE_CONNECTION)
+        }
         val startedGeneration = generation
         val profileId = loadedProfileId ?: activeProfileId
-        val signIn = provider.signIn(address, username, password)
+        val signIn = provider.signIn(address, username, password, localHttpApproved)
         val existing = mutableState.value.connections.firstOrNull {
             it.providerId == provider.id &&
                 it.remoteServerId == signIn.serverId &&
@@ -130,7 +140,8 @@ class ServerRepository(
             libraries = existing?.libraries.orEmpty(),
             enabled = true,
             useCatalogMetadata = existing?.useCatalogMetadata ?: false,
-            importWatchState = existing?.importWatchState ?: false
+            importWatchState = existing?.importWatchState ?: false,
+            localHttpApproved = localHttpApproved && ServerTransportPolicy.localHttpHost(signIn.address) != null
         )
         val libraries = provider.libraries(ServerSession(draft, signIn.token))
         if (startedGeneration != generation || profileId != loadedProfileId) {
@@ -139,6 +150,13 @@ class ServerRepository(
         val connection = draft.copy(libraries = mergeLibraries(existing?.libraries.orEmpty(), libraries))
         store(connection, signIn.token, replacedCredential = existing?.credentialRef)
         return connection
+    }
+
+    fun approveLocalHttp(connectionId: String, address: String, credentialRef: String) {
+        val current = connection(connectionId) ?: return
+        if (current.address != address || current.credentialRef != credentialRef || ServerTransportPolicy.localHttpHost(address) == null) return
+        updateConnection(connectionId) { it.copy(localHttpApproved = true) }
+        setFailure(connectionId, null)
     }
 
     internal fun store(connection: ServerConnection, token: String, replacedCredential: String? = null) {
@@ -228,7 +246,9 @@ class ServerRepository(
             usedIds += id
             updatedTokens[credentialRef] = server.token
             if (local != null && currentTokens[credentialRef] != server.token) setFailure(local.id, null)
-            server.toConnection(id, credentialRef)
+            server.toConnection(id, credentialRef).copy(
+                localHttpApproved = local?.localHttpApproved == true && local.address == server.address
+            )
         }
         (current.map { it.id } - usedIds).forEach { setFailure(it, null) }
         pendingPush = false
@@ -273,6 +293,9 @@ class ServerRepository(
         loadedProfileId = profileId
         mutableState.value = ServersUiState(
             connections = stored.connections,
+            failures = stored.connections.filter {
+                !ServerTransportPolicy.allowsCredentials(it.address, it.localHttpApproved)
+            }.associate { it.id to ServerFailure.INSECURE_CONNECTION },
             revision = mutableState.value.revision + 1
         )
     }

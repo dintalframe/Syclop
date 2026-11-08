@@ -20,15 +20,15 @@ data class UpdateUiState(
     val feedbackMessage: String? = null,
     val updateBannerEnabled: Boolean = false,
     val updateChannel: UpdateChannel = UpdateChannel.STABLE,
-    val autoInstallEnabled: Boolean = false,
-    val autoInstallSupported: Boolean = false,
-    val autoInstallNoticeEnabled: Boolean = false
+    val manualPrompt: Boolean = false
 )
 
 @HiltViewModel
 class UpdateViewModel @Inject constructor() : ViewModel() {
     private val _uiState = MutableStateFlow(UpdateUiState())
     val uiState: StateFlow<UpdateUiState> = _uiState.asStateFlow()
+
+    suspend fun checkForUpdatesAutomatically() = Unit
 
     fun checkForUpdates(force: Boolean, showNoUpdateFeedback: Boolean) = Unit
 
@@ -42,13 +42,8 @@ class UpdateViewModel @Inject constructor() : ViewModel() {
 
     fun setUpdateChannel(channel: UpdateChannel) = Unit
 
-    fun downloadUpdate() = Unit
-
-    fun installUpdateOrRequestPermission() = Unit
+    fun downloadUpdate(allowInstaller: () -> Boolean) = Unit
 
     fun openUnknownSourcesSettings() = Unit
 
-    fun setAutoInstallEnabled(enabled: Boolean) = Unit
-
-    fun setAutoInstallNoticeEnabled(enabled: Boolean) = Unit
 }

@@ -128,7 +128,7 @@ class AllDebridIntegrationTest {
         MockWebServer().use { server ->
             server.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"filename":"Show","status":"Ready","statusCode":4,"size":900}]}}"""))
             server.enqueue(json(filesResponse))
-            val cloud = AllDebridCloudLibraryProviderApi(service(server))
+            val cloud = AllDebridCloudLibraryProviderApi(service(server), mockk())
             val item = cloud.listItems(TOKEN).getOrThrow().single()
             assertEquals(2, item.playableFiles.size)
             assertTrue(item.files.all { it.playbackUrl == null })

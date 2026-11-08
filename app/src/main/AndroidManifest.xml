@@ -45,7 +45,7 @@
         android:banner="@drawable/syclop_banner"
         android:icon="@mipmap/syclop_launcher"
         android:roundIcon="@mipmap/syclop_launcher"
-        android:label="@string/app_name"
+        android:label="Syclop"
         android:largeHeap="true"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true"

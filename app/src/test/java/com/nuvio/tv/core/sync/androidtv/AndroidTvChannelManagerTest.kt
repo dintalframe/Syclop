@@ -3,6 +3,7 @@ package com.nuvio.tv.core.sync.androidtv
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
@@ -27,6 +28,7 @@ class AndroidTvChannelManagerTest {
     private val packageManager: PackageManager = mockk(relaxed = true)
     private val contentResolver: ContentResolver = mockk(relaxed = true)
     private val prefs: TvChannelPreferences = mockk(relaxed = true)
+    private val cardLaunches: TvCardLaunchAuthenticator = mockk(relaxed = true)
     private lateinit var manager: AndroidTvChannelManager
 
     private val channelId = 42L
@@ -77,7 +79,10 @@ class AndroidTvChannelManagerTest {
         every { context.contentResolver } returns contentResolver
         every { context.packageName } returns "com.nuvio.tv"
         every { context.getString(any<Int>()) } returns "Continue Watching"
-        manager = AndroidTvChannelManager(context, prefs)
+        every { cardLaunches.createIntent(any(), any()) } returns mockk<Intent> {
+            every { toUri(any()) } returns "intent:#Intent;end"
+        }
+        manager = AndroidTvChannelManager(context, prefs, cardLaunches)
     }
 
     @After

@@ -16,8 +16,8 @@ class Http1OnlyTest {
     }
 
     @Test
-    fun `base playback clients and the tls fallback speak http 1_1 only`() {
+    fun `base playback and subtitle clients speak http 1_1 only`() {
         assertEquals(listOf(Protocol.HTTP_1_1), PlayerPlaybackNetworking.playbackHttpClient.protocols)
-        assertEquals(listOf(Protocol.HTTP_1_1), PlayerPlaybackNetworking.trustAllPlaybackHttpClient.protocols)
+        assertEquals(listOf(Protocol.HTTP_1_1), subtitleHttpClient.protocols)
     }
 }

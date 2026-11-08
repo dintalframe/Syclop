@@ -27,6 +27,7 @@ class MalCatalog @Inject constructor(
                 AddonResource("meta", listOf("series", "movie"), listOf("mal:"))),
             idPrefixes = listOf("mal:"), configVersion = account.scope.generation,
             catalogs = buildList {
+                add(descriptor("popular", "MAL · Popular anime"))
                 add(descriptor("ranking", "MAL · Top anime"))
                 if (account.connected) MalListStatus.entries.forEach { status ->
                     add(descriptor(status.wireValue, "MAL · ${status.label}"))
@@ -43,6 +44,7 @@ class MalCatalog @Inject constructor(
         require(skip in 0..100_000) { "MyAnimeList page is outside the supported range." }
         val account = auth.state.value
         val result = when (catalogId) {
+            "popular" -> api.popular(skip, account.configuration.clientId)
             "ranking" -> api.ranking(skip, account.configuration.clientId)
             "search" -> {
                 val query = extra["search"].orEmpty().trim()
@@ -57,8 +59,11 @@ class MalCatalog @Inject constructor(
         require(auth.state.value.scope == account.scope &&
             auth.state.value.configuration.clientId == account.configuration.clientId) { "The active MyAnimeList profile changed." }
         return CatalogRow(addonId = ADDON_ID, addonName = "MyAnimeList", addonBaseUrl = BASE_URL,
-            catalogId = catalogId, catalogName = if (catalogId == "ranking") "MAL · Top anime" else
-                MalListStatus.entries.firstOrNull { it.wireValue == catalogId }?.let { "MAL · ${it.label}" } ?: "MyAnimeList",
+            catalogId = catalogId, catalogName = when (catalogId) {
+                "popular" -> "MAL · Popular anime"
+                "ranking" -> "MAL · Top anime"
+                else -> MalListStatus.entries.firstOrNull { it.wireValue == catalogId }?.let { "MAL · ${it.label}" } ?: "MyAnimeList"
+            },
             type = ContentType.SERIES, items = result.items.map { MalMetadataService.preview(it) },
             hasMore = result.hasMore, supportsSkip = true, skipStep = PAGE_SIZE,
             currentPage = skip / PAGE_SIZE, nextSkip = skip + result.items.size, extraArgs = extra)

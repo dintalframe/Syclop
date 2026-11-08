@@ -179,6 +179,7 @@ data class PlayerUiState(
     val showAddonLogo: Boolean = true,
     val streamBadgePlacement: StreamBadgePlacement = StreamBadgePlacement.BOTTOM,
     val playerBadgeFilters: List<CompiledStreamBadgeFilter> = emptyList(),
+    val badgeMediaSnapshot: PlayerBadgeMediaSnapshot? = null,
     val error: String? = null,
     val showSwitchToMpvErrorAction: Boolean = false,
     val playbackIssueReportStatus: PlaybackIssueReportStatus = PlaybackIssueReportStatus.Idle,

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "versionName": "0.1.1",
+  "versionCode": 2,
+  "variant": "fullRelease",
+  "minimumAndroidApi": 24,
+  "abis": [
+    "arm64-v8a",
+    "armeabi-v7a",
+    "x86",
+    "x86_64"
+  ],
+  "sourceCompanion": {
+    "assetName": "syclop-native-sources-0.1.1.tar.gz",
+    "sha256": "07767f4231e11e927cdaf3a882b69d72ffc400065fb451e43ee9a4de96d96ce5",
+    "bytes": 75444584,
+    "verifierAsset": "verify-source-archive.py",
+    "verifierSha256": "2253cc62ae5076bd08597630ddd837e28ba99312c054a2d88a448fdcfb1d3c34",
+    "releaseAssetPath": "https://github.com/dintalframe/Syclop/releases/download/v0.1.1/syclop-native-sources-0.1.1.tar.gz"
+  },
+  "managedCore": {
+    "preferredSourceUnits": 33,
+    "coherentClasses": 1830,
+    "publicSourceCommit": "b7bbc6e2bc3e45ff3ed99884c114c50f03bba5c9",
+    "recipe": "third_party/media3-core/build.py",
+    "sourceManifestSha256": "ebd6b18d9cc117a75d3bea83ca48ecece30c4cb514caef71c4a4de932f6d5f47",
+    "comparisonScope": "See third_party/media3-core/README.md for code/metadata encoding limits; final APK acceptance is recorded separately"
+  },
+  "localAarSourceInputs": {
+    "app/libs/lib-common-release.aar": "d919d08f568219ba35340fcdfc21afb665b055e97dc8108f195fc82feedb8437",
+    "app/libs/lib-datasource-okhttp-release.aar": "98030159890ba491802fc70beb58f4f94cccd6c2588f635729b71807c8239e59",
+    "app/libs/lib-datasource-release.aar": "49a02049e93d5afbd8f54a80f9673c12251daaef225c65a839d2dac91df04eda",
+    "app/libs/lib-decoder-av1-release.aar": "5d37d95cd2d99dc46dca9b2b3f8861b8774d40b287473c2315fe3dae2ca900c9",
+    "app/libs/lib-decoder-ffmpeg-release.aar": "354f89c973f4e65fc1625954ce33e4b81b14990aa29fd585bdb74780adc20d45",
+    "app/libs/lib-decoder-iamf-release.aar": "54d3773af5dc2587dda009d435ce5f51459af7ce66b0f459ac36d38145541ec6",
+    "app/libs/lib-decoder-mpegh-release.aar": "3aaecd7e4238668699ac1fadc3527f633291b2e6e082a704e0f9ffcc4571ddae",
+    "app/libs/lib-exoplayer-hls-release.aar": "524f32c6d0b900e5e53ef3966e1fcbdc9ff2df418c95b8ff27985b128be47fd6",
+    "app/libs/lib-exoplayer-release.aar": "f87515f4eb70fd2074a53cbfced18c527bacd8a79a830adbaec95338aaf5b036",
+    "app/libs/lib-extractor-release.aar": "a730837c416af6f9aa1e640cf3028243f29308277c6b9c15459ea4cad26b4247",
+    "app/libs/lib-nuvio-engine-android-0.1.6.aar": "66b049a3625bfdc39c3b5d25a0af9bbc127c530512617e9f57cd988c019d33d6",
+    "app/libs/lib-ui-release.aar": "3ffdb5b0d11f2a1c2d2dab8ca628cd7d3242f14dd482bd70cd2b979007c9c07f",
+    "app/libs/nextlib-mediainfo-local.aar": "90a06a6371d539460fee9749c553c055d778652215d21e0c75d345c266c519e7",
+    "app/libs/nuvio-libass-release.aar": "3ea1882eab4bdf956937c8f549e10e7dda1877f76a35db2960acc057875250f2",
+    "app/libs/quickjs-kt-android-1.0.5-nuvio.aar": "7bbafcaf3c94feac4a329c9861f5ffc1bf470841a28a34c3c305f801cb7948ab",
+    "app/libs/mpv-android-local.aar": "d47e06eef65295ca597cf57caf0b50f49aec7eb7494627bcc23cf007395a8687"
+  },
+  "inputManifestIncludesHistoricalUnusedAars": true,
+  "sourceAndArtifactBinding": "The signed APK VCS metadata and release qualification bind the final app Git commit to this source companion and the exact APK/signer. This file alone does not promote a release.",
+  "originalUpdateSignerCertificateSha256": "42dc538b170b87c5bbc1f89bdc32bdef3408f1eddd6d5141388cdaa797602f2e",
+  "knownCompatibilityLimit": "Collection export requires Android10/API29; earlier versions retain the existing failure result.",
+  "nativePackagingExclusions": [
+    "**/libnuvio_engine.so"
+  ],
+  "executablePluginRuntimeRetired": true
+}

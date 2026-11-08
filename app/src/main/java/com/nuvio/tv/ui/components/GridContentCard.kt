@@ -346,6 +346,10 @@ fun GridContentCard(
                     )
                 }
 
+                item.watchedEpisodeLabel?.let { label ->
+                    WatchedEpisodeBadge(label, Modifier.align(Alignment.TopStart).zIndex(2f))
+                }
+
                 if (isWatched) {
                     WatchedMarker(
                         modifier = Modifier

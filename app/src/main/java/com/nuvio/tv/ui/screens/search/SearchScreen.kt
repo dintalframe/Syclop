@@ -810,8 +810,8 @@ fun SearchScreen(
                                     firstVisibleItemScrollOffset = saved?.second ?: 0
                                 )
                             }
-                            val rowFocusRequester = searchRowFocusRequesters.getOrPut(catalogKey) { FocusRequester() }
-                            val entryFocusRequester = searchRowEntryFocusRequesters.getOrPut(catalogKey) { FocusRequester() }
+                            val rowFocusRequester = searchRowFocusRequesters.getOrPut(catalogKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
+                            val entryFocusRequester = searchRowEntryFocusRequesters.getOrPut(catalogKey) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
 
                             CatalogRowSection(
                                 catalogRow = catalogRow,
@@ -972,7 +972,7 @@ private fun RecentSearchesSection(
     var pendingDownwardFocus by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Downward focus enters the query column. The remove buttons are reached with right.
     val firstSearchFocusRequester = searchFocusRequesters.getOrPut(recentSearches.first()) {
-        FocusRequester()
+        /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester()
     }
     LaunchedEffect(recentSearches, pendingDownwardFocus) {
         val visibleQueries = recentSearches.toSet()
@@ -1029,18 +1029,18 @@ private fun RecentSearchesSection(
         recentSearches.forEachIndexed { index, recentQuery ->
             key(recentQuery) {
                 val searchFocusRequester = searchFocusRequesters.getOrPut(recentQuery) {
-                    FocusRequester()
+                    /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester()
                 }
                 val removeFocusRequester = removeFocusRequesters.getOrPut(recentQuery) {
-                    FocusRequester()
+                    /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester()
                 }
                 val previousRemoveFocusRequester = if (index == 0) {
                     clearHistoryFocusRequester
                 } else {
-                    removeFocusRequesters.getOrPut(recentSearches[index - 1]) { FocusRequester() }
+                    removeFocusRequesters.getOrPut(recentSearches[index - 1]) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                 }
                 val nextRemoveFocusRequester = recentSearches.getOrNull(index + 1)?.let {
-                    removeFocusRequesters.getOrPut(it) { FocusRequester() }
+                    removeFocusRequesters.getOrPut(it) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

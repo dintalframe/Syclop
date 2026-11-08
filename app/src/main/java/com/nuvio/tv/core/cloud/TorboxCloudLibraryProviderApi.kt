@@ -12,7 +12,8 @@ import retrofit2.Response
 
 @Singleton
 class TorboxCloudLibraryProviderApi @Inject constructor(
-    private val api: TorboxApi
+    private val api: TorboxApi,
+    private val deletion: CloudLibraryDeletionTransport
 ) : CloudLibraryProviderApi {
     override val provider = DebridProviders.Torbox
 
@@ -68,6 +69,44 @@ class TorboxCloudLibraryProviderApi @Inject constructor(
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             CloudLibraryPlaybackResult.Failed(error.message)
+        }
+    }
+
+    override suspend fun deleteCompletedFile(
+        apiKey: String,
+        item: CloudLibraryItem,
+        file: CloudLibraryFile,
+        isStillAuthorized: suspend () -> Boolean
+    ): Boolean {
+        if (apiKey.isBlank() || !item.matchesSinglePlayableFile(provider.id, file)) return false
+        val id = item.id.toLongOrNull()?.takeIf { it > 0 && it.toString() == item.id } ?: return false
+        val (section, action, idField) = when (item.type) {
+            CloudLibraryItemType.Torrent -> Triple("torrents", "controltorrent", "torrent_id")
+            CloudLibraryItemType.Usenet -> Triple("usenet", "controlusenetdownload", "usenet_id")
+            CloudLibraryItemType.WebDownload -> Triple("webdl", "controlwebdownload", "webdl_id")
+            CloudLibraryItemType.File -> return false
+        }
+        val authorization = "Bearer $apiKey"
+        return try {
+            val fresh = deletion.torbox.getCloudItemForDeletion(authorization, section, id)
+            fresh.errorBody()?.close()
+            val info = fresh.body()?.takeIf { fresh.isSuccessful && it.success == true && it.error == null }?.data
+                ?: return false
+            if (info.id.scalarString() != item.id) return false
+            val parentName = info.name?.trim()?.takeIf(String::isNotBlank) ?: item.id
+            val soleFile = info.files?.singleOrNull()?.toCloudLibraryFile(parentName) ?: return false
+            if (!soleFile.playable || soleFile.id != file.id || soleFile.name != file.name ||
+                soleFile.sizeBytes != file.sizeBytes) return false
+            val payload = mapOf(idField to if (item.type == CloudLibraryItemType.Usenet) id.toString() else id,
+                "operation" to "delete", "all" to false)
+            if (!isStillAuthorized()) return false
+            val response = deletion.torbox.deleteCloudItem(authorization, section, action, payload)
+            response.errorBody()?.close()
+            val result = response.body()
+            response.isSuccessful && result?.success == true && result.error == null
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            false
         }
     }
 

@@ -35,7 +35,9 @@ data class Stream(
     /** Catalog-confirmed movie runtime for explicitly unverified provider-size averages only. */
     val reportedMovieRuntimeMillis: Long? = null,
     /** Native, short-lived account observations. Add-on cache claims never populate this field. */
-    val nativeDebridAvailability: List<StreamDebridCacheStatus> = emptyList()
+    val nativeDebridAvailability: List<StreamDebridCacheStatus> = emptyList(),
+    /** Native resolver winner for display only; this field never authorizes a playback URL. */
+    val nativeResolvedProviderId: String? = null
 ) {
     /**
      * Returns the primary stream source URL
@@ -325,7 +327,9 @@ data class AddonStreams(
     val addonName: String,
     val addonLogo: String?,
     val streams: List<Stream>,
-    val searchDiagnostics: SourceSearchDiagnostics? = null
+    val searchDiagnostics: SourceSearchDiagnostics? = null,
+    /** Admitted native candidates excluded by user stream preferences, not discovery failures. */
+    val hiddenByPreferencesCount: Int = 0
 )
 
 private fun String?.isMagnetLink(): Boolean =

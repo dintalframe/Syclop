@@ -8,7 +8,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.nuvio.tv.core.network.IPv4FirstDns
 import com.nuvio.tv.core.player.SubtitleCharsetDetector
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
@@ -16,31 +15,17 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.Request
+import java.net.ProtocolException
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
 
-private fun OkHttpClient.Builder.subtitleDownloadDefaults(): OkHttpClient.Builder = this
-    // Sidecar and auto-sync downloads use these clients; keep timeouts generous for flaky hosts.
-    .connectTimeout(12_000, TimeUnit.MILLISECONDS)
-    .readTimeout(15_000, TimeUnit.MILLISECONDS)
-    .callTimeout(25_000, TimeUnit.MILLISECONDS)
-    .retryOnConnectionFailure(true)
-    .followRedirects(true)
-    .followSslRedirects(true)
-    .addNetworkInterceptor(ForwardedStreamHeaderGuard)
-
-// Validating client. Interceptors are cleared so playbackHttpClient's trust-all SSL fallback can't
-// resend stream credentials; executeSubtitleRequest handles the fallback instead.
 internal val subtitleHttpClient: OkHttpClient by lazy {
+    // Sidecar and AutoSync downloads retain their timeouts and per-hop credential scope.
     PlayerPlaybackNetworking.playbackHttpClient.newBuilder()
-        .apply { interceptors().clear() }
-        .subtitleDownloadDefaults()
-        .build()
-}
-
-internal val subtitleUnvalidatedTlsHttpClient: OkHttpClient by lazy {
-    PlayerPlaybackNetworking.trustAllPlaybackHttpClient.newBuilder()
-        .subtitleDownloadDefaults()
+        .connectTimeout(12_000, TimeUnit.MILLISECONDS)
+        .readTimeout(15_000, TimeUnit.MILLISECONDS)
+        .callTimeout(25_000, TimeUnit.MILLISECONDS)
+        .addNetworkInterceptor(ForwardedStreamHeaderGuard)
         .build()
 }
 
@@ -231,6 +216,10 @@ internal suspend fun PlayerRuntimeController.downloadSubtitleBody(
                 return@withContext executeSubtitleDownload(url, languageHint, headers)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: SSLException) {
+                throw e
+            } catch (e: ProtocolException) {
+                throw e
             } catch (e: Exception) {
                 lastError = e
                 if (attempt < SUBTITLE_DOWNLOAD_MAX_ATTEMPTS - 1) {
@@ -324,13 +313,6 @@ internal object ForwardedStreamHeaderGuard : Interceptor {
     }
 }
 
-/** Removes the host-scoped stream and subtitle headers, for the permissive TLS retry. */
-internal fun Request.withoutCredentialHeaders(): Request =
-    withoutHeaders(
-        tag(ForwardedStreamHeaders::class.java)?.names.orEmpty() +
-            tag(SubtitleOwnHeaders::class.java)?.names.orEmpty()
-    )
-
 private fun Request.withoutHeaders(names: Set<String>): Request =
     if (names.isEmpty()) this else newBuilder().apply { names.forEach { removeHeader(it) } }.build()
 
@@ -392,20 +374,8 @@ internal fun buildSubtitleRequest(
     return requestBuilder.build()
 }
 
-/**
- * Tries [validated] first. On any SSLException, reruns the whole redirect chain on [permissive] without
- * host-scoped stream or subtitle headers, so self-signed hosts still work.
- */
-internal fun executeSubtitleRequest(
-    request: Request,
-    validated: OkHttpClient = subtitleHttpClient,
-    permissive: OkHttpClient = subtitleUnvalidatedTlsHttpClient
-): okhttp3.Response =
-    try {
-        validated.newCall(request).execute()
-    } catch (e: SSLException) {
-        permissive.newCall(request.withoutCredentialHeaders()).execute()
-    }
+internal fun executeSubtitleRequest(request: Request): okhttp3.Response =
+    subtitleHttpClient.newCall(request).execute()
 
 private fun PlayerRuntimeController.executeSubtitleDownload(
     url: String,

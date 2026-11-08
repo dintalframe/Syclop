@@ -6,132 +6,67 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsCatalogTest {
-
     @Test
-    fun `primary profile in advanced debug build sees every category in group order`() {
-        val categories = visibleSettingsCategories(
-            isPrimaryProfile = true,
-            isEssentialMode = false,
-            isDebugBuild = true
-        )
-
+    fun `Settings starts at connected services with one Advanced entry`() {
         assertEquals(
-            listOf(
-                SettingsCategory.ACCOUNT,
-                SettingsCategory.PROFILES,
-                SettingsCategory.APPEARANCE,
-                SettingsCategory.LAYOUT,
-                SettingsCategory.CONTENT_DISCOVERY,
-                SettingsCategory.PLAYBACK,
-                SettingsCategory.INTEGRATION,
-                SettingsCategory.TRACKING,
-                SettingsCategory.ADVANCED,
-                SettingsCategory.ABOUT,
-                SettingsCategory.DEBUG
-            ),
-            categories
+            listOf(SettingsCategory.ACCOUNTS, SettingsCategory.APP, SettingsCategory.ADVANCED_GROUP),
+            visibleSettingsCategories()
         )
     }
 
     @Test
-    fun `secondary profile does not see account or profiles`() {
-        val categories = visibleSettingsCategories(
-            isPrimaryProfile = false,
-            isEssentialMode = false,
-            isDebugBuild = false
-        )
-
-        assertFalse(SettingsCategory.ACCOUNT in categories)
-        assertFalse(SettingsCategory.PROFILES in categories)
-        assertEquals(SettingsCategory.APPEARANCE, categories.first())
-    }
-
-    @Test
-    fun `debug is hidden in release builds and in essential mode`() {
-        assertFalse(SettingsCategory.DEBUG in visibleSettingsCategories(true, isEssentialMode = false, isDebugBuild = false))
-        assertFalse(SettingsCategory.DEBUG in visibleSettingsCategories(true, isEssentialMode = true, isDebugBuild = true))
-    }
-
-    @Test
-    fun `experience never appears in the rail`() {
-        allCombinations().forEach { categories ->
-            assertFalse(SettingsCategory.EXPERIENCE in categories)
+    fun `the connection menu groups trackers playback sources and debrid`() {
+        for (primary in listOf(true, false)) {
+            assertEquals(
+                listOf(SettingsCategory.TRACKING, SettingsCategory.CONTENT_DISCOVERY, SettingsCategory.STREAMING_SERVICES),
+                settingsSubcategories(SettingsCategory.ACCOUNTS, primary, false, false)
+            )
         }
     }
 
     @Test
-    fun `about is the last regular category`() {
-        allCombinations().forEach { categories ->
-            val withoutDebug = categories - SettingsCategory.DEBUG
-            assertEquals(SettingsCategory.ABOUT, withoutDebug.last())
+    fun `app tools keep primary profile and watch party access gates`() {
+        val app = SettingsCategory.APP
+        assertEquals(listOf(SettingsCategory.ABOUT, SettingsCategory.ACCOUNT, SettingsCategory.PROFILES, SettingsCategory.WATCH_PARTY),
+            settingsSubcategories(app, true, true, false, isWatchPartyAvailable = true))
+        assertEquals(listOf(SettingsCategory.ABOUT, SettingsCategory.PROFILES),
+            settingsSubcategories(app, true, true, false, localOnlyBuild = true))
+        assertEquals(listOf(SettingsCategory.ABOUT),
+            settingsSubcategories(app, false, true, false))
+        assertEquals(listOf(SettingsCategory.ABOUT, SettingsCategory.WATCH_PARTY),
+            settingsSubcategories(app, false, true, false, isWatchPartyAvailable = true))
+    }
+
+    @Test
+    fun `technical controls sit behind the Advanced entry in either experience`() {
+        for (essential in listOf(true, false)) {
+            val advanced = settingsSubcategories(SettingsCategory.ADVANCED_GROUP, true, essential, false,
+                pluginsEnabled = false)
+            assertEquals(listOf(SettingsCategory.PLAYBACK, SettingsCategory.APPEARANCE, SettingsCategory.LAYOUT,
+                SettingsCategory.LIBRARY, SettingsCategory.INTEGRATION, SettingsCategory.ADVANCED), advanced)
         }
     }
 
     @Test
-    fun `each group is contiguous in every configuration`() {
-        allCombinations().forEach { categories ->
-            val groupRuns = categories.map { it.group }.fold(mutableListOf<SettingsRailGroup>()) { runs, group ->
-                if (runs.lastOrNull() != group) runs.add(group)
-                runs
-            }
-            assertEquals(groupRuns.distinct(), groupRuns)
+    fun `diagnostics and plugins retain their build and experience gates`() {
+        val advanced = settingsSubcategories(SettingsCategory.ADVANCED_GROUP, true, false, true)
+        assertTrue(SettingsCategory.DEBUG in advanced)
+        assertTrue(SettingsCategory.PLUGINS in advanced)
+        for ((essential, debug) in listOf(false to false, true to true)) {
+            assertFalse(SettingsCategory.DEBUG in settingsSubcategories(SettingsCategory.ADVANCED_GROUP, true, essential, debug))
         }
+        assertFalse(SettingsCategory.PLUGINS in settingsSubcategories(SettingsCategory.ADVANCED_GROUP, true, true, true))
+        assertFalse(SettingsCategory.PLUGINS in settingsSubcategories(SettingsCategory.ADVANCED_GROUP, true, false, true,
+            pluginsEnabled = false))
     }
 
     @Test
-    fun `dividers are placed only where the group changes`() {
-        val categories = visibleSettingsCategories(
-            isPrimaryProfile = true,
-            isEssentialMode = false,
-            isDebugBuild = true
-        )
-        val dividerBefore = categories.indices.filter { categories.startsNewGroup(it) }.map { categories[it] }
-
-        assertEquals(
-            listOf(
-                SettingsCategory.APPEARANCE,
-                SettingsCategory.CONTENT_DISCOVERY,
-                SettingsCategory.INTEGRATION,
-                SettingsCategory.ADVANCED
-            ),
-            dividerBefore
-        )
-        assertFalse(categories.startsNewGroup(0))
+    fun `every available page has one route from the new Settings rail`() {
+        val rail = visibleSettingsCategories()
+        val subcategories = rail.flatMap { settingsSubcategories(it, true, false, true, true) }
+        val reachable = rail + subcategories
+        assertEquals(reachable.size, reachable.toSet().size)
+        assertEquals(availableSettingsCategories(true, false, true, true).toSet(), reachable.toSet())
+        assertFalse(rail.startsNewGroup(0))
     }
-
-    @Test
-    fun `secondary profile rail starts without a divider`() {
-        val categories = visibleSettingsCategories(
-            isPrimaryProfile = false,
-            isEssentialMode = true,
-            isDebugBuild = false
-        )
-        assertFalse(categories.startsNewGroup(0))
-        assertTrue(categories.startsNewGroup(categories.indexOf(SettingsCategory.CONTENT_DISCOVERY)))
-    }
-
-    @Test
-    fun `watch party shows for every profile only while available`() {
-        listOf(true, false).forEach { primary ->
-            val available = visibleSettingsCategories(primary, isEssentialMode = false, isDebugBuild = false, isWatchPartyAvailable = true)
-            val unavailable = visibleSettingsCategories(primary, isEssentialMode = false, isDebugBuild = false, isWatchPartyAvailable = false)
-            assertTrue(SettingsCategory.WATCH_PARTY in available)
-            assertFalse(SettingsCategory.WATCH_PARTY in unavailable)
-        }
-        assertEquals(
-            listOf(SettingsCategory.ACCOUNT, SettingsCategory.PROFILES, SettingsCategory.WATCH_PARTY),
-            visibleSettingsCategories(true, isEssentialMode = false, isDebugBuild = false, isWatchPartyAvailable = true).take(3)
-        )
-    }
-
-    private fun allCombinations(): List<List<SettingsCategory>> =
-        listOf(true, false).flatMap { primary ->
-            listOf(true, false).flatMap { essential ->
-                listOf(true, false).flatMap { debug ->
-                    listOf(true, false).map { watchParty ->
-                        visibleSettingsCategories(primary, essential, debug, watchParty)
-                    }
-                }
-            }
-        }
 }

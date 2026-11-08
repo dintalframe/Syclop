@@ -6,17 +6,23 @@ import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.R
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.disk.DiskCache
@@ -43,7 +50,10 @@ import coil3.request.allowHardware
 import coil3.request.allowRgb565
 import coil3.request.crossfade
 import coil3.size.Precision
+import coil3.svg.SvgDecoder
 import com.nuvio.tv.domain.model.StreamBadge
+import com.nuvio.tv.core.debrid.NativeDebridSourceCards
+import androidx.compose.ui.text.style.TextOverflow
 import okio.Path.Companion.toOkioPath
 import kotlin.math.round
 
@@ -61,6 +71,8 @@ import kotlin.math.round
 private val badgeImageRequestCache = HashMap<String, ImageRequest>(32)
 
 private var badgeImageLoader: ImageLoader? = null
+private const val EmbeddedSvgPrefix = "data:image/svg+xml;base64,"
+private const val MaxEmbeddedSvgLength = 64 * 1024
 
 private fun getBadgeImageLoader(context: android.content.Context): ImageLoader {
     badgeImageLoader?.let { return it }
@@ -76,6 +88,7 @@ private fun getBadgeImageLoader(context: android.content.Context): ImageLoader {
                 .maxSizeBytes(50L * 1024 * 1024)
                 .build()
         }
+        .components { add(SvgDecoder.Factory()) }
         .precision(Precision.INEXACT)
         .crossfade(false)
         .allowHardware(true)
@@ -86,11 +99,12 @@ private fun getBadgeImageLoader(context: android.content.Context): ImageLoader {
 }
 
 /** Shared shape instance — all badge chips use the same corner radius. */
-private val BadgeChipShape = RoundedCornerShape(6.dp)
+private val BadgeChipShape = RoundedCornerShape(12.dp)
 
 /** Marquee scroll speed — matches FocusMarqueeText velocity for visual consistency. */
 private val MarqueeVelocity = 45.dp
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StreamBadgeChips(
     badges: List<StreamBadge>,
@@ -98,9 +112,13 @@ fun StreamBadgeChips(
     showFileSizeBadge: Boolean = false,
     animate: Boolean = false,
     focused: Boolean = false,
+    maxRows: Int = Int.MAX_VALUE,
     modifier: Modifier = Modifier
 ) {
-    val imageBadges = remember(badges) { badges.filter { it.imageURL.isNotBlank() } }
+    val imageBadges = remember(badges, maxRows) {
+        (if (maxRows <= 2) NativeDebridSourceCards.compactBadges(badges) else badges)
+            .filter { it.name.isNotBlank() || it.imageURL.isNotBlank() }
+    }
     val sizeBytes = fileSizeBytes.takeIf { showFileSizeBadge }
     if (imageBadges.isEmpty() && sizeBytes == null) return
 
@@ -118,14 +136,14 @@ fun StreamBadgeChips(
         modifier = modifier
             .fillMaxWidth()
             .clipToBounds()
-            .then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE, velocity = MarqueeVelocity, spacing = MarqueeSpacing(36.dp)) else Modifier)
             .then(if (chipAlpha < 1f) Modifier.alpha(chipAlpha) else Modifier),
         contentAlignment = Alignment.CenterStart
     ) {
-        Row(
-            modifier = Modifier.wrapContentWidth(align = Alignment.Start, unbounded = true),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            maxLines = maxRows.coerceAtLeast(1)
         ) {
             imageBadges.forEach { badge ->
                 StreamImportedBadgeChip(badge = badge)
@@ -151,26 +169,23 @@ private fun StreamFileSizeBadge(bytes: Long) {
             mbTemplate.format(round(mib).toInt().toString())
         }
     }
-    Box(
-        modifier = Modifier
-            .height(20.dp)
-            .clip(BadgeChipShape)
-            .background(Color(0xFF0A0C0C), BadgeChipShape)
-            .border(NuvioTheme.spacing.hairline, Color(0xFF0A0C0C), BadgeChipShape)
-            .padding(horizontal = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = stringResource(R.string.streams_size, label),
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White
-        )
-    }
+    SourceTextLabel(text = stringResource(R.string.streams_size, label))
 }
 
 @Composable
-internal fun StreamImportedBadgeChip(badge: StreamBadge, crossfade: Boolean = false) {
-    val context = LocalContext.current
+internal fun StreamImportedBadgeChip(
+    badge: StreamBadge,
+    crossfade: Boolean = false,
+    preferEmbeddedArtwork: Boolean = false
+) {
+    val useEmbeddedArtwork = preferEmbeddedArtwork &&
+        badge.imageURL.length in (EmbeddedSvgPrefix.length + 1)..MaxEmbeddedSvgLength &&
+        badge.imageURL.startsWith(EmbeddedSvgPrefix, ignoreCase = true)
+    if (badge.name.isNotBlank() && !useEmbeddedArtwork) {
+        SourceTextLabel(text = badge.name, style = badge.tagStyle)
+        return
+    }
+    val context = LocalContext.current.applicationContext
     val density = LocalDensity.current
     val backgroundColor = remember(badge.tagColor, badge.tagStyle) {
         badge.tagColor.toBadgeColorOrNull()
@@ -193,8 +208,8 @@ internal fun StreamImportedBadgeChip(badge: StreamBadge, crossfade: Boolean = fa
     // recomposition and ensures Coil's internal equality checks hit the same
     // object reference — preventing redundant decode dispatches.
     val cacheKey = "${badge.imageURL}_${decodeWidth}x${decodeHeight}"
-    val imageRequest = remember(cacheKey) {
-        badgeImageRequestCache.getOrPut(cacheKey) {
+    val imageRequest = remember(cacheKey, useEmbeddedArtwork) {
+        val buildRequest = {
             ImageRequest.Builder(context)
                 .data(badge.imageURL)
                 .size(width = decodeWidth, height = decodeHeight)
@@ -205,6 +220,14 @@ internal fun StreamImportedBadgeChip(badge: StreamBadge, crossfade: Boolean = fa
                 .crossfade(false)
                 .build()
         }
+        // Coil caches the decoded image. Keep imported SVG requests local to the
+        // current player UI so switching packs does not retain every payload.
+        if (useEmbeddedArtwork) buildRequest() else badgeImageRequestCache.getOrPut(cacheKey, buildRequest)
+    }
+    var imageFailed by remember(imageRequest) { mutableStateOf(false) }
+    if (imageFailed && badge.name.isNotBlank()) {
+        SourceTextLabel(text = badge.name, style = badge.tagStyle)
+        return
     }
     val chipModifier = Modifier
         .height(20.dp)
@@ -220,6 +243,7 @@ internal fun StreamImportedBadgeChip(badge: StreamBadge, crossfade: Boolean = fa
             model = imageRequest,
             imageLoader = getBadgeImageLoader(context),
             contentDescription = badge.name,
+            onError = { imageFailed = true },
             modifier = Modifier
                 .height(NuvioTheme.spacing.lg)
                 .widthIn(min = 34.dp, max = 92.dp)
@@ -237,4 +261,15 @@ private fun String.toBadgeColorOrNull(): Color? {
         else -> return null
     }
     return argb.toLongOrNull(16)?.let { Color(it) }
+}
+
+
+@Composable
+internal fun SourceTextLabel(text: String, style: String = "", modifier: Modifier = Modifier) {
+    Box(modifier = modifier.heightIn(min = 30.dp).clip(BadgeChipShape)
+        .background(Color(SourceLabelPalette.background(text, style)))
+        .padding(horizontal = 10.dp, vertical = 5.dp), contentAlignment = Alignment.Center) {
+        Text(text = text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }

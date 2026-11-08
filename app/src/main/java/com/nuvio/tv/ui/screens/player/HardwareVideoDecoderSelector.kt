@@ -2,8 +2,13 @@ package com.nuvio.tv.ui.screens.player
 
 import android.media.MediaCodecList
 import android.os.Build
+import androidx.media3.common.C
+import androidx.media3.common.ColorInfo
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
+import androidx.media3.decoder.av1.Libgav1VideoRenderer
+import androidx.media3.exoplayer.ForwardingRenderer
+import androidx.media3.exoplayer.RendererCapabilities
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
@@ -46,6 +51,48 @@ internal class HardwareFirstVideoRenderer(builder: MediaCodecVideoRenderer.Build
         requiresSecureDecoder: Boolean,
     ): List<MediaCodecInfo> =
         hardwareFirstVideoDecoders(format, super.getDecoderInfos(mediaCodecSelector, format, requiresSecureDecoder))
+}
+
+/** The libgav1 Surface output is YV12. Let MediaCodec handle incompatible AV1 formats. */
+internal class Av1SurfaceRenderer(renderer: Libgav1VideoRenderer) : ForwardingRenderer(renderer) {
+    private val delegate = renderer.capabilities
+    private val surfaceCapabilities = object : RendererCapabilities by delegate {
+        override fun supportsFormat(format: Format): Int {
+            val support = delegate.supportsFormat(format)
+            if (RendererCapabilities.getFormatSupport(support) == C.FORMAT_HANDLED && hasUnsupportedAv1SurfaceFormat(format)) {
+                return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE)
+            }
+            return support
+        }
+    }
+
+    override fun getCapabilities(): RendererCapabilities = surfaceCapabilities
+}
+
+private fun hasUnsupportedAv1SurfaceFormat(format: Format): Boolean {
+    val color = format.colorInfo
+    if (color != null && (color.lumaBitdepth > 8 || color.chromaBitdepth > 8 || ColorInfo.isTransferHdr(color))) {
+        return true
+    }
+
+    // MP4 av1C and Matroska CodecPrivate can carry an AV1CodecConfigurationRecord.
+    // Its third byte signals bit depth, monochrome and chroma subsampling.
+    val config = format.initializationData.firstOrNull()
+    if (config != null && config.size >= 4 && config[0] == 0x81.toByte()) {
+        val flags = config[2].toInt()
+        val highBitDepthOrMonochrome = (flags and 0x50) != 0
+        val is420 = (flags and 0x0c) == 0x0c
+        if (highBitDepthOrMonochrome || !is420) return true
+    }
+
+    // DASH/HLS can signal bit depth, monochrome and chroma subsampling in CODECS.
+    return format.codecs?.split(',')?.any { codec ->
+        val fields = codec.trim().split('.', limit = 7)
+        if (!fields.first().equals("av01", ignoreCase = true)) return@any false
+        val sampling = fields.getOrNull(5)
+        val non420 = sampling?.length == 3 && sampling.all { it in '0'..'3' } && !sampling.startsWith("11")
+        (fields.getOrNull(3)?.toIntOrNull() ?: 0) > 8 || fields.getOrNull(4) == "1" || non420
+    } == true
 }
 
 internal fun isSoftwareDecoder(info: MediaCodecInfo): Boolean =

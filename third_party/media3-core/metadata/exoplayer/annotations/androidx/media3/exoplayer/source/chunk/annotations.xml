@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.source.chunk.ChunkSampleStream int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.chunk.ChunkSampleStream.EmbeddedSampleStream int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+</root>
+

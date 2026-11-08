@@ -23,25 +23,40 @@ class NativeAnimeEpisodeProof private constructor(
     val tvdbEpisode: Int,
     val absoluteEpisode: Int?,
     private val tvdbEpisodeId: Long,
-    internal val titleIdentity: NativeAnimeTitleIdentity?
+    internal val titleIdentity: NativeAnimeTitleIdentity?,
+    private val episodeTitles: Set<String> = emptySet(),
+    private val verifiedParent: VerifiedParentTitle? = null
 ) {
     val hasTrustedTitleIdentity: Boolean get() = titleIdentity?.malId == malId
+    internal val verifiedParentImdbId: String? get() = verifiedParent?.imdbId
 
     val cacheKey: String = MessageDigest.getInstance("SHA-256")
-        .digest("native-anime-v2|$malId|$malEpisode|$tvdbShowId|$tvdbSeason|$tvdbEpisode|$absoluteEpisode|$tvdbEpisodeId|${titleIdentity?.fingerprint ?: "unbound"}".toByteArray(Charsets.UTF_8))
+        .digest("native-anime-v3|$malId|$malEpisode|$tvdbShowId|$tvdbSeason|$tvdbEpisode|$absoluteEpisode|$tvdbEpisodeId|${titleIdentity?.fingerprint ?: "unbound"}|${verifiedParent?.fingerprint ?: "no-parent"}".toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
 
     internal fun withIdentity(identity: NativeAnimeTitleIdentity): NativeAnimeEpisodeProof? =
         identity.takeIf { it.malId == malId }?.let {
             NativeAnimeEpisodeProof(malId, malEpisode, tvdbShowId, tvdbSeason, tvdbEpisode,
-                absoluteEpisode, tvdbEpisodeId, it)
+                absoluteEpisode, tvdbEpisodeId, it, episodeTitles, verifiedParent)
         }
+
+    internal fun queryTitles(): List<String> {
+        val original = titleIdentity?.queryTitles().orEmpty()
+        val parent = verifiedParent?.title ?: return original
+        return (original.take(1) + parent + original.drop(1)).distinct().take(3)
+    }
+
+    /** A parent-series name alone is insufficient: its release must also prove this exact episode. */
+    internal fun acceptsReleaseTitle(value: String): Boolean =
+        titleIdentity?.matchesRelease(value) == true ||
+            (verifiedParent?.matchesRelease(value) == true && matchesFile(value))
 
     /** Both declared franchise title and exact coordinates must match the actual basename. */
     fun matchesFile(path: String): Boolean {
         if (path.isBlank() || path.length > 4_096 || path.any(Char::isISOControl)) return false
         val normalized = Normalizer.normalize(path, Normalizer.Form.NFKC)
-        if (normalized.length > 4_096 || !hasTrustedTitleIdentity || titleIdentity?.matchesRelease(normalized) != true) return false
+        if (normalized.length > 4_096 || !hasTrustedTitleIdentity ||
+            (titleIdentity?.matchesRelease(normalized) != true && verifiedParent?.matchesRelease(normalized) != true)) return false
         val file = normalized.replace('\\', '/').substringAfterLast('/')
         if (file.isBlank() || compound.containsMatchIn(file) ||
             range.findAll(file).any { !resolutionSuffix.matches(it.groupValues[1]) } ||
@@ -76,6 +91,47 @@ class NativeAnimeEpisodeProof private constructor(
         internal fun decodeMapping(json: String, expectedMalId: Long): NativeAnimeMappingRecord? = try {
             Decoder.decode(json, expectedMalId)
         } catch (_: Exception) { null }
+
+        internal fun withVerifiedParent(record: NativeAnimeMappingRecord, json: String): NativeAnimeMappingRecord =
+            try { Decoder.withVerifiedParent(record, json) } catch (_: Exception) { record }
+
+        private val titleWords = Regex("[\\p{L}\\p{N}]+")
+        private val titleApostrophes = Regex("['\u2019\u02bc]")
+        private fun normalizedTitle(value: String): String = titleWords.findAll(titleApostrophes.replace(
+            Normalizer.normalize(value, Normalizer.Form.NFKC).lowercase(Locale.ROOT), ""))
+            .joinToString(" ") { it.value }
+    }
+
+    private class VerifiedParentTitle(val imdbId: String, val title: String,
+        private val identity: NativeAnimeTitleIdentity) {
+        private val normalized = normalizedTitle(title)
+        val fingerprint = "$imdbId:${identity.fingerprint}"
+
+        /** Exact complete parent title before the episode, never a sequel-prefix or bracket claim. */
+        fun matchesRelease(value: String): Boolean {
+            if (!identity.matchesRelease(value)) return false
+            val file = Normalizer.normalize(value, Normalizer.Form.NFKC).replace('\\', '/').substringAfterLast('/')
+            val stack = ArrayDeque<Char>()
+            val visible = StringBuilder(file.length)
+            for (char in file) when (char) {
+                '[', '(' -> { if (stack.size >= 4) return false; stack.addLast(char); visible.append(' ') }
+                ']', ')' -> {
+                    if (stack.removeLastOrNull() != if (char == ']') '[' else '(') return false
+                    visible.append(' ')
+                }
+                else -> visible.append(if (stack.isEmpty()) char else ' ')
+            }
+            if (stack.isNotEmpty()) return false
+            val firstTitle = visible.indexOfFirst(Char::isLetterOrDigit)
+            val boundary = parentEpisodeLabel.findAll(file).firstOrNull {
+                visible[it.range.first] != ' ' || (firstTitle >= 0 && firstTitle < it.range.first)
+            }?.range?.first ?: return false
+            return normalizedTitle(visible.substring(0, boundary)) == normalized
+        }
+
+        companion object {
+            private val parentEpisodeLabel = Regex("(?<![a-z0-9])(?:s[0-9]{1,3}[ ._-]*e[0-9]{1,5}|[0-9]{1,3}x[0-9]{1,5}|e[0-9]{1,5}|-\\s*[0-9]{1,5})(?![a-z0-9])", RegexOption.IGNORE_CASE)
+        }
     }
 
     private object Decoder {
@@ -142,9 +198,42 @@ class NativeAnimeEpisodeProof private constructor(
                 }
                 if (rowShow != show || !coordinates.add(season to episode) || !episodeIds.add(episodeId) ||
                     (absolute != null && !absolutes.add(absolute))) return null
-                result[malEpisode] = NativeAnimeEpisodeProof(expectedMalId, malEpisode, show, season, episode, absolute, episodeId, titleIdentity)
+                val episodeTitles = row["title"].objectOrNull()?.entrySet()?.mapNotNull { it.value.stringOrNull() }
+                    ?.map(::normalizedTitle)?.filter(String::isNotBlank)?.toSet().orEmpty()
+                result[malEpisode] = NativeAnimeEpisodeProof(expectedMalId, malEpisode, show, season, episode,
+                    absolute, episodeId, titleIdentity, episodeTitles)
             }
-            return result.takeIf { it.isNotEmpty() }?.let { NativeAnimeMappingRecord(expectedMalId, it) }
+            val parentImdb = mappings["imdb_id"].stringOrNull()?.takeIf { Regex("tt[0-9]{1,12}").matches(it) }
+            return result.takeIf { it.isNotEmpty() }?.let { NativeAnimeMappingRecord(expectedMalId, it, parentImdb) }
+        }
+
+        fun withVerifiedParent(record: NativeAnimeMappingRecord, json: String): NativeAnimeMappingRecord {
+            val imdb = record.mappedParentImdbId ?: return record
+            if (json.length > MAX_BODY || json.toByteArray(Charsets.UTF_8).size > MAX_BODY) return record
+            val meta = strictTree(json).objectOrNull()?.get("meta").objectOrNull() ?: return record
+            if (meta["id"].stringOrNull() != imdb || meta["imdb_id"].stringOrNull() != imdb ||
+                meta["type"].stringOrNull() != "series") return record
+            val title = meta["name"].stringOrNull() ?: return record
+            val identity = NativeAnimeTitleIdentity.create(record.malId, title, emptyList()) ?: return record
+            val videos = meta["videos"]?.takeIf { it.isJsonArray && it.asJsonArray.size() <= MAX_EPISODES }
+                ?.asJsonArray ?: return record
+            val episodes = linkedMapOf<Pair<Int, Int>, String>()
+            for (value in videos) {
+                val row = value.objectOrNull() ?: return record
+                val season = row["season"].whole(1, 1_000)?.toInt() ?: continue
+                val episode = row["episode"].whole(1, MAX_EPISODES.toLong())?.toInt() ?: continue
+                if (row["id"].stringOrNull() != "$imdb:$season:$episode") return record
+                val name = row["name"].stringOrNull()?.let(::normalizedTitle) ?: continue
+                if (episodes.put(season to episode, name) != null) return record
+            }
+            val parent = VerifiedParentTitle(imdb, title, identity)
+            val proofs = record.episodes.mapValues { (_, proof) ->
+                val name = episodes[proof.tvdbSeason to proof.tvdbEpisode]
+                if (name == null || name !in proof.episodeTitles) proof else NativeAnimeEpisodeProof(
+                    proof.malId, proof.malEpisode, proof.tvdbShowId, proof.tvdbSeason, proof.tvdbEpisode,
+                    proof.absoluteEpisode, proof.tvdbEpisodeId, proof.titleIdentity, proof.episodeTitles, parent)
+            }
+            return NativeAnimeMappingRecord(record.malId, proofs, imdb)
         }
 
         private fun titles(value: JsonElement): Boolean = value.isJsonObject && value.asJsonObject.size() <= 128 &&
@@ -201,8 +290,11 @@ class NativeAnimeEpisodeProof private constructor(
     }
 }
 
-internal class NativeAnimeMappingRecord(val malId: Long, episodes: Map<Int, NativeAnimeEpisodeProof>) {
+internal class NativeAnimeMappingRecord(val malId: Long, episodes: Map<Int, NativeAnimeEpisodeProof>,
+    internal val mappedParentImdbId: String? = null) {
     val episodes: Map<Int, NativeAnimeEpisodeProof> = Collections.unmodifiableMap(LinkedHashMap(episodes))
+    internal fun withVerifiedParentMetadata(json: String): NativeAnimeMappingRecord =
+        NativeAnimeEpisodeProof.withVerifiedParent(this, json)
 }
 
 internal object NativeAnimeMappingCodec {

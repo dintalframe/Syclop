@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.text.TextRenderer decoderReplacementState">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.text.TextRenderer.REPLACEMENT_STATE_NONE, androidx.media3.exoplayer.text.TextRenderer.REPLACEMENT_STATE_SIGNAL_END_OF_STREAM, androidx.media3.exoplayer.text.TextRenderer.REPLACEMENT_STATE_WAIT_END_OF_STREAM}" />
+    </annotation>
+  </item>
+</root>
+

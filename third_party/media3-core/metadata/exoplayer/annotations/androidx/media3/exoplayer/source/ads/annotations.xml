@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException AdLoadException(int, java.lang.Exception) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_AD, androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_AD_GROUP, androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_ALL_ADS, androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_UNEXPECTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_AD, androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_AD_GROUP, androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_ALL_ADS, androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_UNEXPECTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.Type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_AD, androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_AD_GROUP, androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_ALL_ADS, androidx.media3.exoplayer.source.ads.AdsMediaSource.AdLoadException.TYPE_UNEXPECTED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ads.ServerSideAdInsertionMediaSource void onDrmSessionAcquired(int, androidx.media3.exoplayer.source.MediaSource.MediaPeriodId, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.drm.DrmSession.STATE_RELEASED, androidx.media3.exoplayer.drm.DrmSession.STATE_ERROR, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENING, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED, androidx.media3.exoplayer.drm.DrmSession.STATE_OPENED_WITH_KEYS}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ads.ServerSideAdInsertionMediaSource.SampleStreamImpl int readData(androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.source.ads.ServerSideAdInsertionMediaSource.SharedMediaPeriod int readData(androidx.media3.exoplayer.source.ads.ServerSideAdInsertionMediaSource.MediaPeriodImpl, int, androidx.media3.exoplayer.FormatHolder, androidx.media3.decoder.DecoderInputBuffer, int) 4">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.exoplayer.source.SampleStream.FLAG_PEEK, androidx.media3.exoplayer.source.SampleStream.FLAG_REQUIRE_FORMAT, androidx.media3.exoplayer.source.SampleStream.FLAG_OMIT_SAMPLE_DATA}" />
+    </annotation>
+  </item>
+</root>
+

@@ -948,6 +948,7 @@ internal object AutomaticSubtitleSync {
                 findStopFamily()
 
             var strongStop = false
+            val lateCandidates = AutoSyncLateCandidateWait(FALLBACK_CANDIDATE_WAIT_MS, FALLBACK_CANDIDATE_POLL_MS)
             try {
                 while (!strongStop) {
                     // Pair workers may finish while candidate preparation is running. Always
@@ -971,7 +972,16 @@ internal object AutomaticSubtitleSync {
                     ) {
                         refreshCandidatePool()
                         scheduleMoreLoads()
-                        if (activeLoads.isEmpty()) break
+                        if (activeLoads.isEmpty()) {
+                            // Startup addons can finish after the selected candidate has
+                            // already failed alignment. Give those results one finite idle
+                            // budget; a manual selected-only run has no provider and never waits.
+                            val arrived = alternativeSubtitlesProvider != null && lateCandidates.awaitNext {
+                                scheduleMoreLoads()
+                                activeLoads.isNotEmpty()
+                            }
+                            if (!arrived) break
+                        }
                     }
 
                     val event = select<SchedulerEvent> {

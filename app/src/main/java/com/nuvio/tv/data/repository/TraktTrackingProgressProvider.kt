@@ -26,6 +26,7 @@ class TraktTrackingProgressProvider @Inject constructor(
     override val clearsLocalProgressOnSelection = true
     override val allProgress = service.observeAllProgress()
     override val remoteProgressLoaded = service.observeRemoteProgressLoaded()
+    override val watchedHistory = service.observeWatchedHistory(authDataStore.state)
     override val confirmedProgress = service.observeConfirmedProgress()
     override val localPlaybackScope = authDataStore.state.map(::traktLocalPlaybackScope)
 

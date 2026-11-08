@@ -7,6 +7,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
 interface MdbListAuthPersistence {
     fun read(profileId: Int): String?
@@ -21,10 +29,33 @@ class MdbListAuthStore(
     private val lock = Any()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private var currentScope = MdbListAuthScope(initialProfileId, 0)
+    private var playbackGrantId: String? = null
     private var stored = load(initialProfileId)
     private val mutableState = MutableStateFlow(stateFor())
 
     val state: StateFlow<MdbListAuthState> = mutableState.asStateFlow()
+
+    suspend fun capturePlaybackGrantId(profileId: Int): String? {
+        if (profileId !in 1..6) return null
+        val expected = synchronized(lock) { currentScope.takeIf { it.profileId == profileId && validTokens() } } ?: return null
+        val captured = withContext(Dispatchers.IO) {
+            synchronized(lock) {
+                if (currentScope != expected || !validTokens()) return@synchronized null
+                playbackGrantId?.takeIf(::validPlaybackGrantId) ?: try {
+                    val id = UUID.randomUUID().toString()
+                    persistence.write(profileId, encode(stored, id))
+                    playbackGrantId = id
+                    id
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            }
+        }
+        return captured?.takeIf { synchronized(lock) { currentScope == expected && isPlaybackGrantCurrent(profileId, it) } }
+    }
+
+    fun isPlaybackGrantCurrent(profileId: Int, grantId: String): Boolean = synchronized(lock) {
+        profileId in 1..6 && currentScope.profileId == profileId && validTokens() && validPlaybackGrantId(grantId) && playbackGrantId == grantId
+    }
 
     fun scope(): MdbListAuthScope = synchronized(lock) { currentScope }
 
@@ -64,7 +95,7 @@ class MdbListAuthStore(
         }
 
     fun authorize(tokens: MdbListTokens, scope: MdbListAuthScope): Boolean =
-        mutate(scope, advanceGeneration = true) { MdbListStoredAuth(tokens = tokens) }
+        mutate(scope, advanceGeneration = true, renewPlaybackGrant = true) { MdbListStoredAuth(tokens = tokens) }
 
     fun refreshTokens(tokens: MdbListTokens, expected: MdbListAuthorization): Boolean = synchronized(lock) {
         if (stored.tokens?.accessToken != expected.tokens.accessToken) return@synchronized false
@@ -90,6 +121,7 @@ class MdbListAuthStore(
         if (currentScope.profileId == profileId) {
             currentScope = currentScope.copy(generation = currentScope.generation + 1)
             stored = MdbListStoredAuth()
+            playbackGrantId = null
             publish()
         }
     }
@@ -98,6 +130,7 @@ class MdbListAuthStore(
         persistence.clear()
         currentScope = currentScope.copy(generation = currentScope.generation + 1)
         stored = MdbListStoredAuth()
+        playbackGrantId = null
         publish()
     }
 
@@ -105,22 +138,42 @@ class MdbListAuthStore(
         scope: MdbListAuthScope,
         advanceGeneration: Boolean = false,
         error: MdbListAuthError? = null,
+        renewPlaybackGrant: Boolean = false,
         transform: (MdbListStoredAuth) -> MdbListStoredAuth
     ): Boolean = synchronized(lock) {
         if (currentScope != scope) return@synchronized false
         val value = transform(stored)
-        persistence.write(scope.profileId, json.encodeToString(value))
+        val nextGrant = if (value.tokens == null) null
+            else if (renewPlaybackGrant) UUID.randomUUID().toString() else playbackGrantId
+        persistence.write(scope.profileId, encode(value, nextGrant))
         stored = value
+        playbackGrantId = nextGrant
         if (advanceGeneration) currentScope = currentScope.copy(generation = currentScope.generation + 1)
         publish(error)
         true
     }
 
-    private fun load(profileId: Int): MdbListStoredAuth = persistence.read(profileId)?.let { value ->
-        runCatching { json.decodeFromString<MdbListStoredAuth>(value) }.getOrNull()
-    }?.takeIf { value ->
-        value.tokens == null || (value.tokens.accessToken.isNotBlank() && value.tokens.refreshToken.isNotBlank())
-    } ?: MdbListStoredAuth()
+    private fun load(profileId: Int): MdbListStoredAuth {
+        playbackGrantId = null
+        val payload = persistence.read(profileId) ?: return MdbListStoredAuth()
+        val value = runCatching { json.decodeFromString<MdbListStoredAuth>(payload) }.getOrNull()
+            ?.takeIf { it.tokens == null || (it.tokens.accessToken.isNotBlank() && it.tokens.refreshToken.isNotBlank()) }
+            ?: return MdbListStoredAuth()
+        playbackGrantId = runCatching {
+            json.parseToJsonElement(payload).jsonObject["playback_grant_id"]?.jsonPrimitive?.contentOrNull
+        }.getOrNull()?.takeIf { value.tokens != null && validPlaybackGrantId(it) }
+        return value
+    }
+
+    private fun encode(value: MdbListStoredAuth, grantId: String?): String {
+        val values = json.parseToJsonElement(json.encodeToString(value)).jsonObject.toMutableMap()
+        if (value.tokens != null) grantId?.takeIf(::validPlaybackGrantId)?.let { values["playback_grant_id"] = JsonPrimitive(it) }
+        return JsonObject(values).toString()
+    }
+
+    private fun validTokens(): Boolean = stored.tokens?.let { it.accessToken.isNotBlank() && it.refreshToken.isNotBlank() } == true
+    private fun validPlaybackGrantId(value: String): Boolean =
+        value.matches(Regex("[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"))
 
     private fun publish(error: MdbListAuthError? = null) {
         mutableState.value = stateFor(error)

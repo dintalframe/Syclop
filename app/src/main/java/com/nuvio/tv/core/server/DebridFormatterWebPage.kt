@@ -17,12 +17,13 @@ object DebridFormatterWebPage {
             } else base
         }
         fun s(id: Int, fallback: String): String = context?.getString(id) ?: fallback
-        val appName = context?.getString(R.string.app_name) ?: "NuvioTV"
+        val appName = context?.getString(R.string.app_name) ?: "Syclop"
         return """
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+${LocalConfigSession.browserScript("syclop-debrid-pairing", context?.getString(R.string.web_addon_pairing_required))}
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>$appName - ${s(R.string.web_debrid_title, "Direct Debrid Settings").html()}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -277,7 +278,7 @@ object DebridFormatterWebPage {
 <body>
 <div class="page">
   <div class="header">
-    <img src="/logo.png" alt="NuvioTV" class="header-logo">
+    <img src="/logo.png" alt="Syclop" class="header-logo">
     <p>${s(R.string.web_debrid_title, "Direct Debrid Settings").html()}</p>
   </div>
 
@@ -475,7 +476,7 @@ function escapeHtml(value){
   return String(value||'').replace(/[&<>"']/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 async function load(){
-  const res = await fetch('/api/settings');
+  const res = await localConfigFetch('/api/settings');
   const body = await res.json();
   defaults = body.defaults;
   nameBox.value = body.settings.nameTemplate ?? defaults.nameTemplate;
@@ -483,19 +484,29 @@ async function load(){
   applyPreferences(body.settings.streamPreferences || defaults.streamPreferences);
 }
 async function save(){
+  const button=document.getElementById('save');
+  if(button.disabled)return;
+  button.disabled=true;
   statusBox.textContent = '${s(R.string.web_status_saving, "Saving…").js()}';
   statusBox.className = 'status';
-  const res = await fetch('/api/settings',{
-    method:'POST',
-    headers:{'Content-Type':'application/json; charset=utf-8'},
-    body:JSON.stringify({nameTemplate:nameBox.value,descriptionTemplate:descBox.value,streamPreferences:collectPreferences()})
-  });
-  if(res.ok){
-    statusBox.textContent = '${s(R.string.web_status_saved_streams, "Saved. New streams will use these settings.").js()}';
-  }else{
-    const body = await res.json().catch(()=>({error:'${s(R.string.web_status_could_not_save, "Could not save").js()}'}));
-    statusBox.textContent = body.error || '${s(R.string.web_status_could_not_save, "Could not save").js()}';
-    statusBox.className = 'status error';
+  try{
+    const res = await localConfigFetch('/api/settings',{
+      method:'POST',
+      headers:{'Content-Type':'application/json; charset=utf-8'},
+      body:JSON.stringify({nameTemplate:nameBox.value,descriptionTemplate:descBox.value,streamPreferences:collectPreferences()})
+    });
+    if(res.ok){
+      statusBox.textContent = '${s(R.string.web_status_saved_streams, "Saved. New streams will use these settings.").js()}';
+    }else{
+      const body = await res.json().catch(()=>({error:'${s(R.string.web_status_could_not_save, "Could not save").js()}'}));
+      statusBox.textContent = body.error || '${s(R.string.web_status_could_not_save, "Could not save").js()}';
+      statusBox.className = 'status error';
+    }
+  }catch(error){
+    statusBox.textContent=error.name==='LocalPairingRequired'?error.message:'${s(R.string.web_status_could_not_save, "Could not save").js()}';
+    statusBox.className='status error';
+  }finally{
+    button.disabled=false;
   }
 }
 document.getElementById('save').addEventListener('click',save);
@@ -506,7 +517,7 @@ document.getElementById('defaults').addEventListener('click',()=>{
   applyPreferences(defaults.streamPreferences);
 });
 renderRules();
-load().catch(()=>{statusBox.textContent='${s(R.string.web_debrid_status_load_error, "Could not load Debrid settings").js()}';statusBox.className='status error';});
+load().catch(error=>{statusBox.textContent=error.name==='LocalPairingRequired'?error.message:'${s(R.string.web_debrid_status_load_error, "Could not load Debrid settings").js()}';statusBox.className='status error';});
 </script>
 </body>
 </html>

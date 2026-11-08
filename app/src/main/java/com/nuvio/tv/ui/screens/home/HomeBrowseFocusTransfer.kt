@@ -6,6 +6,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal object HomeBrowseFocusTransfer {
     enum class Result { FOCUSED, STALE, UNAVAILABLE }
 
+    /** Boundary focus is not a request to leave the current category for Home. */
+    fun selectsTabOnFocus(current: HomeBrowseSection, focused: HomeBrowseSection): Boolean =
+        focused != current && focused != HomeBrowseSection.HOME
+
     fun cardIndex(remembered: Int?, itemCount: Int): Int =
         (remembered ?: 0).coerceIn(0, (itemCount - 1).coerceAtLeast(0))
 

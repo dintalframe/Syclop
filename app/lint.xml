@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- Partial locales intentionally fall back to the default English resources. -->
+    <issue id="MissingTranslation" severity="warning" />
+    <!-- The bundled Media3 integration intentionally uses its version-pinned unstable API. -->
+    <issue id="UnsafeOptInUsageError">
+        <option name="opt-in" value="androidx.media3.common.util.UnstableApi" />
+    </issue>
+</lint>

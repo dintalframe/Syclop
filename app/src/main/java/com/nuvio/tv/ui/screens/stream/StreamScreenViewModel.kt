@@ -72,6 +72,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 private const val TAG = "StreamScreenViewModel"
@@ -1421,8 +1422,49 @@ class StreamScreenViewModel @Inject constructor(
         return allowed
     }
 
-    suspend fun resolveStreamForPlayback(stream: Stream, saveLastLink: Boolean = true): StreamPlaybackInfo? {
-        val selectedTicket = newSelectedSourceTicket()
+    /** Explicit automatic entry point; manual card selections remain a single source attempt. */
+    suspend fun resolveAutomaticStreamForPlayback(stream: Stream): StreamPlaybackInfo? {
+        val settings = playerSettingsDataStore.playerSettings.first()
+        if (manualSelection || settings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL) {
+            return resolveStreamForPlayback(stream)
+        }
+        val ticket = newSelectedSourceTicket()
+        val selection = bitrateSettingsStore.activeProfileSelectionRevision
+        val credentials = bitrateSettingsStore.activeCredentialRevision
+        val isCurrent = {
+            selectedSourceSelection.value == ticket &&
+                bitrateSettingsStore.activeProfileId.value == playbackProfileId &&
+                bitrateSettingsStore.activeProfileSelectionRevision == selection &&
+                bitrateSettingsStore.activeCredentialRevision == credentials
+        }
+        val outcome = withTimeoutOrNull(AUTOMATIC_STREAM_BUDGET_MS) {
+            val installed = addonRepository.getInstalledAddons().first().enabledAddons().map { it.displayName }.toSet()
+            resolveAutomaticStreamFallback(
+                initial = stream, ranked = _uiState.value.allStreams,
+                mode = settings.streamAutoPlayMode, eligible = ::isNativeSourceDisplayEligible,
+                selectNext = { remaining -> StreamAutoPlaySelector.selectAutoPlayStream(
+                    streams = remaining, mode = settings.streamAutoPlayMode,
+                    regexPattern = settings.streamAutoPlayRegex, source = settings.streamAutoPlaySource,
+                    installedAddonNames = installed, selectedAddons = settings.streamAutoPlaySelectedAddons,
+                    selectedPlugins = settings.streamAutoPlaySelectedPlugins)
+                }, isCurrent = isCurrent
+            ) { candidate ->
+                var failure: DirectDebridResolveResult? = null
+                val playback = resolveStreamForPlaybackAttempt(candidate, true, ticket) { failure = it }
+                AutomaticStreamAttempt(playback, failure)
+            }
+        } ?: AutomaticStreamAttempt(failure = DirectDebridResolveResult.Failure(
+            com.nuvio.tv.core.debrid.DirectDebridFailure(com.nuvio.tv.core.debrid.DirectDebridFailureReason.TIMED_OUT)))
+        if (!isCurrent()) return null
+        outcome.failure?.let(::showDirectDebridResolutionFailure)
+        return outcome.playback
+    }
+
+    suspend fun resolveStreamForPlayback(stream: Stream, saveLastLink: Boolean = true): StreamPlaybackInfo? =
+        resolveStreamForPlaybackAttempt(stream, saveLastLink, newSelectedSourceTicket(), ::showDirectDebridResolutionFailure)
+
+    private suspend fun resolveStreamForPlaybackAttempt(stream: Stream, saveLastLink: Boolean,
+        selectedTicket: Long, onResolutionFailure: (DirectDebridResolveResult) -> Unit): StreamPlaybackInfo? {
         if (stream.serverTarget != null || stream.youTubeIdToResolve() != null) {
             showDirectDebridPlaybackError(com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE, false)
             return null
@@ -1464,12 +1506,10 @@ class StreamScreenViewModel @Inject constructor(
         })
         val resolveMs = System.currentTimeMillis() - resolveStartMs
         Log.d(TAG, "resolveStreamForPlayback: debrid resolve completed in ${resolveMs}ms result=${result::class.simpleName}")
+        kotlin.coroutines.coroutineContext.ensureActive()
+        if (selectedSourceSelection.value != selectedTicket) return null
 
         return when (result) {
-            is DirectDebridResolveResult.Failure -> {
-                showDirectDebridPlaybackError(context.getString(result.detail.messageRes), refreshStreams = false)
-                null
-            }
             is DirectDebridResolveResult.Success -> {
                 if (!_uiState.value.isDirectAutoPlayFlow) {
                     updateUiStateIfChanged {
@@ -1492,7 +1532,8 @@ class StreamScreenViewModel @Inject constructor(
                     filename = result.filename ?: basePlaybackInfo.filename,
                     videoSize = result.videoSize
                 )
-                val checked = inspectSelectedSource(stream, resolved, selectedTicket, freshNativeFile = true) ?: return null
+                val resolvedSource = stream.copy(nativeResolvedProviderId = result.providerId)
+                val checked = inspectSelectedSource(resolvedSource, resolved, selectedTicket, freshNativeFile = true) ?: return null
                 StreamSidecarSubtitles.set(result.url, stream.subtitles)
                 // Save resolved URL to cache for reuse last link
                 if (!result.url.isNullOrBlank()) {
@@ -1513,23 +1554,23 @@ class StreamScreenViewModel @Inject constructor(
                 }
                 checked
             }
-            DirectDebridResolveResult.MissingApiKey -> {
-                showDirectDebridPlaybackError(context.getString(R.string.debrid_missing_api_key), refreshStreams = false)
-                null
-            }
-            DirectDebridResolveResult.NotCached -> {
-                showDirectDebridPlaybackError(context.getString(R.string.syclop_debrid_not_ready), refreshStreams = false)
-                null
-            }
-            DirectDebridResolveResult.Stale -> {
-                showDirectDebridPlaybackError(context.getString(R.string.debrid_stale_stream), refreshStreams = true)
-                null
-            }
-            DirectDebridResolveResult.Error -> {
-                showDirectDebridPlaybackError(context.getString(R.string.debrid_resolution_failed), refreshStreams = false)
+            else -> {
+                onResolutionFailure(result)
                 null
             }
         }
+    }
+
+    private fun showDirectDebridResolutionFailure(result: DirectDebridResolveResult) {
+        val message = when (result) {
+            is DirectDebridResolveResult.Failure -> result.detail.messageRes
+            DirectDebridResolveResult.MissingApiKey -> R.string.debrid_missing_api_key
+            DirectDebridResolveResult.NotCached -> R.string.syclop_debrid_not_ready
+            DirectDebridResolveResult.Stale -> R.string.debrid_stale_stream
+            DirectDebridResolveResult.Error -> R.string.debrid_resolution_failed
+            is DirectDebridResolveResult.Success -> return
+        }
+        showDirectDebridPlaybackError(context.getString(message), refreshStreams = result == DirectDebridResolveResult.Stale)
     }
 
     private suspend fun inspectSelectedSource(stream: Stream, playback: StreamPlaybackInfo, selectedTicket: Long,

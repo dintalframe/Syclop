@@ -118,6 +118,7 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.TextStyle
 import com.nuvio.tv.R
 import com.nuvio.tv.core.logging.urlForLog
+import com.nuvio.tv.core.providers.ProviderInstallOption
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
 
@@ -536,7 +537,10 @@ fun AddonManagerScreen(
 
         // QR Code overlay — Popup renders above the entire screen
         if (uiState.isQrModeActive) {
-            Popup(properties = PopupProperties(focusable = true)) {
+            Popup(
+                onDismissRequest = viewModel::stopQrMode,
+                properties = PopupProperties(focusable = true, dismissOnClickOutside = false)
+            ) {
                 QrCodeOverlay(
                     qrBitmap = uiState.qrCodeBitmap,
                     serverUrl = uiState.serverUrl,
@@ -549,7 +553,10 @@ fun AddonManagerScreen(
 
         // Confirmation dialog overlay
         if (uiState.pendingChange != null) {
-            Popup(properties = PopupProperties(focusable = true)) {
+            Popup(
+                onDismissRequest = viewModel::rejectPendingChange,
+                properties = PopupProperties(focusable = true, dismissOnClickOutside = false)
+            ) {
                 uiState.pendingChange?.let { pending ->
                     ConfirmAddonChangesDialog(
                         pendingChange = pending,
@@ -561,21 +568,11 @@ fun AddonManagerScreen(
         }
 
         if (uiState.providerInstallOptions.isNotEmpty()) {
-            val firstOptionFocus = remember { FocusRequester() }
-            NuvioDialog(onDismiss = viewModel::dismissProviderOptions,
-                title = stringResource(R.string.provider_vendor_choose),
-                subtitle = stringResource(R.string.provider_vendor_choose_sub)) {
-                Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    uiState.providerInstallOptions.forEachIndexed { index, option ->
-                        Button(onClick = { viewModel.chooseProviderOption(option) },
-                            modifier = Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstOptionFocus) else Modifier)) {
-                            Text(option.name + if (option.isDefault) stringResource(R.string.provider_vendor_default) else "")
-                        }
-                    }
-                }
-                LaunchedEffect(Unit) { withFrameNanos { };runCatching { firstOptionFocus.requestFocus() } }
-            }
+            ProviderInstallOptionsDialog(
+                options = uiState.providerInstallOptions,
+                onSelect = viewModel::chooseProviderOption,
+                onDismiss = viewModel::dismissProviderOptions
+            )
         }
 
         addonUrlPendingDeletion?.let { addonUrl ->
@@ -924,6 +921,43 @@ private fun RefreshAddonsEntryCard(
                 modifier = Modifier.size(20.dp),
                 tint = NuvioTheme.colors.TextSecondary
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+internal fun ProviderInstallOptionsDialog(
+    options: List<ProviderInstallOption>,
+    onSelect: (ProviderInstallOption) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val firstOptionFocus = remember { FocusRequester() }
+    NuvioDialog(
+        onDismiss = onDismiss,
+        title = stringResource(R.string.provider_vendor_choose),
+        subtitle = stringResource(R.string.provider_vendor_choose_sub)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 360.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            options.forEachIndexed { index, option ->
+                val focusModifier = if (index == 0) Modifier.focusRequester(firstOptionFocus) else Modifier
+                Button(
+                    onClick = { onSelect(option) },
+                    modifier = Modifier.fillMaxWidth().then(focusModifier)
+                ) {
+                    Text(option.name + if (option.isDefault) stringResource(R.string.provider_vendor_default) else "")
+                }
+            }
+        }
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            runCatching { firstOptionFocus.requestFocus() }
         }
     }
 }

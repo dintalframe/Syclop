@@ -12,6 +12,7 @@ import com.nuvio.tv.core.tracking.TrackingProviderId
 import com.nuvio.tv.core.tracking.TrackingScrobbleAction
 import com.nuvio.tv.core.tracking.TrackingScrobbleEvent
 import com.nuvio.tv.core.tracking.TrackingScrobbler
+import com.nuvio.tv.core.tracking.*
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -42,15 +43,37 @@ class MdbListTrackingProvider @Inject constructor(
     )
 }
 
+internal class MdbListPlaybackAuthScope(val auth: MdbListAuthScope) : kotlin.coroutines.AbstractCoroutineContextElement(Key) {
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<MdbListPlaybackAuthScope>
+}
+
 @Singleton
 class MdbListTrackingScrobbler @Inject constructor(
     private val sync: MdbListSyncRepository,
-    private val service: MdbListScrobbleService
+    private val service: MdbListScrobbleService,
+    private val auth: MdbListAuthStore? = null
 ) : TrackingScrobbler {
     override val providerId = TrackingProviderId.MDBLIST
 
+    override fun preparePlaybackGrant(profileId: Int): TrackingPlaybackGrantCapture? {
+        val store = auth ?: return null
+        val native = store.scope()
+        if (native.profileId != profileId || !store.state.value.isAuthenticated) return null
+        return TrackingPlaybackGrantCapture {
+            val id = store.capturePlaybackGrantId(profileId) ?: return@TrackingPlaybackGrantCapture null
+            TrackingPlaybackGrant(providerId, profileId, id, {
+                store.isCurrent(native) && store.isPlaybackGrantCurrent(profileId, id)
+            }, MdbListPlaybackAuthScope(native))
+        }
+    }
+
+    override suspend fun recoverPlaybackGrant(profileId: Int, grantId: String): TrackingPlaybackGrant? =
+        recoverTrackingPlaybackGrant(profileId, grantId, { auth?.scope()?.profileId ?: -1 }) { preparePlaybackGrant(profileId) }
+
     override suspend fun scrobble(action: TrackingScrobbleAction, event: TrackingScrobbleEvent) {
-        service.scrobble(sync.currentScope(), action, event)
+        checkpointTrackingPlaybackOrigin(providerId)
+        val scope = kotlinx.coroutines.currentCoroutineContext()[MdbListPlaybackAuthScope]?.auth ?: sync.currentScope()
+        service.scrobble(scope, action, event)
     }
 }
 

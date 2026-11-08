@@ -25,8 +25,50 @@ class ServerRepositoryTest {
         remoteServerId = "s1",
         remoteUserId = "u1",
         userName = "viewer",
-        credentialRef = ref
+        credentialRef = ref,
+        localHttpApproved = true
     )
+
+    @Test
+    fun oldStoredLocalConnectionsRequireApprovalAfterUpgrade() {
+        repository.store(connection("c1", "k1").copy(localHttpApproved = false), "token-one")
+        persistence.values[1] = persistence.values.getValue(1).replace(",\"localHttpApproved\":false", "")
+        val upgraded = ServerRepository(persistence, emptyList(), CoroutineScope(Dispatchers.Unconfined))
+        assertNull(upgraded.session("c1"))
+        upgraded.approveLocalHttp("c1", "http://192.168.1.10:8096", "k1")
+        assertEquals("token-one", upgraded.session("c1")?.token)
+    }
+
+    @Test
+    fun legacyLocalHttpCredentialsStayStoredUntilTheirConnectionIsApproved() {
+        val legacy = connection("c1", "k1").copy(localHttpApproved = false)
+        repository.store(legacy, "token-one")
+        assertNull(repository.session("c1"))
+        assertEquals(ServerFailure.INSECURE_CONNECTION, repository.uiState.value.failures["c1"])
+        repository.approveLocalHttp("c1", "http://other.local", "k1")
+        assertNull(repository.session("c1"))
+        repository.approveLocalHttp("c1", legacy.address, "stale-credential")
+        assertNull(repository.session("c1"))
+        repository.approveLocalHttp("c1", legacy.address, "k1")
+        assertEquals("token-one", repository.session("c1")?.token)
+    }
+
+    @Test
+    fun privateDnsHomelabConnectionsKeepTheirTokenWhenApproved() {
+        val saved = connection("c1", "k1").copy(address = "http://jellyfin.home.arpa:8096", localHttpApproved = false)
+        repository.store(saved, "token-one")
+        assertNull(repository.session("c1"))
+        repository.approveLocalHttp("c1", saved.address, "k1")
+        assertEquals("token-one", repository.session("c1")?.token)
+    }
+
+    @Test
+    fun approvingPublicHttpNeverReleasesItsSavedToken() {
+        val public = connection("c1", "k1").copy(address = "http://8.8.8.8", localHttpApproved = false)
+        repository.store(public, "token-one")
+        repository.approveLocalHttp("c1", public.address, "k1")
+        assertNull(repository.session("c1"))
+    }
 
     @Test
     fun keepsConnectionsAndTokensPerProfile() {

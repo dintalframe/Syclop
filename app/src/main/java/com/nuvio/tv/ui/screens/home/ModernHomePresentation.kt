@@ -176,9 +176,10 @@ internal fun buildModernHomePresentation(
                             hasMore = row.hasMore,
                             isLoading = row.isLoading,
                             items = row.items.mapIndexed { itemIndex, item ->
-                                val occurrence = rowItemOccurrenceCounts.getOrDefault(item.id, 0)
-                                rowItemOccurrenceCounts[item.id] = occurrence + 1
-                                val cacheKey = "${item.id}_$occurrence"
+                                val identity = if (row.addonId == WATCHED_HISTORY_ADDON_ID) "${item.apiType}:${item.id}" else item.id
+                                val occurrence = rowItemOccurrenceCounts.getOrDefault(identity, 0)
+                                rowItemOccurrenceCounts[identity] = occurrence + 1
+                                val cacheKey = "${identity}_$occurrence"
                                 val cachedItem = rowItemCache[cacheKey]
                                 if (cachedItem != null &&
                                     cachedItem.source == item &&

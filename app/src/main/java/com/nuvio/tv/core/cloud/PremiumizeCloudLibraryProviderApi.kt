@@ -9,7 +9,8 @@ import kotlinx.coroutines.CancellationException
 
 @Singleton
 class PremiumizeCloudLibraryProviderApi @Inject constructor(
-    private val api: PremiumizeApi
+    private val api: PremiumizeApi,
+    private val deletion: CloudLibraryDeletionTransport
 ) : CloudLibraryProviderApi {
     override val provider = DebridProviders.Premiumize
 
@@ -57,6 +58,39 @@ class PremiumizeCloudLibraryProviderApi @Inject constructor(
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             CloudLibraryPlaybackResult.Failed(error.message)
+        }
+    }
+
+    override suspend fun deleteCompletedFile(
+        apiKey: String,
+        item: CloudLibraryItem,
+        file: CloudLibraryFile,
+        isStillAuthorized: suspend () -> Boolean
+    ): Boolean {
+        val id = file.id ?: return false
+        if (apiKey.isBlank() || item.type != CloudLibraryItemType.File || item.id != "file:$id" ||
+            !item.matchesSinglePlayableFile(provider.id, file)) return false
+
+        val authorization = "Bearer $apiKey"
+        return try {
+            val detail = deletion.premiumize.itemDetails(authorization, id)
+            detail.errorBody()?.close()
+            val fresh = detail.body()?.takeIf { detail.isSuccessful && it.status == "success" } ?: return false
+            if (fresh.id != id || fresh.name != file.name || fresh.size != file.sizeBytes) return false
+
+            // An item can move into a grouped folder after playback starts.
+            val root = deletion.premiumize.listRootFolder(authorization)
+            root.errorBody()?.close()
+            val rootFile = root.body()?.takeIf { root.isSuccessful && it.status == "success" }
+                ?.content?.singleOrNull { it.id == id } ?: return false
+            if (rootFile.type != "file" || rootFile.name != file.name || rootFile.size != file.sizeBytes) return false
+            if (!isStillAuthorized()) return false
+            val response = deletion.premiumize.deleteItem(authorization, id)
+            response.errorBody()?.close()
+            response.isSuccessful && response.body()?.get("status") == "success"
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            false
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.nuvio.tv.core.debrid
 
 import android.util.Log
+import com.nuvio.tv.core.cloud.CloudLibraryItem
 import com.nuvio.tv.data.local.DebridSettingsDataStore
 import com.nuvio.tv.data.remote.api.TorboxApi
 import com.nuvio.tv.data.remote.dto.TorboxCreateTorrentDataDto
@@ -133,7 +134,10 @@ sealed class DirectDebridResolveResult {
     data class Success(
         val url: String,
         val filename: String?,
-        val videoSize: Long?
+        val videoSize: Long?,
+        /** Native winner identity, populated only after the selected service grant is issued. */
+        val providerId: String? = null,
+        val createdCloudItem: CloudLibraryItem? = null
     ) : DirectDebridResolveResult()
 
     data class Failure(val detail: DirectDebridFailure) : DirectDebridResolveResult()

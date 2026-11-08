@@ -53,6 +53,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,6 +65,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.R
+import com.nuvio.tv.core.build.AppFeaturePolicy
 import com.nuvio.tv.data.local.Dv7HandlingMode
 import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.domain.model.ExperienceMode
@@ -171,10 +173,12 @@ private suspend fun fetchFastComUrls(context: android.content.Context): List<Str
 fun AdvancedSettingsContent(
     initialFocusRequester: FocusRequester? = null,
     viewModel: AdvancedSettingsViewModel = hiltViewModel(),
-    experienceModeViewModel: ExperienceModeSettingsViewModel = hiltViewModel()
+    experienceModeViewModel: ExperienceModeSettingsViewModel = hiltViewModel(),
+    isEssentialMode: Boolean = false
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val resources = LocalResources.current
     var connectionType by remember { mutableStateOf(getConnectionType(context)) }
     var testState by remember { mutableStateOf(NetworkTestState.Idle) }
     var latencyMs by remember { mutableStateOf<Long?>(null) }
@@ -263,7 +267,7 @@ fun AdvancedSettingsContent(
                 streamBaselineSpeed = baseline
 
                 if (baseline <= 0.0) {
-                    streamErrorMessage = context.getString(R.string.stream_test_error_connection)
+                    streamErrorMessage = resources.getString(R.string.stream_test_error_connection)
                     streamTestState = "Error"
                     return@launch
                 }
@@ -420,9 +424,12 @@ fun AdvancedSettingsContent(
                 title = stringResource(R.string.experience_mode_group_title)
             ) {
                 SettingsActionRow(
-                    title = stringResource(R.string.experience_mode_switch_to_essential),
-                    subtitle = stringResource(R.string.experience_mode_switch_to_essential_subtitle),
-                    value = stringResource(R.string.experience_mode_advanced),
+                    title = stringResource(if (isEssentialMode) R.string.experience_mode_switch_to_advanced
+                        else R.string.experience_mode_switch_to_essential),
+                    subtitle = stringResource(if (isEssentialMode) R.string.experience_mode_switch_to_advanced_subtitle
+                        else R.string.experience_mode_switch_to_essential_subtitle),
+                    value = stringResource(if (isEssentialMode) R.string.experience_mode_essential
+                        else R.string.experience_mode_advanced),
                     onClick = { showExperienceModeConfirmation = true },
                     modifier = if (initialFocusRequester != null) {
                         Modifier.focusRequester(initialFocusRequester)
@@ -433,9 +440,9 @@ fun AdvancedSettingsContent(
             }
         }
 
-        item(key = "syclop_local_backup") {
-            SettingsGroupCard(modifier = Modifier.fillMaxWidth(), title = "Local data") {
-                BackupSettingsSection()
+        if (AppFeaturePolicy.inAppUpdatesEnabled) item(key = "update_preferences") {
+            SettingsGroupCard(modifier = Modifier.fillMaxWidth(), title = stringResource(R.string.settings_menu_update_preferences)) {
+                UpdateChannelSettings(initialFocusRequester = null, showManualCheck = false)
             }
         }
 
@@ -828,9 +835,10 @@ fun AdvancedSettingsContent(
     }
 
     if (showExperienceModeConfirmation) {
+        val targetMode = if (isEssentialMode) ExperienceMode.ADVANCED else ExperienceMode.ESSENTIAL
         ExperienceModeConfirmationDialog(
-            targetMode = ExperienceMode.ESSENTIAL,
-            onConfirm = { experienceModeViewModel.setMode(ExperienceMode.ESSENTIAL) },
+            targetMode = targetMode,
+            onConfirm = { experienceModeViewModel.setMode(targetMode) },
             onDismiss = { showExperienceModeConfirmation = false }
         )
     }

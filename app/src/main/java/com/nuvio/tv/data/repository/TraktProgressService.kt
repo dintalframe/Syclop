@@ -34,6 +34,7 @@ import com.nuvio.tv.data.remote.dto.trakt.TraktUserEpisodeHistoryItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktWatchedMovieItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktWatchedShowItemDto
 import com.nuvio.tv.domain.model.WatchProgress
+import com.nuvio.tv.domain.model.WatchedHistoryItem
 import com.nuvio.tv.domain.repository.MetaRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -51,6 +52,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -62,6 +64,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -69,6 +72,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 import retrofit2.Response
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -147,6 +151,15 @@ class TraktProgressService @Inject constructor(
         val stale: Boolean
     )
 
+    private data class WatchedHistorySnapshot(
+        val items: List<WatchedHistoryItem>,
+        val profileId: Int,
+        val selectionRevision: Long,
+        val owner: InitializationReadScope
+    )
+
+    private data class RecentHistoryRead(val items: List<WatchedHistoryItem>, val truncated: Boolean)
+
     private data class OptimisticProgressEntry(
         val progress: WatchProgress,
         val expiresAtMs: Long
@@ -186,6 +199,7 @@ class TraktProgressService @Inject constructor(
     private val metadataState = MutableStateFlow<Map<String, ContentMetadata>>(emptyMap())
     private val watchedMoviesState = MutableStateFlow<Set<String>>(emptySet())
     private val watchedShowSeedsState = MutableStateFlow<List<WatchProgress>>(emptyList())
+    private val watchedHistoryState = MutableStateFlow<WatchedHistorySnapshot?>(null)
     /** Content IDs of shows dropped on Trakt (from users/hidden/progress_watched). */
     private val hiddenProgressShowIds = MutableStateFlow<Set<String>>(emptySet())
     private var hiddenProgressShowsLoadedAtMs: Long = 0L
@@ -291,7 +305,7 @@ class TraktProgressService @Inject constructor(
                     if (isInitialEmission) {
                         // The initial emission is the current profile loaded from storage
                         // on cold start. Don't emit a refresh signal here — the refresh
-                        // loop's onStart already fires the first fetch, and emitting here
+                        // loop already fires the first fetch, and emitting here
                         // would cancel that in-flight fetch via collectLatest.
                         isInitialEmission = false
                         return@collectLatest
@@ -341,6 +355,7 @@ class TraktProgressService @Inject constructor(
         metadataState.value = emptyMap()
         watchedMoviesState.value = emptySet()
         watchedShowSeedsState.value = emptyList()
+        watchedHistoryState.value = null
         hiddenProgressShowIds.value = emptySet()
         episodeProgressState.value = emptyMap()
         hasLoadedRemoteProgress.value = false
@@ -587,6 +602,16 @@ class TraktProgressService @Inject constructor(
     fun observeRemoteProgressLoaded(): Flow<Boolean> {
         return hasLoadedRemoteProgress
     }
+
+    /** Observe auth changes too, so replacing/logging out of an account hides its prior history immediately. */
+    fun observeWatchedHistory(accountChanges: Flow<*>): Flow<List<WatchedHistoryItem>> = combine(
+        watchedHistoryState, profileManager.activeProfileId, accountChanges
+    ) { snapshot, profileId, _ ->
+        snapshot?.takeIf {
+            it.profileId == profileId && it.selectionRevision == profileManager.activeProfileSelectionRevision &&
+                it.owner.isCurrent()
+        }?.items.orEmpty()
+    }.distinctUntilChanged()
 
     fun observeWatchedShowSeeds(): Flow<List<WatchProgress>> {
         return combine(
@@ -1063,7 +1088,7 @@ class TraktProgressService @Inject constructor(
     }
 
     private fun refreshEvents(): Flow<Unit> {
-        return merge(refreshTicker(), refreshSignals).onStart { emit(Unit) }
+        return traktRefreshEvents(refreshTicker(), refreshSignals)
     }
 
     private fun updateRefreshBackoff(success: Boolean) {
@@ -1164,6 +1189,21 @@ class TraktProgressService @Inject constructor(
         historyProjectionTruncated = !isAllHistoryWindow()
 
         return supervisorScope {
+            val recentHistoryDeferred = async {
+                val history = fetchRecentWatchedHistory(expected)
+                // This bounded, independently complete read must not wait for addon episode
+                // remapping in Continue Watching. Import completion still awaits every component.
+                projectionOwnerMutex.withLock {
+                    expected.checkpoint()
+                    if (refreshGeneration.get() != generation) {
+                        throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
+                    }
+                    watchedHistoryState.value = WatchedHistorySnapshot(history.items,
+                        profileManager.activeProfileId.value, profileManager.activeProfileSelectionRevision, expected)
+                    trace("recent-history refreshed: count=${history.items.size}")
+                }
+                history
+            }
             val hiddenDeferred = async {
                 ensureHiddenProgressShows(force = force, requireRead = fullImport)
             }
@@ -1184,6 +1224,7 @@ class TraktProgressService @Inject constructor(
                 val snapshot = progressDeferred.await()
                 watchedMoviesDeferred?.await()
                 seedsDeferred?.await()
+                val recentHistory = recentHistoryDeferred.await()
                 projectionOwnerMutex.withLock {
                     expected.checkpoint()
                     if (refreshGeneration.get() != generation) {
@@ -1209,8 +1250,8 @@ class TraktProgressService @Inject constructor(
                         if (forceDeadline > now) progressRecheckAtMs = forceDeadline
                     }
                     if (fullImport) importedScopeKey = expected.operationKey
-                    InitializationReadResult(count = visibleSnapshot.size,
-                        truncated = historyProjectionTruncated, complete = fullImport)
+                    InitializationReadResult(count = visibleSnapshot.size + recentHistory.items.size,
+                        truncated = historyProjectionTruncated || recentHistory.truncated, complete = fullImport)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -1221,6 +1262,28 @@ class TraktProgressService @Inject constructor(
             }
         }
     }
+
+    /** One bounded recent completion page, independent of the Continue Watching time window. */
+    private suspend fun fetchRecentWatchedHistory(expected: InitializationReadScope): RecentHistoryRead =
+        withContext(expected) {
+            expected.checkpoint()
+            val response = traktAuthService.executeAuthorizedRequest { authorization ->
+                traktApi.getRecentHistory(authorization, page = 1, limit = RECENT_WATCHED_HISTORY_LIMIT,
+                    extended = "full,images")
+            }
+            expected.checkpoint()
+            if (response == null || !response.isSuccessful) {
+                response?.errorBody()?.close()
+                throw InitializationReadException(InitializationFailure.NETWORK)
+            }
+            val observations = response.body() ?: throw InitializationReadException(InitializationFailure.INCOMPLETE)
+            if (observations.size > RECENT_WATCHED_HISTORY_LIMIT)
+                throw InitializationReadException(InitializationFailure.INCOMPLETE)
+            expected.checkpoint()
+            val pages = response.headers()["X-Pagination-Page-Count"]?.toIntOrNull()
+            RecentHistoryRead(recentTraktWatchedHistory(observations),
+                truncated = (pages ?: 1) > 1 || observations.size == RECENT_WATCHED_HISTORY_LIMIT)
+        }
 
     /** Returns whether last_activities changed since the last read, or null if it could not be read. */
     private suspend fun checkActivityChanged(): Boolean? {
@@ -3076,3 +3139,7 @@ class TraktProgressService @Inject constructor(
         return minutes * 60_000L
     }
 }
+
+@OptIn(ExperimentalCoroutinesApi::class)
+internal fun traktRefreshEvents(ticker: Flow<Unit>, signals: SharedFlow<Unit>): Flow<Unit> =
+    merge(ticker, signals.onSubscription { emit(Unit) })

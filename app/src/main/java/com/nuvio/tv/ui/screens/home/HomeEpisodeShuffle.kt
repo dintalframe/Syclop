@@ -43,6 +43,8 @@ internal fun HomeViewModel.createShuffleHomeState(): StateFlow<HomeUiState> {
                     season = video.season, episode = video.episode, overview = video.overview, available = video.available)
             }
         }
+    }.combine(watchProgressRepository.observeWatchedHistory()) { state, history ->
+        projectHomeWatchedHistory(state, history)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeUiState())
 }
 

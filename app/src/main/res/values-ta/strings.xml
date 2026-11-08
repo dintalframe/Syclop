@@ -100,7 +100,7 @@
     <!-- HomeScreen -->
     <string name="home_no_addons">ஆடான்கள் எதுவும் நிறுவப்படவில்லை. தொடங்க ஒன்றை சேர்க்கவும்.</string>
     <string name="home_no_catalog_addons">பட்டியல் ஆடான்கள் எதுவும் நிறுவப்படவில்லை. உள்ளடக்கத்தை பார்க்க ஒரு பட்டியல் ஆடானை நிறுவவும்.</string>
-    <string name="auth_notice_nuvio_logged_out">நீங்கள் நுவியோவில் இருந்து வெளியேற்றப்பட்டுள்ளீர்கள். மீண்டும் உள்நுழையவும்.</string>
+    <string name="auth_notice_nuvio_logged_out">நீங்கள் Syclopவில் இருந்து வெளியேற்றப்பட்டுள்ளீர்கள். மீண்டும் உள்நுழையவும்.</string>
     <string name="auth_notice_trakt_logged_out">நீங்கள் ட்ராக்டில் இருந்து வெளியேற்றப்பட்டுள்ளீர்கள். மீண்டும் இணைக்கவும்.</string>
     <string name="error_generic">ஒரு பிழை ஏற்பட்டது</string>
 
@@ -344,22 +344,22 @@
     <string name="about_licenses_attributions">உரிமங்கள் &amp; நன்றிக்குறிப்புகள்</string>
     <string name="about_licenses_attributions_subtitle">தரவு மூலங்கள், நன்றிகள் மற்றும் ஆண்ட்ராய்டு உரிமங்கள்</string>
     <string name="licenses_attributions_title">உரிமங்கள் &amp; நன்றிக்குறிப்புகள்</string>
-    <string name="licenses_attributions_subtitle">நுவியோ டிவி பயன்படுத்தும் தரவு வழங்குநர்கள், சேவை நன்றிகள் மற்றும் ஆண்ட்ராய்டு இயக்க உரிமங்கள்.</string>
+    <string name="licenses_attributions_subtitle">Syclop பயன்படுத்தும் தரவு வழங்குநர்கள், சேவை நன்றிகள் மற்றும் ஆண்ட்ராய்டு இயக்க உரிமங்கள்.</string>
     <string name="licenses_attributions_section_app">செயலி உரிமம்</string>
     <string name="licenses_attributions_section_data">தரவு &amp; சேவைகள்</string>
     <string name="licenses_attributions_section_playback">ஆண்ட்ராய்டு இயக்க உரிமங்கள்</string>
     <string name="licenses_attributions_nuvio_title">நுவியோ டிவி</string>
     <string name="licenses_attributions_nuvio_body">மூலக் குறியீடு மற்றும் உரிம நிபந்தனைகள் திட்ட களஞ்சியத்தில் கிடைக்கின்றன. GNU பொது உரிமம் v3.0 கீழ் வழங்கப்படுகிறது.</string>
     <string name="licenses_attributions_tmdb_title">தி மூவி டேட்டாபேஸ் (TMDB)</string>
-    <string name="licenses_attributions_tmdb_body">நுவியோ திரைப்படம் மற்றும் டிவி தகவல்கள், கலைப்படங்கள், முன்னோட்டங்கள், நடிகர்கள், தயாரிப்பு விவரங்கள், தொகுப்புகள் மற்றும் பரிந்துரைகளுக்காக TMDB API-ஐ பயன்படுத்துகிறது. இந்த தயாரிப்பு TMDB API-ஐ பயன்படுத்தினாலும் TMDB ஆதரவு அல்லது சான்றளிப்பு பெறவில்லை.</string>
+    <string name="licenses_attributions_tmdb_body">Syclop திரைப்படம் மற்றும் டிவி தகவல்கள், கலைப்படங்கள், முன்னோட்டங்கள், நடிகர்கள், தயாரிப்பு விவரங்கள், தொகுப்புகள் மற்றும் பரிந்துரைகளுக்காக TMDB API-ஐ பயன்படுத்துகிறது. இந்த தயாரிப்பு TMDB API-ஐ பயன்படுத்தினாலும் TMDB ஆதரவு அல்லது சான்றளிப்பு பெறவில்லை.</string>
     <string name="licenses_attributions_trakt_title">ட்ராக்ட்</string>
-    <string name="licenses_attributions_trakt_body">நுவியோ கணக்கு உள்நுழைவு, பார்த்த வரலாறு, முன்னேற்ற ஒத்திசைவு, நூலகத் தரவு, மதிப்பீடுகள், பட்டியல்கள் மற்றும் கருத்துகளுக்காக ட்ராக்டுடன் இணைகிறது. நுவியோ ட்ராக்டுடன் தொடர்புடையதல்ல.</string>
+    <string name="licenses_attributions_trakt_body">Syclop கணக்கு உள்நுழைவு, பார்த்த வரலாறு, முன்னேற்ற ஒத்திசைவு, நூலகத் தரவு, மதிப்பீடுகள், பட்டியல்கள் மற்றும் கருத்துகளுக்காக ட்ராக்டுடன் இணைகிறது. Syclop ட்ராக்டுடன் தொடர்புடையதல்ல.</string>
     <string name="licenses_attributions_mdblist_title">எம்டிபிலிஸ்ட்</string>
-    <string name="licenses_attributions_mdblist_body">நுவியோ மதிப்பீடுகள் மற்றும் வெளிப்புற மதிப்பெண் தரவுகளுக்காக MDBList-ஐ பயன்படுத்துகிறது. நுவியோ MDBList உடன் தொடர்புடையதல்ல.</string>
+    <string name="licenses_attributions_mdblist_body">Syclop மதிப்பீடுகள் மற்றும் வெளிப்புற மதிப்பெண் தரவுகளுக்காக MDBList-ஐ பயன்படுத்துகிறது. Syclop MDBList உடன் தொடர்புடையதல்ல.</string>
     <string name="licenses_attributions_introdb_title">இன்ட்ரோடிபி</string>
-    <string name="licenses_attributions_introdb_body">நுவியோ தொடக்க பகுதி, சுருக்கம், கிரெடிட்ஸ் மற்றும் முன்காட்சி நேரங்களுக்காக IntroDB API-ஐ பயன்படுத்துகிறது.</string>
+    <string name="licenses_attributions_introdb_body">Syclop தொடக்க பகுதி, சுருக்கம், கிரெடிட்ஸ் மற்றும் முன்காட்சி நேரங்களுக்காக IntroDB API-ஐ பயன்படுத்துகிறது.</string>
     <string name="licenses_attributions_imdb_title">IMDb வணிகமற்ற தரவுத்தொகுப்புகள்</string>
-    <string name="licenses_attributions_imdb_body">நுவியோ IMDb மதிப்பீடுகள் மற்றும் வாக்கு எண்ணிக்கைகளுக்காக IMDb தரவுத்தொகுப்புகளை பயன்படுத்துகிறது.</string>
+    <string name="licenses_attributions_imdb_body">Syclop IMDb மதிப்பீடுகள் மற்றும் வாக்கு எண்ணிக்கைகளுக்காக IMDb தரவுத்தொகுப்புகளை பயன்படுத்துகிறது.</string>
     <string name="licenses_attributions_exoplayer_title">ஆண்ட்ராய்ட்எக்ஸ் மீடியா3 எக்ஸோபிளேயர் 1.8.0</string>
     <string name="licenses_attributions_exoplayer_body">ஆண்ட்ராய்டு இயக்க இயந்திரமாக பயன்படுத்தப்படுகிறது. அபாச்சி உரிமம் 2.0 கீழ் வழங்கப்படுகிறது.</string>
     <string name="licenses_attributions_libmpv_title">லிப்எம்பிவி / லிப்எம்பிவி-ஆண்ட்ராய்டு</string>
@@ -381,7 +381,7 @@
     <string name="settings_advanced_subtitle">செயல்திறன், வழிசெலுத்தல், கேச் மற்றும் ஆய்வு</string>
     <string name="experience_mode_essential">எளிமை</string>
     <string name="experience_mode_advanced">மேம்பட்டது</string>
-    <string name="experience_mode_choose_title">உங்கள் நுவியோ பயன்பாட்டு முறையை தேர்ந்தெடுக்கவும்</string>
+    <string name="experience_mode_choose_title">உங்கள் Syclop பயன்பாட்டு முறையை தேர்ந்தெடுக்கவும்</string>
     <string name="experience_mode_choose_subtitle">எளிமையாக தொடங்கவும் அல்லது முழு தனிப்பயனாக்கத்தையும் திறக்கவும். எப்போது வேண்டுமானாலும் மாற்றலாம்.</string>
     <string name="experience_mode_essential_card_subtitle">அடிப்படை அமைப்பு, ஆட்-ஆன்கள், இயக்கம் மற்றும் அக்கவுண்ட் அமைப்புகள்.</string>
     <string name="experience_mode_advanced_card_subtitle">முழு அமைப்புகள், வடிவமைப்பு கட்டுப்பாடுகள், தொகுப்புகள் மற்றும் ஆய்வுகள்.</string>
@@ -461,8 +461,8 @@
     <string name="advanced_section_cache">கேச்</string>
     <string name="advanced_fast_horizontal_navigation">வேகமான கிடைமட்ட வழிசெலுத்தல்</string>
     <string name="advanced_fast_horizontal_navigation_subtitle">மீள்வேக கட்டுப்பாட்டை வைத்தபடி டி-பேட் வேகத்தை அதிகரிக்கவும்.</string>
-    <string name="advanced_nuvio_focus_scroll">நுவியோ கவன உருட்டல்</string>
-    <string name="advanced_nuvio_focus_scroll_subtitle">நுவியோவின் தனிப்பயன் கவன உருட்டல் அசைவூட்டலை பயன்படுத்து.</string>
+    <string name="advanced_nuvio_focus_scroll">Syclop கவன உருட்டல்</string>
+    <string name="advanced_nuvio_focus_scroll_subtitle">Syclopவின் தனிப்பயன் கவன உருட்டல் அசைவூட்டலை பயன்படுத்து.</string>
     <string name="advanced_memory_only_vertical_scroll">நினைவக மட்டும் செங்குத்து உருட்டல்</string>
     <string name="advanced_memory_only_vertical_scroll_subtitle">முகப்பு வரிசைகளை உருட்டும் போது வட்டு மற்றும் இணைய பட கோரிக்கைகளை தவிர்.</string>
     <string name="advanced_compose_highlighter">காம்போஸ் ஒளிர்விப்பு</string>
@@ -499,12 +499,12 @@
 
         <!-- SupportersContributorsScreen -->
     <string name="supporters_contributors_title">ஆதரவாளர்கள் &amp; பங்களிப்பாளர்கள்</string>
-    <string name="supporters_contributors_subtitle">Nuvio-க்கு ஆதரவளிக்கும் மற்றும் டிவி, மொபைல் முழுவதும் இதை உருவாக்கும் நபர்கள்.</string>
+    <string name="supporters_contributors_subtitle">Syclop-க்கு ஆதரவளிக்கும் மற்றும் டிவி, மொபைல் முழுவதும் இதை உருவாக்கும் நபர்கள்.</string>
     <string name="supporters_contributors_supporters_copy">ஆதரவாளர்கள் மற்றும் நன்கொடையாளர்கள் இந்த திட்டம் தொடர்ந்து முன்னேற, கட்டமைப்பு செலவுகளை ஏற்க, மற்றும் பெரிய அம்சங்களுக்கு இடமளிக்க உதவுகின்றனர்.</string>
-    <string name="supporters_contributors_donate_copy">Nuvio எப்போதும் இலவசமாகவும் திறந்த மூலமாகவும் இருக்கும். திட்டத்தை ஆதரிக்க விரும்பினால், இதற்கான நேரம் மற்றும் கட்டமைப்பு செலவுகளுக்கு உதவலாம்.</string>
-    <string name="supporters_contributors_donate_button">Nuvio-க்கு நன்கொடை அளிக்கவும்</string>
+    <string name="supporters_contributors_donate_copy">Syclop எப்போதும் இலவசமாகவும் திறந்த மூலமாகவும் இருக்கும். திட்டத்தை ஆதரிக்க விரும்பினால், இதற்கான நேரம் மற்றும் கட்டமைப்பு செலவுகளுக்கு உதவலாம்.</string>
+    <string name="supporters_contributors_donate_button">Syclop-க்கு நன்கொடை அளிக்கவும்</string>
     <string name="supporters_contributors_qr_title">நன்கொடை அளிக்க ஸ்கேன் செய்யவும்</string>
-    <string name="supporters_contributors_qr_subtitle">Nuvio-வை ஆதரிக்க உங்கள் தொலைபேசியில் இணைப்பைத் திறக்கவும்.</string>
+    <string name="supporters_contributors_qr_subtitle">Syclop-வை ஆதரிக்க உங்கள் தொலைபேசியில் இணைப்பைத் திறக்கவும்.</string>
     <string name="supporters_contributors_qr_hint">QR குறியீட்டை கேமராவால் ஸ்கேன் செய்யவும் அல்லது கீழே உள்ள பொத்தானைப் பயன்படுத்தவும்.</string>
     <string name="supporters_contributors_back_button">விவரங்களுக்கு திரும்பு</string>
     <string name="supporters_tab">ஆதரவாளர்கள்</string>
@@ -518,7 +518,7 @@
     <string name="sponsors_loading">ஆதரிப்பாளர்கள் ஏற்றப்படுகிறது…</string>
     <string name="sponsors_empty">இன்னும் ஆதரிப்பாளர்கள் இல்லை.</string>
     <string name="sponsors_error_title">ஆதரிப்பாளர்களை ஏற்ற முடியவில்லை</string>
-    <string name="sponsors_detail_copy">வளர்ச்சியின் பல பகுதிகளில் ஆதரவு வழங்கி Nuvio முன்னேற உதவுகின்றனர்.</string>
+    <string name="sponsors_detail_copy">வளர்ச்சியின் பல பகுதிகளில் ஆதரவு வழங்கி Syclop முன்னேற உதவுகின்றனர்.</string>
     <string name="sponsors_channel_unavailable">ஆதரிப்பாளர் சேனல் கிடைக்கவில்லை.</string>
     <string name="sponsors_open_channel">ஆதரிப்பாளர் சேனலை திற</string>
     <string name="contributors_loading">GitHub பங்களிப்பாளர்கள் ஏற்றப்படுகிறது…</string>
@@ -580,8 +580,8 @@
     <string name="playback_player_ask_desc">ஒவ்வொரு முறையும் பிளேயரை தேர்வு செய்</string>
     <string name="playback_player_auto">தானாக (உள்ளடக்கத்திற்கு சிறந்தது)</string>
     <string name="playback_player_auto_desc">திரைப்படங்கள் &amp; தொடர்களுக்கு ExoPlayer · Anime-க்கு MPV</string>
-    <string name="playback_engine_exoplayer_desc">தற்போதைய Nuvio அம்சங்களுடன் சிறந்த பொருத்தம்.</string>
-    <string name="playback_engine_mvplayer_desc">Nuvio OSD கட்டுப்பாடுகளுடன் libmpv பயன்படுத்துகிறது. சோதனை நிலையில் உள்ளது.</string>
+    <string name="playback_engine_exoplayer_desc">தற்போதைய Syclop அம்சங்களுடன் சிறந்த பொருத்தம்.</string>
+    <string name="playback_engine_mvplayer_desc">Syclop OSD கட்டுப்பாடுகளுடன் libmpv பயன்படுத்துகிறது. சோதனை நிலையில் உள்ளது.</string>
 
         <!-- PlaybackAudioSettings -->
     <string name="audio_trailer_section">ட்ரெய்லர்</string>
@@ -915,21 +915,16 @@
     <string name="trakt_watch_progress_title">பார்வை முன்னேற்றம்</string>
     <string name="trakt_watch_progress_subtitle">மீண்டும் தொடங்கு மற்றும் தொடர்ந்து பார்ப்பதற்கு எந்த முன்னேற்ற மூலத்தை பயன்படுத்துவது என்பதை தேர்வு செய்யவும்</string>
     <string name="trakt_watch_progress_dialog_title">பார்வை முன்னேற்றம்</string>
-    <string name="trakt_watch_progress_dialog_subtitle">ட்ராக்ட் ஸ்க்ரோபிளிங் செயலிலேயே இருக்கும் போது, மீண்டும் தொடங்கு மற்றும் தொடர்ந்து பார்ப்பதற்கு ட்ராக்ட் அல்லது நுவியோ ஒத்திசைவை பயன்படுத்த வேண்டுமா என்பதை தேர்வு செய்யவும்.</string>
     <string name="trakt_watch_progress_source_trakt">ட்ராக்ட்</string>
-    <string name="trakt_watch_progress_source_nuvio">நுவியோ ஒத்திசைவு</string>
     <string name="trakt_library_source_title">நூலக மூலம்</string>
     <string name="trakt_library_source_subtitle">உங்கள் தொகுப்பை சேமிக்கவும் பார்க்கவும் எந்த நூலகத்தை பயன்படுத்துவது என்பதை தேர்வு செய்யவும்</string>
     <string name="trakt_library_source_dialog_title">நூலக மூலம்</string>
     <string name="trakt_library_source_dialog_subtitle">உங்கள் நூலக உருப்படிகளை எங்கு சேமித்து நிர்வகிப்பது என்பதை தேர்வு செய்யவும்</string>
     <string name="trakt_library_source_trakt">ட்ராக்ட்</string>
-    <string name="trakt_library_source_nuvio">நுவியோ நூலகம்</string>
     <string name="trakt_library_source_trakt_selected">ட்ராக்ட் நூலகம் தேர்ந்தெடுக்கப்பட்டது</string>
-    <string name="trakt_library_source_nuvio_selected">நுவியோ நூலகம் தேர்ந்தெடுக்கப்பட்டது</string>
     <string name="trakt_setting_on">இயக்கம்</string>
     <string name="trakt_setting_off">நிறுத்தம்</string>
     <string name="trakt_watch_progress_trakt_selected">பார்வை முன்னேற்ற மூலம் ட்ராக்ட் ஆக அமைக்கப்பட்டது</string>
-    <string name="trakt_watch_progress_nuvio_selected">பார்வை முன்னேற்ற மூலம் நுவியோ ஒத்திசைவு ஆக அமைக்கப்பட்டது</string>
     <string name="trakt_continue_watching_window">தொடர்ந்து பார்ப்பது சாளரம்</string>
     <string name="trakt_continue_watching_subtitle">தொடர்ந்து பார்ப்பதற்காக கருதப்படும் ட்ராக்ட் வரலாறு</string>
     <string name="trakt_unaired_next_up">ஒளிபரப்பாகாத அடுத்த அத்தியாயங்கள்</string>
@@ -957,7 +952,7 @@
     <string name="trakt_stat_watched_hours">பார்த்த மணிநேரங்கள்</string>
     <string name="trakt_disconnect">இணைப்பை துண்டிக்கவும்</string>
     <string name="trakt_disconnect_title">ட்ராக்ட் இணைப்பை துண்டிக்கவா?</string>
-    <string name="trakt_disconnect_subtitle">இது உங்கள் ட்ராக்ட் கணக்கை நுவியோவிலிருந்து துண்டிக்கும்.</string>
+    <string name="trakt_disconnect_subtitle">இது உங்கள் ட்ராக்ட் கணக்கை Syclopவிலிருந்து துண்டிக்கும்.</string>
     <string name="trakt_login">உள்நுழை</string>
     <string name="trakt_retry">மீண்டும் முயற்சி</string>
     <string name="trakt_back">பின்</string>
@@ -1023,7 +1018,7 @@
     <string name="profile_addons">அட்ஆன்கள்</string>
     <string name="profile_plugins">பிளகின்கள்</string>
     <string name="profile_choose_avatar">அவதாரை தேர்ந்தெடுக்கவும்</string>
-    <string name="profile_custom_avatar_web_panel_note">தனிப்பயன் அவதார் யூஆர்எல்கள் நுவியோ வலைப் பலகையில் அமைக்கப்படலாம்.</string>
+    <string name="profile_custom_avatar_web_panel_note">தனிப்பயன் அவதார் யூஆர்எல்கள் Syclop வலைப் பலகையில் அமைக்கப்படலாம்.</string>
     <string name="profile_avatar_none_selected">அவதார் எதுவும் தேர்ந்தெடுக்கப்படவில்லை</string>
     <string name="profile_avatar_focus_hint">அதன் பெயரை காண ஒரு அவதாரில் கவனம் செலுத்தவும்</string>
     <string name="profile_avatar_category_all">அனைத்தும்</string>
@@ -1066,7 +1061,6 @@
     <string name="profile_pin_overlay_set_support">இந்த சுயவிவரத்தை திறப்பதற்கு முன் இந்த பின் தேவைப்படும்.</string>
     <string name="profile_pin_overlay_confirm_support">அமைப்பை முடிக்க அதே 4 இலக்கங்களை மீண்டும் உள்ளிடவும்.</string>
     <string name="profile_pin_overlay_mismatch">பின்கள் பொருந்தவில்லை. புதிய பினை மீண்டும் உள்ளிடவும்.</string>
-    <string name="profile_pin_overlay_forgot_hint">பின் மறந்துவிட்டதா? நுவியோ இணையதளத்தில் உங்கள் நுவியோ கணக்கிலிருந்து மீட்டமைக்கவும்.</string>
     <string name="profile_pin_overlay_back_hint">ரத்து செய்ய பின் பொத்தானை அழுத்தவும்</string>
 
 
@@ -1136,7 +1130,7 @@
     <string name="stream_type_torrent">டோரண்ட்</string>
     <string name="stream_type_youtube">யூடியூப்</string>
     <string name="p2p_consent_title">பீடூபீ ஸ்ட்ரீமிங்</string>
-    <string name="p2p_consent_body">இந்த ஸ்ட்ரீம் பியர்-டு-பியர் (பீடூபீ) தொழில்நுட்பத்தை பயன்படுத்துகிறது. பீடூபீயை இயக்குவதன் மூலம், நீங்கள் பின்வருவனவற்றை ஒப்புக்கொள்கிறீர்கள்:\n\n\u2022 உங்கள் ஐபி முகவரி பிணையத்தில் உள்ள பிற பியர்களுக்கு தெரியும்\n\u2022 நீங்கள் அணுகும் உள்ளடக்கத்திற்கு முழுப் பொறுப்பு உங்களுக்கே\n\u2022 உங்கள் சட்டப்பரப்பில் இந்த உள்ளடக்கத்தை ஸ்ட்ரீம் செய்ய சட்டப்பூர்வ உரிமை உங்களிடம் உள்ளது என்பதை உறுதிப்படுத்துகிறீர்கள்\n\u2022 நுவியோ எந்த பீடூபீ உள்ளடக்கத்தையும் ஹோஸ்ட் செய்யாது, பகிராது அல்லது கட்டுப்படுத்தாது\n\u2022 பீடூபீ ஸ்ட்ரீமிங்கைப் பயன்படுத்துவதால் ஏற்படும் எந்த சட்ட விளைவுகளுக்கும் நுவியோ பொறுப்பேற்காது\n\nஇந்த அம்சத்தை முழுமையாக உங்கள் சொந்த ஆபத்தில் பயன்படுத்துகிறீர்கள். அமைப்புகளில் எப்போது வேண்டுமானாலும் பீடூபீயை முடக்கலாம்.</string>
+    <string name="p2p_consent_body">இந்த ஸ்ட்ரீம் பியர்-டு-பியர் (பீடூபீ) தொழில்நுட்பத்தை பயன்படுத்துகிறது. பீடூபீயை இயக்குவதன் மூலம், நீங்கள் பின்வருவனவற்றை ஒப்புக்கொள்கிறீர்கள்:\n\n\u2022 உங்கள் ஐபி முகவரி பிணையத்தில் உள்ள பிற பியர்களுக்கு தெரியும்\n\u2022 நீங்கள் அணுகும் உள்ளடக்கத்திற்கு முழுப் பொறுப்பு உங்களுக்கே\n\u2022 உங்கள் சட்டப்பரப்பில் இந்த உள்ளடக்கத்தை ஸ்ட்ரீம் செய்ய சட்டப்பூர்வ உரிமை உங்களிடம் உள்ளது என்பதை உறுதிப்படுத்துகிறீர்கள்\n\u2022 Syclop எந்த பீடூபீ உள்ளடக்கத்தையும் ஹோஸ்ட் செய்யாது, பகிராது அல்லது கட்டுப்படுத்தாது\n\u2022 பீடூபீ ஸ்ட்ரீமிங்கைப் பயன்படுத்துவதால் ஏற்படும் எந்த சட்ட விளைவுகளுக்கும் Syclop பொறுப்பேற்காது\n\nஇந்த அம்சத்தை முழுமையாக உங்கள் சொந்த ஆபத்தில் பயன்படுத்துகிறீர்கள். அமைப்புகளில் எப்போது வேண்டுமானாலும் பீடூபீயை முடக்கலாம்.</string>
     <string name="p2p_consent_enable">பீடூபீயை இயக்கு</string>
     <string name="p2p_consent_cancel">ரத்து செய்</string>
     <string name="settings_p2p_title">பீடூபீ ஸ்ட்ரீமிங்</string>
@@ -1748,7 +1742,7 @@
     <string name="cd_preview">முன்னோட்டம்</string>
     <string name="cd_test">சோதனை</string>
     <string name="cd_unlink">இணைப்பை நீக்கு</string>
-    <string name="cd_nuvio_logo">நுவியோடிவி</string>
+    <string name="cd_nuvio_logo">Syclop</string>
     <string name="cd_trakt_logo">ட்ராக்ட் லோகோ</string>
     <string name="cd_trakt_qr">ட்ராக்ட் செயல்படுத்தும் க்யூஆர்</string>
     <string name="cd_imdb">ஐஎம்டிபி</string>
@@ -1759,7 +1753,7 @@
     <string name="cd_expand">விரிவு செய் %1$s</string>
     <string name="cd_collapse">சுருக்கு %1$s</string>
     <string name="cd_qr_login">க்யூஆர் உள்நுழைவு குறியீடு</string>
-    <string name="cd_nuvio">நுவியோ</string>
+    <string name="cd_nuvio">Syclop</string>
 
     <!-- Debug -->
     <string name="debug_signin_success">வெற்றிகரமாக உள்நுழைந்தது</string>
@@ -1795,7 +1789,7 @@
     <string name="collections_paste_clipboard">கிளிப்போர்டிலிருந்து ஒட்டு</string>
     <string name="collections_validate">சரிபார்</string>
     <string name="collections_paste_hint">தொகுப்பு ஜேசனை இங்கே ஒட்டுங்கள்…</string>
-    <string name="collections_file_description">பதிவிறக்க கோப்பகத்திலிருந்து nuvio-collections.json படிக்கப்படுகிறது.</string>
+    <string name="collections_file_description">பதிவிறக்க கோப்பகத்திலிருந்து syclop-collections.json படிக்கப்படுகிறது.</string>
     <string name="collections_load_file">கோப்பை ஏற்று</string>
     <string name="collections_file_loaded">கோப்பு ஏற்றப்பட்டது (%1$d எழுத்துகள்)</string>
     <string name="collections_fetch_url">யுஆர்எல் பெறு</string>
@@ -1902,7 +1896,7 @@
     <string name="collections_editor_tmdb_list_helper">எடுத்துக்காட்டு: https://www.themoviedb.org/list/8504994 அல்லது 8504994.</string>
     <string name="collections_editor_tmdb_person_id">நபர் ஐடி</string>
     <string name="collections_editor_tmdb_person_helper">எடுத்துக்காட்டு: https://www.themoviedb.org/person/31-tom-hanks அல்லது 31.</string>
-    <string name="collections_editor_tmdb_title_helper">இது வரிசை/தாவல் பெயராக காட்டப்படும். காலியாக இருந்தால், நுவியோ மூலத்திலிருந்து ஒன்றை உருவாக்கும்.</string>
+    <string name="collections_editor_tmdb_title_helper">இது வரிசை/தாவல் பெயராக காட்டப்படும். காலியாக இருந்தால், Syclop மூலத்திலிருந்து ஒன்றை உருவாக்கும்.</string>
     <string name="collections_editor_tmdb_quick_genres">விரைவு வகைகள்</string>
     <string name="collections_editor_tmdb_quick_languages">விரைவு மொழிகள்</string>
     <string name="collections_editor_tmdb_quick_countries">விரைவு நாடுகள்</string>
@@ -2075,7 +2069,7 @@
     <string name="autoplay_regex_preset_no_remux_hdr">REMUX/HDR இல்லை</string>
 
     <!-- Playback settings sections -->
-    <string name="playback_player_internal_desc">நுவியோடிவியின் உள்ளமைந்த பிளேயரை பயன்படுத்து</string>
+    <string name="playback_player_internal_desc">Syclopயின் உள்ளமைந்த பிளேயரை பயன்படுத்து</string>
 
     <!-- Player runtime: torrent overlay + tracks -->
     <string name="player_torrent_peer_info">%1$d விதைகள் · %2$d இணைகள்</string>

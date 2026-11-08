@@ -38,8 +38,8 @@ class MalLibraryTest {
 
     @Test fun `MAL is a library source without replacing local timestamp resume`() {
         val connected = setOf(TrackingProviderId.MAL)
-        assertEquals(listOf(LibrarySourceMode.LOCAL, LibrarySourceMode.MAL), availableLibrarySourceModes(connected))
-        assertEquals(listOf(WatchProgressSource.NUVIO_SYNC), availableWatchProgressSources(connected))
+        assertEquals(listOf(LibrarySourceMode.AUTO, LibrarySourceMode.LOCAL, LibrarySourceMode.MAL), availableLibrarySourceModes(connected))
+        assertEquals(listOf(WatchProgressSource.AUTO, WatchProgressSource.NUVIO_SYNC), availableWatchProgressSources(connected))
         val selection = TrackingSourceSelection(WatchProgressSource.NUVIO_SYNC, LibrarySourceMode.MAL)
         assertEquals(selection, effectiveTrackingSourceSelection(selection, connected))
         assertEquals(selection.copy(librarySourceMode = LibrarySourceMode.LOCAL),

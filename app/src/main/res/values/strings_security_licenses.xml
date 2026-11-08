@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="syclop_licenses_re2j_title">RE2/J 1.8</string>
+    <string name="syclop_licenses_re2j_body">Badge matching uses RE2/J. Its license is available here offline.</string>
+</resources>

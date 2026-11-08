@@ -17,13 +17,23 @@ import com.nuvio.tv.data.local.WatchProgressPreferences
 import com.nuvio.tv.data.local.WatchProgressSource
 import com.nuvio.tv.data.local.WatchedItemsPreferences
 import com.nuvio.tv.domain.model.WatchProgress
+import com.nuvio.tv.domain.model.WatchedHistoryItem
 import com.nuvio.tv.domain.repository.MetaRepository
 import com.nuvio.tv.ui.screens.home.choosePreferredNextUpSeed
 import com.nuvio.tv.ui.screens.home.reconcileContinueWatchingInProgress
+import io.mockk.coVerify
+import io.mockk.verify
+import com.nuvio.tv.core.tracking.TrackingPlaybackOrigin
+import com.nuvio.tv.core.tracking.TrackingPlaybackGrant
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -36,6 +46,55 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WatchProgressRepositoryContinueWatchingTest {
+    @Test
+    fun `completed history follows selected Trakt source and never falls back to local resume`() = runBlocking {
+        val h = harness(initialLocal = listOf(progress(7, 700L, 40L, scope = ACCOUNT_A)))
+        h.awaitProvider()
+        val completed = WatchedHistoryItem("tt100", "movie", "Completed movie", 1000L, "tt100")
+        h.completedHistory.value = listOf(completed)
+        assertEquals(listOf(completed), withTimeout(3_000L) {
+            h.repository.observeWatchedHistory().first { it.isNotEmpty() }
+        })
+        h.selectedSource.value = WatchProgressSource.NUVIO_SYNC
+        assertTrue(withTimeout(3_000L) { h.repository.observeWatchedHistory().first { it.isEmpty() } }.isEmpty())
+        h.selectedSource.value = WatchProgressSource.TRAKT
+        assertEquals(listOf(completed), withTimeout(3_000L) {
+            h.repository.observeWatchedHistory().first { it.isNotEmpty() }
+        })
+    }
+
+    @Test
+    fun `automatic completed history follows the actual connected Trakt provider without changing local progress`() = runBlocking {
+        val local = progress(7, 700L, 40L, scope = ACCOUNT_A)
+        val h = harness(initialLocal = listOf(local))
+        h.selectedSource.value = WatchProgressSource.AUTO
+        h.awaitProvider()
+        val completed = WatchedHistoryItem("tt100", "movie", "Completed movie", 1000L, "tt100")
+        h.completedHistory.value = listOf(completed)
+        val observed = java.util.concurrent.atomic.AtomicReference<List<WatchedHistoryItem>>(emptyList())
+        val collector = launch { h.repository.observeWatchedHistory().collect { observed.set(it) } }
+        suspend fun awaitHistory(expected: List<WatchedHistoryItem>) = withTimeout(3_000L) {
+            while (observed.get() != expected) delay(1L)
+        }
+        try {
+            awaitHistory(listOf(completed))
+            assertEquals(WatchProgressSource.TRAKT, h.repository.effectiveProgressSource.value)
+            h.selectedSource.value = WatchProgressSource.SIMKL
+            awaitHistory(emptyList())
+            withTimeout(3_000L) { h.repository.effectiveProgressSource.first { it == WatchProgressSource.NUVIO_SYNC } }
+            h.selectedSource.value = WatchProgressSource.AUTO
+            awaitHistory(listOf(completed))
+            h.authenticated.value = false
+            awaitHistory(emptyList())
+            assertEquals(WatchProgressSource.NUVIO_SYNC, h.repository.effectiveProgressSource.value)
+            h.authenticated.value = true
+            awaitHistory(listOf(completed))
+            assertEquals(listOf(local), h.saved())
+        } finally {
+            collector.cancelAndJoin()
+        }
+    }
+
     @Test
     fun `local episode seven immediately replaces stale Trakt episode three without waiting for optimistic sync`() = runBlocking {
         val h = harness()
@@ -234,13 +293,62 @@ class WatchProgressRepositoryContinueWatchingTest {
         }
     }
 
+    @Test fun `suspended playback save preserves local account A but cannot project into replacement B or queue app cloud`() = runBlocking {
+        val h = harness()
+        h.awaitProvider()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        h.beforeSave = { entered.complete(Unit); release.await() }
+        val origin = TrackingPlaybackOrigin(1, mapOf(TrackingProviderId.TRAKT to TrackingPlaybackGrant(
+            TrackingProviderId.TRAKT, 1, "grant-A", { h.accountScope.value == ACCOUNT_A })), ACCOUNT_A)
+        val local = progress(7, 700L, 40L, scope = ACCOUNT_A)
+        val save = async { h.repository.savePlaybackProgress(local, 1, origin) }
+        entered.await()
+        h.accountScope.value = ACCOUNT_B
+        release.complete(Unit)
+        save.await()
+        assertEquals(local, h.saved().single())
+        verify(exactly = 0) { h.provider.applyOptimisticProgress(any(), any()) }
+        coVerify(exactly = 0) { h.mutations.queueProgressUpserts(any(), any()) }
+        coVerify(exactly = 0) { h.mutations.queueWatchedUpserts(any(), any()) }
+    }
+
+    @Test fun `unchanged playback grant still projects its captured progress after token refresh`() = runBlocking {
+        val h = harness()
+        h.awaitProvider()
+        val origin = TrackingPlaybackOrigin(1, mapOf(TrackingProviderId.TRAKT to TrackingPlaybackGrant(
+            TrackingProviderId.TRAKT, 1, "grant-A", { true })), ACCOUNT_A)
+        val local = progress(7, 700L, 40L, scope = ACCOUNT_A)
+        h.repository.savePlaybackProgress(local, 1, origin)
+        assertEquals(local, h.saved().single())
+        verify(exactly = 1) { h.provider.applyOptimisticProgress(local, false) }
+    }
+
+    @Test fun `outgoing profile completion stays local to original viewer without app outbox`() = runBlocking {
+        val h = harness()
+        h.awaitProvider()
+        val origin = TrackingPlaybackOrigin(1, emptyMap(), ACCOUNT_A, { h.profile.value == 1 })
+        h.profile.value = 2
+        h.repository.savePlaybackProgress(progress(7, 700L, 95L, scope = ACCOUNT_A), 1, origin, completed = true)
+        assertEquals(100L, h.saved(1).single().position)
+        assertTrue(h.saved(2).isEmpty())
+        verify(exactly = 0) { h.provider.applyOptimisticProgress(any(), any()) }
+        coVerify(exactly = 0) { h.mutations.queueProgressUpserts(any(), any()) }
+        coVerify(exactly = 0) { h.mutations.queueWatchedUpserts(any(), any()) }
+    }
+
     private fun harness(initialLocal: List<WatchProgress> = emptyList()) = Harness(initialLocal)
 
     private class Harness(initialLocal: List<WatchProgress>) {
+        val completedHistory = MutableStateFlow<List<WatchedHistoryItem>>(emptyList())
+        val selectedSource = MutableStateFlow(WatchProgressSource.TRAKT)
+        val authenticated = MutableStateFlow(true)
         val profile = MutableStateFlow(1)
         val accountScope = MutableStateFlow<String?>(ACCOUNT_A)
         val confirmed = MutableStateFlow<TrackingProgressAcknowledgement?>(null)
         var beforeClear: (suspend () -> Unit)? = null
+        var beforeSave: (suspend () -> Unit)? = null
+        val mutations = mockk<WatchStateMutationStore>(relaxed = true)
         @Volatile var failNextRead = false
         @Volatile var failNextClear = false
         val ackReads = java.util.concurrent.atomic.AtomicInteger()
@@ -263,6 +371,7 @@ class WatchProgressRepositoryContinueWatchingTest {
                 local.getValue(secondArg<Int>()).map { rows -> rows.associateBy { it.season!! to it.episode!! } }
             }
             coEvery { saveProgress(any(), any()) } coAnswers {
+                beforeSave?.also { beforeSave = null }?.invoke()
                 val storage = local.getValue(secondArg<Int>())
                 val saved = firstArg<WatchProgress>()
                 storage.value = (storage.value.filterNot { it.contentId == saved.contentId && it.season == saved.season && it.episode == saved.episode } + saved)
@@ -286,9 +395,9 @@ class WatchProgressRepositoryContinueWatchingTest {
                 } else false
             }
         }
-        private val provider = mockk<TrackingProgressProvider>(relaxed = true) {
+        val provider = mockk<TrackingProgressProvider>(relaxed = true) {
             every { providerId } returns TrackingProviderId.TRAKT
-            every { isAuthenticated } returns flowOf(true)
+            every { isAuthenticated } returns authenticated
             every { allProgress } returns remote
             every { episodeProgress(any()) } returns flowOf(emptyMap())
             every { nextUpSeeds } returns seeds
@@ -296,10 +405,11 @@ class WatchProgressRepositoryContinueWatchingTest {
             every { confirmedProgress } returns confirmed
             coEvery { captureLocalPlaybackScope(any()) } answers { accountScope.value }
             every { remoteProgressLoaded } returns flowOf(true)
+            every { watchedHistory } returns completedHistory
             every { retainsLocalProgress(any()) } returns false
         }
         val repository = newRepository()
-        fun saved() = local.getValue(profile.value).value
+        fun saved(profileId: Int = profile.value) = local.getValue(profileId).value
         suspend fun awaitScope(scope: String?) = withTimeout(3_000L) {
             while (saved().single().localPlaybackScope != scope) delay(1L)
         }
@@ -311,7 +421,7 @@ class WatchProgressRepositoryContinueWatchingTest {
         fun newRepository() = WatchProgressRepositoryImpl(
             watchProgressPreferences = preferences,
             traktSettingsDataStore = mockk<TraktSettingsDataStore>(relaxed = true) {
-                every { watchProgressSource } returns MutableStateFlow(WatchProgressSource.TRAKT)
+                every { watchProgressSource } returns selectedSource
             },
             layoutPreferenceDataStore = mockk<LayoutPreferenceDataStore>(relaxed = true),
             watchProgressSyncService = mockk<WatchProgressSyncService>(relaxed = true),
@@ -322,7 +432,7 @@ class WatchProgressRepositoryContinueWatchingTest {
             tmdbService = mockk<TmdbService>(relaxed = true), profileManager = manager,
             trackingProgressProviders = TrackingProgressProviderRegistry(setOf(provider)),
             trackingHistoryWriters = TrackingHistoryWriterRegistry(emptySet()),
-            mutationStore = mockk<WatchStateMutationStore>(relaxed = true), serverWatched = mockk(relaxed = true)
+            mutationStore = mutations, serverWatched = mockk(relaxed = true)
         )
     }
 

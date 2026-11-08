@@ -204,6 +204,7 @@ class TraktProgressServiceRefreshTest {
     }
 
     private fun createService(): TraktProgressService {
+        coEvery { traktApi.getRecentHistory(any(), any(), any(), any()) } returns Response.success(emptyList())
         coEvery { traktApi.getLastActivities(any()) } answers {
             lastActivitiesCalls.incrementAndGet()
             if (lastActivitiesFails) {

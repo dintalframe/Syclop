@@ -56,8 +56,13 @@ class SimklPublicCatalog internal constructor(
         val current = { profile == activeProfileId() && revision == selectionRevision() }
         if (!current()) throw CancellationException("The active catalog profile changed.")
         val result = async(start = CoroutineStart.LAZY) {
-            val items = if (descriptor.genre == null) client.trending(descriptor.type, descriptor.period!!, current)
+            val discovered = if (descriptor.genre == null) client.trending(descriptor.type, descriptor.period!!, current)
                 else client.genre(descriptor.type, descriptor.genre, current)
+            // Topic rows reuse the cached real Documentary feed and its upstream order;
+            // each card must independently carry the topic, never just a title keyword.
+            val items = descriptor.requiredGenre?.let { genre -> discovered.filter { item ->
+                item.preview.genres.any { it.equals(genre, ignoreCase = true) }
+            } } ?: discovered
             if (!current()) throw CancellationException("The active catalog profile changed.")
             items
         }
@@ -100,7 +105,7 @@ class SimklPublicCatalog internal constructor(
         fun isNativeItemId(id: String) = id.matches(Regex("(?:mal:[1-9][0-9]{0,11}|tt[0-9]{5,12})"))
         const val CINEMETA_URL = "https://v3-cinemeta.strem.io"
         private data class Descriptor(val id: String, val label: String, val type: SimklFeedType,
-            val period: String? = null, val genre: String? = null)
+            val period: String? = null, val genre: String? = null, val requiredGenre: String? = null)
         private val DESCRIPTORS = buildList {
             for (type in listOf(SimklFeedType.ANIME, SimklFeedType.MOVIES, SimklFeedType.TV)) {
                 val label = when (type) { SimklFeedType.ANIME -> "Anime"; SimklFeedType.MOVIES -> "Movies"; SimklFeedType.TV -> "TV" }
@@ -110,6 +115,27 @@ class SimklPublicCatalog internal constructor(
             for (type in listOf(SimklFeedType.MOVIES, SimklFeedType.TV)) {
                 val label = if (type == SimklFeedType.MOVIES) "movies" else "TV"
                 add(Descriptor("${type.path}-genre-documentary", "Simkl Trending · Documentary $label", type, genre = "Documentary"))
+                val topics = if (type == SimklFeedType.MOVIES) listOf("Crime", "History", "Music", "Adventure")
+                    else listOf("Crime", "History", "Travel", "Sport", "Food")
+                for (topic in topics) add(Descriptor("${type.path}-genre-documentary-${topic.lowercase(java.util.Locale.ROOT)}",
+                    "Simkl Trending · Documentary $label · $topic", type, genre = "Documentary", requiredGenre = topic))
+            }
+            // Names are resolved against Simkl's public genre index by the client. Never
+            // construct a slug or reinterpret Animation/Japanese titles as Anime.
+            val genres = mapOf(
+                SimklFeedType.ANIME to listOf("Action", "Adventure", "Comedy", "Fantasy", "Isekai", "Romance",
+                    "Sci-Fi", "Slice Of Life", "Sports", "Mystery", "Drama", "Supernatural"),
+                SimklFeedType.MOVIES to listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Drama",
+                    "Family", "Fantasy", "Romance", "Science Fiction", "Thriller", "History"),
+                SimklFeedType.TV to listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Drama",
+                    "Family", "Fantasy", "Romance", "Science-Fiction", "Mystery", "History")
+            )
+            for ((type, offered) in genres) {
+                val label = when (type) { SimklFeedType.ANIME -> "Anime"; SimklFeedType.MOVIES -> "Movies"; SimklFeedType.TV -> "TV" }
+                for (genre in offered) {
+                    val key = genre.lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                    add(Descriptor("${type.path}-genre-$key", "Simkl Trending · $label · $genre", type, genre = genre))
+                }
             }
         }
     }

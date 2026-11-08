@@ -73,7 +73,10 @@ class TrackingSourceController @Inject constructor(
         )
         val effective = effectiveTrackingSourceSelection(requested, connectedProviderIds)
         if (profileManager.activeProfileId.value != profileId) return@withLock effective
-        if (stored.watchProgressSource != effective.watchProgressSource) {
+        // Automatic is a durable preference. Repositories resolve it from live account state;
+        // connecting a service must not rewrite the choice or clear local watch data.
+        if (stored.watchProgressSource != WatchProgressSource.AUTO &&
+            stored.watchProgressSource != effective.watchProgressSource) {
             when {
                 effective.watchProgressSource == rememberedProgress ->
                     settingsDataStore.setRememberedWatchProgressSource(null, profileId)
@@ -82,7 +85,8 @@ class TrackingSourceController @Inject constructor(
             }
             applyWatchProgressSource(effective.watchProgressSource, profileId)
         }
-        if (stored.librarySourceMode != effective.librarySourceMode) {
+        if (stored.librarySourceMode != LibrarySourceMode.AUTO &&
+            stored.librarySourceMode != effective.librarySourceMode) {
             when {
                 effective.librarySourceMode == rememberedLibrary ->
                     settingsDataStore.setRememberedLibrarySourceMode(null, profileId)

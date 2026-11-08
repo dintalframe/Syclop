@@ -32,6 +32,9 @@ class RepositoryConfigServer(
 
     private val gson = Gson()
     private val pendingChanges = ConcurrentHashMap<String, PendingRepoChange>()
+    private val pairing = LocalConfigSession()
+
+    fun pairingUrl(ipAddress: String): String = pairing.pairingUrl(ipAddress, listeningPort)
 
     fun confirmChange(id: String) {
         pendingChanges[id]?.status = ChangeStatus.CONFIRMED
@@ -41,11 +44,11 @@ class RepositoryConfigServer(
         pendingChanges[id]?.status = ChangeStatus.REJECTED
     }
 
-    override fun serve(session: IHTTPSession): Response {
+    override fun serve(session: IHTTPSession): Response = pairing.respond(session) {
         val uri = session.uri
         val method = session.method
 
-        return when {
+        when {
             method == Method.GET && uri == "/" -> serveWebPage()
             method == Method.GET && uri == "/logo.png" -> serveLogo()
             method == Method.GET && uri == "/api/repositories" -> serveRepositoryList()
@@ -56,7 +59,7 @@ class RepositoryConfigServer(
     }
 
     private fun serveWebPage(): Response {
-        return newFixedLengthResponse(Response.Status.OK, "text/html", RepositoryWebPage.getHtml(context))
+        return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", RepositoryWebPage.getHtml(context))
     }
 
     private fun serveLogo(): Response {
@@ -80,19 +83,11 @@ class RepositoryConfigServer(
     }
 
     private fun handleRepositoryUpdate(session: IHTTPSession): Response {
-        // Auto-reject any stale pending changes so a new request can proceed
-        pendingChanges.values
-            .filter { it.status == ChangeStatus.PENDING }
-            .forEach { it.status = ChangeStatus.REJECTED }
-
-        val bodyMap = HashMap<String, String>()
-        session.parseBody(bodyMap)
-        val body = bodyMap["postData"] ?: ""
+        val body = readConfigJsonBody(session)
 
         val urls: List<String> = try {
             val parsed = gson.fromJson<Map<String, Any>>(body, object : TypeToken<Map<String, Any>>() {}.type)
-            @Suppress("UNCHECKED_CAST")
-            (parsed["urls"] as? List<String>) ?: emptyList()
+            (parsed["urls"] as? List<*>)?.map { requireNotNull(it as? String) } ?: emptyList()
         } catch (e: Exception) {
             val error = mapOf("error" to context.getString(com.nuvio.tv.R.string.web_error_invalid_request_body))
             return newFixedLengthResponse(
@@ -102,6 +97,9 @@ class RepositoryConfigServer(
             )
         }
 
+        pendingChanges.values
+            .filter { it.status == ChangeStatus.PENDING }
+            .forEach { it.status = ChangeStatus.REJECTED }
         val change = PendingRepoChange(proposedUrls = urls)
         pendingChanges[change.id] = change
         onChangeProposed(change)

@@ -1,6 +1,7 @@
 package com.nuvio.tv.core.network
 
 import com.nuvio.tv.ui.screens.player.PlayerPlaybackNetworking
+import com.nuvio.tv.ui.screens.player.subtitleHttpClient
 import okhttp3.Call
 import okhttp3.Connection
 import okhttp3.EventListener
@@ -65,7 +66,7 @@ class NoDelaySocketFactoryTest {
     @Test
     fun `playback clients and their copies use it`() {
         assertSame(PlaybackSocketFactory, PlayerPlaybackNetworking.playbackHttpClient.socketFactory)
-        assertSame(PlaybackSocketFactory, PlayerPlaybackNetworking.trustAllPlaybackHttpClient.socketFactory)
+        assertSame(PlaybackSocketFactory, subtitleHttpClient.socketFactory)
         assertSame(PlaybackSocketFactory, PlayerPlaybackNetworking.createHttpClient(mapOf("Authorization" to "x")).socketFactory)
         PlaybackSocketFactory.createSocket().use { assertTrue(it.tcpNoDelay) }
     }

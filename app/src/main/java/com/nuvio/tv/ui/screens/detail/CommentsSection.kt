@@ -418,7 +418,7 @@ fun CommentsSection(
                     horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md)
                 ) {
                     items(comments, key = { it.id }) { review ->
-                        val commentFocusRequester = commentFocusRequesters.getOrPut(review.id) { FocusRequester() }
+                        val commentFocusRequester = commentFocusRequesters.getOrPut(review.id) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                         CommentCard(
                             review = review,
                             shape = cardShape,

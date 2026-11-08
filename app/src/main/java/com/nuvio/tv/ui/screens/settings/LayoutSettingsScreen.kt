@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -29,6 +30,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.tv.R
 import com.nuvio.tv.ui.screens.addon.QrCodeOverlay
+import com.nuvio.tv.ui.screens.detail.requestFocusAfterFrames
 
 @Composable
 fun LayoutSettingsScreen(
@@ -62,6 +64,8 @@ fun LayoutSettingsContent(
     var expandedSections by rememberSaveable(essentialMode) {
         mutableStateOf(if (essentialMode) listOf(LayoutSection.HOME_LAYOUT.name) else emptyList())
     }
+    val configureBadgesFocusRequester = remember { FocusRequester() }
+    var restoreConfigureBadgesFocus by remember { mutableStateOf(false) }
 
     LaunchedEffect(streamBadgeUiState.serverError) {
         val error = streamBadgeUiState.serverError ?: return@LaunchedEffect
@@ -85,6 +89,19 @@ fun LayoutSettingsContent(
                 .weight(1f)
         ) {
             val listState = rememberLazyListState()
+            LaunchedEffect(restoreConfigureBadgesFocus, streamBadgeUiState.isQrModeActive) {
+                if (!restoreConfigureBadgesFocus || streamBadgeUiState.isQrModeActive) return@LaunchedEffect
+                val streamsIndex = sections.indexOf(LayoutSection.STREAMS)
+                if (streamsIndex >= 0 && LayoutSection.STREAMS.name in expandedSections &&
+                    !configureBadgesFocusRequester.requestFocusAfterFrames()) {
+                    // The QR screen can detach the lazy item while it has focus.
+                    if (listState.layoutInfo.visibleItemsInfo.none { it.index == streamsIndex }) {
+                        listState.scrollToItem(streamsIndex)
+                    }
+                    configureBadgesFocusRequester.requestFocusAfterFrames()
+                }
+                restoreConfigureBadgesFocus = false
+            }
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
                     state = listState,
@@ -113,6 +130,7 @@ fun LayoutSettingsContent(
                                 section = section,
                                 uiState = uiState,
                                 streamBadgeUiState = streamBadgeUiState,
+                                configureBadgesFocusRequester = configureBadgesFocusRequester,
                                 viewModel = viewModel
                             )
                         }
@@ -127,7 +145,10 @@ fun LayoutSettingsContent(
                 qrBitmap = streamBadgeUiState.qrCodeBitmap,
                 serverUrl = streamBadgeUiState.serverUrl,
                 instruction = stringResource(R.string.stream_badge_qr_instruction),
-                onClose = viewModel::stopStreamBadgeQrMode,
+                onClose = {
+                    restoreConfigureBadgesFocus = true
+                    viewModel.stopStreamBadgeQrMode()
+                },
                 qrSize = 168.dp
             )
         }
@@ -149,6 +170,7 @@ private fun LayoutSectionContent(
     section: LayoutSection,
     uiState: LayoutSettingsUiState,
     streamBadgeUiState: StreamBadgeSettingsUiState,
+    configureBadgesFocusRequester: FocusRequester,
     viewModel: LayoutSettingsViewModel
 ) {
     val onEvent: (LayoutSettingsEvent) -> Unit = viewModel::onEvent
@@ -171,6 +193,7 @@ private fun LayoutSectionContent(
             onShowFileSizeBadgesChange = viewModel::setShowFileSizeBadges,
             onShowAddonLogoChange = viewModel::setShowAddonLogo,
             onBadgePlacementSelected = viewModel::setStreamBadgePlacement,
+            configureBadgesFocusRequester = configureBadgesFocusRequester,
             onConfigureBadges = viewModel::startStreamBadgeQrMode,
             onShowInPlayerChange = viewModel::setShowBadgesInPlayer,
             onPlayerBadgeSourceSelected = viewModel::setPlayerBadgeSource

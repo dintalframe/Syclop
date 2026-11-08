@@ -11,6 +11,9 @@ import com.nuvio.tv.core.initialization.InitializationFailure
 import android.util.Log
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.tracking.TrackingRefreshIntent
+import com.nuvio.tv.core.tracking.TrackingPlaybackGrant
+import com.nuvio.tv.core.tracking.TrackingProviderId
+import kotlinx.coroutines.currentCoroutineContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -171,11 +174,15 @@ class SimklSyncRepository internal constructor(
     }
 
     internal suspend fun commitScrobble(result: SimklScrobbleResult) = withContext(ioDispatcher) {
+        val origin = currentCoroutineContext()[TrackingPlaybackGrant]?.takeIf { it.providerId == TrackingProviderId.SIMKL }
+        origin?.checkpoint()
         ensureLoaded()
+        origin?.checkpoint()
         val profileId = profileManager.activeProfileId.value
         val generation = profileGeneration
         snapshotMutex.withLock {
-            if (!isCurrent(profileId, generation)) return@withLock
+            fun ownerCurrent() = isCurrent(profileId, generation) && (origin == null || origin.isCurrent())
+            if (!ownerCurrent()) return@withLock
             val current = _state.value
             val snapshot = current.snapshot.applyScrobbleResult(
                 result = result,
@@ -183,8 +190,8 @@ class SimklSyncRepository internal constructor(
             )
             if (snapshot == current.snapshot) return@withLock
             val projection = buildProjection(snapshot)
-            storage.save(profileId, encodeSnapshot(snapshot))
-            if (isCurrent(profileId, generation)) {
+            if (!storage.saveIfCurrent(profileId, encodeSnapshot(snapshot), ::ownerCurrent)) return@withLock
+            if (ownerCurrent()) {
                 _projection.value = projection
                 _state.value = current.copy(snapshot = snapshot)
             }

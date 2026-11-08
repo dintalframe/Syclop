@@ -6,7 +6,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DebridBitratePresentationTest {
-    private val presentation=DebridStreamPresentation(mockk(),mockk(),DebridStreamFormatter(DebridStreamTemplateEngine()))
+    private val presentation = DebridStreamPresentation(
+        dataStore = mockk(), streamBadgeSettingsDataStore = mockk(),
+        formatter = DebridStreamFormatter(DebridStreamTemplateEngine()),
+        nativeGrant = { false }, currentScope = { StreamAvailabilityScope(1, 2L, 3L) }, clock = { 1_000L })
     private fun settings(provider:String)=DebridSettings(enabled=true,realDebridApiKey="test-rd",allDebridApiKey="test-ad",
         preferredResolverProviderId=provider,streamPreferences=DebridStreamPreferences(maxResults=1,
             sortCriteria=DebridStreamSortCriterion.bitrateFirstOrder()))
@@ -15,16 +18,16 @@ class DebridBitratePresentationTest {
         val groups=listOf(AddonStreams("First",null,listOf(low)),AddonStreams("Second",null,listOf(high)))
         val displayed=presentation.apply(groups,settings("realdebrid"))
         assertEquals(2,displayed.sumOf { it.streams.size }) // No per-group premature limit.
-        assertEquals(listOf(high),presentation.rankAll(displayed.flatMap { it.streams },settings("realdebrid")))
+        assertEquals(listOf(high),presentation.rankAll(displayed.flatMap { it.streams },settings("realdebrid")).map { it.copy(badges = emptyList()) })
     }
     @Test fun `Magnify AllDebrid unknown cache state is sortable despite lacking cache-check endpoint`() {
         val unknown=source("First","2160p",null);val known=source("Second","1080p",100)
         assertFalse(DebridProviders.AllDebrid.supports(DebridProviderCapability.LocalTorrentCacheCheck))
-        assertEquals(listOf(known),presentation.rankAll(listOf(unknown,known),settings("alldebrid")))
+        assertEquals(listOf(known),presentation.rankAll(listOf(unknown,known),settings("alldebrid")).map { it.copy(badges = emptyList()) })
     }
     @Test fun `unlimited global view keeps stable tie order`() {
         val one=source("A","1080p",100);val two=source("B","1080p",100)
-        assertEquals(listOf(one,two),presentation.rankAll(listOf(one,two),settings("alldebrid"),false))
+        assertEquals(listOf(one,two),presentation.rankAll(listOf(one,two),settings("alldebrid"),false).map { it.copy(badges = emptyList()) })
     }
     private fun source(addon:String,title:String,bytes:Long?)=Stream(null,title,null,null,null,"a".repeat(40),0,null,null,addon,null,
         nativeFileMetadata=bytes?.let { StreamFileMetadata(it,1000,StreamDurationOrigin.CATALOG_MOVIE) })

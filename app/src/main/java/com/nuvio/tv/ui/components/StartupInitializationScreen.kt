@@ -31,14 +31,23 @@ import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.nuvio.tv.R
+import com.nuvio.tv.core.initialization.InitializationFailure
 import com.nuvio.tv.core.initialization.InitializationPhase
 import com.nuvio.tv.core.initialization.InitializationStageStatus
+import com.nuvio.tv.core.initialization.InitializationStep
 import com.nuvio.tv.core.initialization.StartupInitializationState
 
 /** Callers use the actual Home route and selected owner, never a background import alone. */
@@ -52,8 +61,17 @@ internal fun startupInitializationBlocksHome(homeEntry: Boolean, profileId: Int,
 fun StartupInitializationScreen(state: StartupInitializationState, onRetry: () -> Unit,
     onContinue: () -> Unit, modifier: Modifier = Modifier) {
     val continueFocus = remember { FocusRequester() }
+    val canRetry = state.phase == InitializationPhase.NEEDS_ATTENTION
+    val (title, description) = when {
+        canRetry -> R.string.startup_accounts_attention to R.string.startup_accounts_attention_description
+        state.phase == InitializationPhase.IMPORTING ->
+            R.string.startup_accounts_importing to R.string.startup_accounts_importing_description
+        else -> R.string.startup_accounts_checking to R.string.startup_accounts_checking_description
+    }
     BackHandler(onBack = onContinue)
-    LaunchedEffect(continueFocus) { withFrameNanos { }; continueFocus.requestFocus() }
+    // Retry disappears when its import starts. Re-enter the stable action after that
+    // focus target is removed, including retries started outside this composable.
+    LaunchedEffect(canRetry) { withFrameNanos { }; continueFocus.requestFocus() }
     // Stay in the Activity's existing window: a brief account check need not create and
     // immediately tear down another ViewRoot while accessibility is inspecting startup.
     Column(modifier.fillMaxSize().background(Color.Black)
@@ -63,37 +81,60 @@ fun StartupInitializationScreen(state: StartupInitializationState, onRetry: () -
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         SyclopBrandAnimation(if (state.phase == InitializationPhase.NEEDS_ATTENTION)
             SyclopBrandState.Error else SyclopBrandState.Loading, size = 96.dp)
-        Text("Preparing your connected accounts", style = MaterialTheme.typography.headlineSmall, color = Color.White)
+        Text(stringResource(title), modifier = Modifier.semantics {
+            heading()
+            if (canRetry) liveRegion = LiveRegionMode.Polite
+        }, textAlign = TextAlign.Center, style = MaterialTheme.typography.headlineSmall, color = Color.White)
         Spacer(Modifier.height(8.dp))
-        Text("Importing your watch history and lists from connected services.",
+        Text(stringResource(description),
             modifier = Modifier.widthIn(max = 700.dp), textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium, color = Color(0xFFBBBBBB))
         Spacer(Modifier.height(12.dp))
-        if (state.stages.isEmpty()) Text("Checking connected accounts…", color = Color.LightGray)
         state.stages.forEach { stage ->
             val detail = when (stage.status) {
-                InitializationStageStatus.WAITING -> "Waiting"
-                InitializationStageStatus.READING -> stage.step?.label ?: "Reading saved account data"
-                InitializationStageStatus.COMPLETE -> if (stage.count == null) "Previously initialized"
-                    else "${stage.count} entries read" + if (stage.truncated) " · partial history/list snapshot" else ""
-                InitializationStageStatus.FAILED -> when (stage.failure) {
-                    com.nuvio.tv.core.initialization.InitializationFailure.TIMEOUT -> "Timed out — retry or continue with saved data"
-                    com.nuvio.tv.core.initialization.InitializationFailure.INCOMPLETE -> "Some data could not be imported — retry or continue"
-                    com.nuvio.tv.core.initialization.InitializationFailure.UNAVAILABLE -> "Account data is not available yet"
-                    else -> "Could not finish — retry or continue with saved data"
+                InitializationStageStatus.WAITING -> stringResource(R.string.startup_stage_waiting)
+                InitializationStageStatus.READING -> stringResource(when (stage.step) {
+                    InitializationStep.HISTORY -> R.string.startup_stage_reading_history
+                    InitializationStep.LIBRARY -> R.string.startup_stage_reading_library
+                    InitializationStep.ACCOUNT -> R.string.startup_stage_checking_account
+                    null -> R.string.startup_stage_preparing_import
+                })
+                InitializationStageStatus.COMPLETE -> {
+                    val count = stage.count
+                    if (count == null) {
+                        stringResource(R.string.startup_stage_previously_initialized)
+                    } else {
+                        val entries = pluralStringResource(R.plurals.startup_stage_entries_read, count, count)
+                        if (stage.truncated) stringResource(R.string.startup_stage_partial, entries) else entries
+                    }
                 }
+                InitializationStageStatus.FAILED -> stringResource(when (stage.failure) {
+                    InitializationFailure.TIMEOUT -> R.string.startup_stage_timed_out
+                    InitializationFailure.INCOMPLETE -> R.string.startup_stage_incomplete
+                    InitializationFailure.UNAVAILABLE -> R.string.startup_stage_unavailable
+                    else -> R.string.startup_stage_failed
+                })
             }
-            Text("${stage.provider.label}: $detail", modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            Text(stringResource(R.string.startup_stage_provider_detail, stage.provider.label, detail),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).semantics {
+                    if (stage.status == InitializationStageStatus.READING) liveRegion = LiveRegionMode.Polite
+                },
                 textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium,
                 color = if (stage.status == InitializationStageStatus.FAILED) Color(0xFFFFCCCC) else Color.White)
         }
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = onContinue, modifier = Modifier.focusRequester(continueFocus)) { Text("Continue with saved data") }
-            if (state.phase == InitializationPhase.NEEDS_ATTENTION) Button(onClick = onRetry) { Text("Retry failed imports") }
+            Button(onClick = onContinue, modifier = Modifier.focusRequester(continueFocus)) {
+                Text(stringResource(R.string.startup_action_continue))
+            }
+            if (canRetry) Button(onClick = {
+                // Transfer focus before onRetry can synchronously remove this button.
+                continueFocus.requestFocus()
+                onRetry()
+            }) { Text(stringResource(R.string.startup_action_retry)) }
         }
         Spacer(Modifier.height(8.dp))
-        Text("Continue opens Home with any saved data.",
+        Text(stringResource(R.string.startup_accounts_continue_hint),
             textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
     }
 }

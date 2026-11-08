@@ -4,15 +4,24 @@ import android.graphics.Bitmap
 import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
@@ -81,6 +90,46 @@ class PlaybackActionButtonsTvTest {
             postPlayMode = PostPlayMode.AutoPlay(next, searching = true)))
         compose.onNodeWithText(nextLabel).assertDoesNotExist()
         compose.onNodeWithText(startLabel).assertIsDisplayed()
+    }
+
+    @Test
+    fun iconCaptionFollowsRemoteFocusAndUpdatesWhenPlaybackToggles() {
+        val context = instrumentation.targetContext
+        val play = context.getString(R.string.cd_play)
+        val pause = context.getString(R.string.cd_pause)
+        val more = context.getString(R.string.cd_more_actions)
+        val playing = mutableStateOf(false)
+        setContent {
+            val focusedLabel = remember { mutableStateOf<State<String>?>(null) }
+            Column {
+                Row {
+                    ControlButton(
+                        icon = Icons.Default.PlayArrow,
+                        contentDescription = if (playing.value) pause else play,
+                        focusedLabel = focusedLabel,
+                        onClick = { playing.value = !playing.value }
+                    )
+                    ControlButton(
+                        icon = Icons.Default.MoreHoriz,
+                        contentDescription = more,
+                        focusedLabel = focusedLabel,
+                        onClick = {}
+                    )
+                }
+                PlayerControlCaption(focusedLabel.value?.value)
+            }
+        }
+        compose.onNodeWithContentDescription(play)
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onNodeWithText(play).assertIsDisplayed()
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        compose.onNodeWithText(pause).assertIsDisplayed()
+        compose.onNodeWithText(play).assertDoesNotExist()
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        compose.onNodeWithContentDescription(more).assertIsFocused()
+        compose.onNodeWithText(more).assertIsDisplayed()
+        compose.onNodeWithText(pause).assertDoesNotExist()
+        capture("playback-focused-control-caption")
     }
 
     private fun setActions(

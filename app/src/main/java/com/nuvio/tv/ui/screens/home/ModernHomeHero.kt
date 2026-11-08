@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -46,7 +47,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -304,6 +304,7 @@ internal fun ModernHeroGradientLayer(
 
 @Composable
 internal fun HeroTitleBlock(
+    itemKeyProvider: () -> String?,
     previewProvider: () -> HeroPreview?,
     enrichmentActive: () -> Boolean = { false },
     portraitMode: Boolean,
@@ -314,28 +315,29 @@ internal fun HeroTitleBlock(
     modifier: Modifier = Modifier
 ) {
     // The providers read hero state that is rewritten on every focus move, often with an equal
-    // value. Deriving the pair recomposes this block only when what it shows actually changes.
+    // value. Derive the display inputs so other scene changes can skip this block.
+    val latestItemKeyProvider = rememberUpdatedState(itemKeyProvider)
     val latestPreviewProvider = rememberUpdatedState(previewProvider)
     val latestEnrichmentActive = rememberUpdatedState(enrichmentActive)
     val displayInputs by remember {
-        derivedStateOf { latestPreviewProvider.value() to latestEnrichmentActive.value() }
+        derivedStateOf {
+            Triple(latestItemKeyProvider.value(), latestPreviewProvider.value(), latestEnrichmentActive.value())
+        }
     }
-    val currentPreview = displayInputs.first
-    val isEnriching = displayInputs.second
-    
-    var stablePreview by remember { mutableStateOf<HeroPreview?>(null) }
+    val (itemKey, currentPreview, isEnriching) = displayInputs
+    var stablePreview by remember { mutableStateOf<Pair<String, HeroPreview>?>(null) }
 
-    LaunchedEffect(Unit) {
-        snapshotFlow { Pair(previewProvider(), enrichmentActive()) }.collect { (p, e) ->
-            if (!e && p != null) {
-                if (stablePreview != p) stablePreview = p
-            } else if (e) {
-                if (stablePreview != null) stablePreview = null
-            }
+    SideEffect {
+        if (!isEnriching && itemKey != null && currentPreview != null) {
+            stablePreview = itemKey to currentPreview
+        } else if (isEnriching && stablePreview?.first != itemKey) {
+            stablePreview = null
         }
     }
 
-    val displayPreview = if (!isEnriching && currentPreview != null) currentPreview else stablePreview
+    // Moving from the tab to its first card can start enrichment for the title already on screen.
+    val fallback = stablePreview?.takeIf { !isEnriching || it.first == itemKey }?.second
+    val displayPreview = currentPreview?.takeUnless { isEnriching } ?: fallback
     if (displayPreview == null) return
     
     Box(
@@ -348,7 +350,8 @@ internal fun HeroTitleBlock(
             showImdbRatings = showImdbRatings,
             mdbListShowOnHero = mdbListShowOnHero,
             mdbListRatingOrder = mdbListRatingOrder,
-            trailerPlaying = trailerPlaying
+            trailerPlaying = trailerPlaying,
+            descriptionAutoScrollEnabled = !isEnriching && currentPreview != null
         )
     }
 }
@@ -360,7 +363,8 @@ private fun HeroTitleContent(
     showImdbRatings: Boolean,
     mdbListShowOnHero: Boolean = false,
     mdbListRatingOrder: List<String> = com.nuvio.tv.domain.model.MDBListSettings.DEFAULT_RATING_ORDER,
-    trailerPlaying: () -> Boolean = { false }
+    trailerPlaying: () -> Boolean = { false },
+    descriptionAutoScrollEnabled: Boolean = true
 ) {
     val preview = previewProvider() ?: return
     val highlighterEnabled = LocalRecompositionHighlighterEnabled.current
@@ -416,17 +420,36 @@ private fun HeroTitleContent(
         var logoLoadFailed by remember(preview.logo) { mutableStateOf(false) }
         val showLogo = !preview.logo.isNullOrBlank() && !logoLoadFailed
         if (showLogo) {
-            AsyncImage(
-                model = logoModel,
-                contentDescription = preview.title,
-                onError = { logoLoadFailed = true },
+            // Provider artwork can decode successfully yet be dark or transparent. Keep a
+            // readable title while the logo loads and after success, within the same title area.
+            Column(
                 modifier = Modifier
                     .height(100.dp)
                     .widthIn(min = 100.dp, max = 220.dp)
                     .fillMaxWidth(),
-                contentScale = ContentScale.Fit,
-                alignment = Alignment.CenterStart
-            )
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                AsyncImage(
+                    model = logoModel,
+                    contentDescription = null,
+                    onError = { logoLoadFailed = true },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentScale = ContentScale.Fit,
+                    alignment = Alignment.CenterStart
+                )
+                if (preview.title.isNotBlank()) {
+                    Text(
+                        text = preview.title,
+                        style = scaledTitleStyle.copy(
+                            fontSize = scaledTitleStyle.fontSize * 0.65f,
+                            lineHeight = scaledTitleStyle.lineHeight * 0.65f
+                        ),
+                        color = NuvioTheme.colors.TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         } else if (preview.title.isNotBlank()) {
             Text(
                 text = preview.title,
@@ -666,12 +689,13 @@ private fun HeroTitleContent(
         }
 
         preview.description?.takeIf { it.isNotBlank() }?.let { description ->
-            Text(
-                text = description,
+            HeroDescription(
+                description = description,
+                contentKey = preview,
+                autoScrollEnabled = descriptionAutoScrollEnabled && !trailerPlayingValue,
                 style = scaledDescriptionStyle.copy(textDirection = description.contentTextDirection()),
                 color = NuvioTheme.colors.TextPrimary,
                 maxLines = descriptionMaxLines,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.graphicsLayer { alpha = metaAlpha }
             )
         }

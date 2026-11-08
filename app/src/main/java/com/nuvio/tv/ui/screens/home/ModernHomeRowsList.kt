@@ -437,7 +437,7 @@ internal fun ModernHomeRowsList(
                     row = row,
                     isActiveRow = isActiveRowLambda,
                     contentFocusEnabled = contentFocusEnabled,
-                    rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
+                    rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() },
                     rowTitleBottom = 14.dp, // rowTitleBottom
                     defaultBringIntoViewSpec = defaultBringIntoViewSpec,
                     focusStateCatalogRowScrollIndex = focusState.catalogRowScrollStates[row.key] ?: 0,

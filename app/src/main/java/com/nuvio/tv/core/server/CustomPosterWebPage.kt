@@ -18,7 +18,7 @@ internal object CustomPosterWebPage {
             } else base
         }
 
-        val appName = context?.getString(R.string.app_name) ?: "NuvioTV"
+        val appName = context?.getString(R.string.app_name) ?: "Syclop"
         val pageTitle = context?.getString(R.string.web_custom_poster_title) ?: "Custom Poster Source"
         val pageSubtitle = context?.getString(R.string.web_custom_poster_subtitle)
             ?: "Paste a poster URL pattern below and press Save."
@@ -44,6 +44,7 @@ internal object CustomPosterWebPage {
 <html lang="en">
 <head>
 <meta charset="utf-8">
+${LocalConfigSession.browserScript("syclop-poster-pairing", context?.getString(R.string.web_addon_pairing_required))}
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>$appName - $pageTitle</title>
 <style>
@@ -99,16 +100,16 @@ const ${'$'}c=document.getElementById('current');
 const ${'$'}t=document.getElementById('pattern');
 function msg(t,ok){${'$'}s.textContent=t;${'$'}s.className='status '+(ok?'ok':'err');
 setTimeout(()=>{${'$'}s.textContent='';${'$'}s.className='status'},3000)}
-async function load(){try{const r=await fetch('/api/pattern');const d=await r.json();
+async function load(){try{const r=await localConfigFetch('/api/pattern');const d=await r.json();
 if(d.pattern){${'$'}t.value=d.pattern;${'$'}c.textContent=d.pattern;${'$'}c.classList.remove('empty')}
-else{${'$'}c.textContent='$noPatternLabel';${'$'}c.classList.add('empty')}}catch(e){${'$'}c.textContent='Error'}}
+else{${'$'}c.textContent='$noPatternLabel';${'$'}c.classList.add('empty')}}catch(e){${'$'}c.textContent=e.name==='LocalPairingRequired'?e.message:'Error'}}
 async function save(){const p=${'$'}t.value.trim();if(!p){msg('$errorEmpty',false);return}
-try{const r=await fetch('/api/pattern',{method:'POST',headers:{'Content-Type':'application/json'},
+try{const r=await localConfigFetch('/api/pattern',{method:'POST',headers:{'Content-Type':'application/json'},
 body:JSON.stringify({pattern:p})});if(r.ok){msg('$savedMsg',true);load()}else{msg('$errorSave',false)}}
-catch(e){msg('$errorConnection',false)}}
-async function clear_(){try{const r=await fetch('/api/clear',{method:'POST'});
+catch(e){if(e.name!=='LocalPairingRequired')msg('$errorConnection',false)}}
+async function clear_(){try{const r=await localConfigFetch('/api/clear',{method:'POST'});
 if(r.ok){msg('$clearedMsg',true);${'$'}t.value='';load()}else{msg('$errorClear',false)}}
-catch(e){msg('$errorConnection',false)}}
+catch(e){if(e.name!=='LocalPairingRequired')msg('$errorConnection',false)}}
 load();
 </script>
 </body>

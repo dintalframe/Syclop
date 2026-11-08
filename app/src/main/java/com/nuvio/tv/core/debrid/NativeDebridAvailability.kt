@@ -25,7 +25,8 @@ internal fun StreamDebridCacheStatus.isFreshNativeAvailability(nowMs: Long): Boo
 internal fun availabilityAccounts(stream: Stream, settings: DebridSettings): List<DebridServiceCredential> {
     if (!settings.canResolvePlayableLinks || stream.localAvailabilityHash() == null) return emptyList()
     return if (NativeDebridFallbackRouter.neutralHashSource(stream)) NativeDebridFallbackRouter.accounts(settings, true)
-    else listOfNotNull(settings.activeResolverCredential)
+    else settings.resolverServices.filter { it.provider.id == DebridProviders.byId(stream.clientResolve?.service)?.id &&
+        it.provider.supports(DebridProviderCapability.ClientResolve) }
 }
 
 internal fun Stream.allNativeAccountsUnavailable(settings: DebridSettings, scope: StreamAvailabilityScope,

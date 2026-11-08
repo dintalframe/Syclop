@@ -99,24 +99,22 @@ class DebridSettingsViewModel @Inject constructor(
         }
     }
 
+    // File-backed drawable resources can be opened as raw bytes without decoding.
+    @android.annotation.SuppressLint("ResourceType")
     private fun loadLogoBytes() {
         try {
-            val inputStream = context.resources.openRawResource(R.drawable.app_logo_wordmark)
+            val inputStream = context.resources.openRawResource(R.drawable.syclop_primary_head_512)
             logoBytes = inputStream.use { it.readBytes() }
         } catch (_: Exception) { }
     }
 
-    fun onEvent(event: DebridSettingsEvent) {
-        when (event) {
-            is DebridSettingsEvent.ToggleEnabled -> {
-                if (event.enabled && !_uiState.value.hasResolverProvider) return
-                update { dataStore.setEnabled(event.enabled) }
-            }
-        }
-    }
-
     fun setCloudLibraryEnabled(enabled: Boolean) {
         update { dataStore.setCloudLibraryEnabled(enabled) }
+    }
+
+    fun setCloudDeleteAfterPlayback(enabled: Boolean) {
+        val profileId = activeProfileId.value
+        update { dataStore.setCloudDeleteAfterPlayback(profileId, enabled) }
     }
 
     fun setConnectedServiceFallbackEnabled(enabled: Boolean) {
@@ -165,7 +163,7 @@ class DebridSettingsViewModel @Inject constructor(
             _uiState.update { it.copy(serverError = context.getString(R.string.error_server_ports_unavailable)) }
             return
         }
-        val url = "http://$ip:${server.listeningPort}"
+        val url = server.pairingUrl(ip)
         _uiState.update {
             it.copy(
                 isFormatterQrModeActive = true,
@@ -390,7 +388,7 @@ class DebridSettingsViewModel @Inject constructor(
 }
 
 data class DebridSettingsUiState(
-    val enabled: Boolean = false,
+    val enabled: Boolean = true,
     val cloudLibraryEnabled: Boolean = true,
     val torboxApiKey: String = "",
     val premiumizeApiKey: String = "",
@@ -411,7 +409,8 @@ data class DebridSettingsUiState(
     val isFormatterQrModeActive: Boolean = false,
     val formatterQrCodeBitmap: Bitmap? = null,
     val formatterServerUrl: String? = null,
-    val serverError: String? = null
+    val serverError: String? = null,
+    val cloudDeleteAfterPlayback: Boolean = false
 ) {
     val providerApiKeys: Map<String, String>
         get() = mapOf(
@@ -450,7 +449,7 @@ data class DebridSettingsUiState(
         get() = cloudLibraryProviders.isNotEmpty()
 
     val canResolvePlayableLinks: Boolean
-        get() = enabled && hasResolverProvider
+        get() = hasResolverProvider
 
     val canUseCloudLibrary: Boolean
         get() = cloudLibraryEnabled && hasCloudLibraryProvider
@@ -461,6 +460,7 @@ data class DebridSettingsUiState(
     fun fromSettings(settings: DebridSettings): DebridSettingsUiState = copy(
         enabled = settings.enabled,
         cloudLibraryEnabled = settings.cloudLibraryEnabled,
+        cloudDeleteAfterPlayback = settings.cloudDeleteAfterPlayback,
         torboxApiKey = settings.torboxApiKey,
         premiumizeApiKey = settings.premiumizeApiKey,
         realDebridApiKey = settings.realDebridApiKey,
@@ -480,8 +480,4 @@ data class DebridSettingsUiState(
     )
 
     override fun toString(): String = "DebridSettingsUiState(enabled=$enabled, credentials=[redacted])"
-}
-
-sealed class DebridSettingsEvent {
-    data class ToggleEnabled(val enabled: Boolean) : DebridSettingsEvent()
 }

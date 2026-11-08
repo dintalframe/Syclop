@@ -27,12 +27,22 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class TrackingSettingsUiState(
-    val watchProgressSource: WatchProgressSource = WatchProgressSource.NUVIO_SYNC,
-    val librarySourceMode: LibrarySourceMode = LibrarySourceMode.LOCAL,
+    val watchProgressSource: WatchProgressSource = WatchProgressSource.AUTO,
+    val librarySourceMode: LibrarySourceMode = LibrarySourceMode.AUTO,
     val connectedProviderIds: Set<TrackingProviderId> = emptySet(),
     val simklAnimeIdPreference: SimklAnimeIdPreference = SimklAnimeIdPreference.DEFAULT,
     val isReady: Boolean = false
 ) {
+    val effectiveWatchProgressSource: WatchProgressSource
+        get() = effectiveTrackingSourceSelection(
+            TrackingSourceSelection(watchProgressSource, librarySourceMode), connectedProviderIds
+        ).watchProgressSource
+
+    val effectiveLibrarySourceMode: LibrarySourceMode
+        get() = effectiveTrackingSourceSelection(
+            TrackingSourceSelection(watchProgressSource, librarySourceMode), connectedProviderIds
+        ).librarySourceMode
+
     val availableWatchProgressSources: List<WatchProgressSource>
         get() = availableWatchProgressSources(connectedProviderIds)
 
@@ -76,8 +86,8 @@ class TrackingSettingsViewModel @Inject constructor(
                     connectedProviderIds = connectedProviderIds
                 )
                 TrackingSettingsUiState(
-                    watchProgressSource = effective.watchProgressSource,
-                    librarySourceMode = effective.librarySourceMode,
+                    watchProgressSource = if (watchProgressSource == WatchProgressSource.AUTO) WatchProgressSource.AUTO else effective.watchProgressSource,
+                    librarySourceMode = if (librarySourceMode == LibrarySourceMode.AUTO) LibrarySourceMode.AUTO else effective.librarySourceMode,
                     connectedProviderIds = connectedProviderIds,
                     simklAnimeIdPreference = animeIdPref,
                     isReady = true

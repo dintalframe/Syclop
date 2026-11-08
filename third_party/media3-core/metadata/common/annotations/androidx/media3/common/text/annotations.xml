@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.common.text.Cue Cue(java.lang.CharSequence, android.text.Layout.Alignment, android.text.Layout.Alignment, android.graphics.Bitmap, float, int, int, float, int, int, float, float, float, boolean, int, int, float, int) 15">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.VERTICAL_TYPE_RL, androidx.media3.common.text.Cue.VERTICAL_TYPE_LR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue Cue(java.lang.CharSequence, android.text.Layout.Alignment, android.text.Layout.Alignment, android.graphics.Bitmap, float, int, int, float, int, int, float, float, float, boolean, int, int, float, int) 5">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION, androidx.media3.common.text.Cue.LINE_TYPE_NUMBER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue Cue(java.lang.CharSequence, android.text.Layout.Alignment, android.text.Layout.Alignment, android.graphics.Bitmap, float, int, int, float, int, int, float, float, float, boolean, int, int, float, int) 6">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue Cue(java.lang.CharSequence, android.text.Layout.Alignment, android.text.Layout.Alignment, android.graphics.Bitmap, float, int, int, float, int, int, float, float, float, boolean, int, int, float, int) 8">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue Cue(java.lang.CharSequence, android.text.Layout.Alignment, android.text.Layout.Alignment, android.graphics.Bitmap, float, int, int, float, int, int, float, float, float, boolean, int, int, float, int) 9">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL_IGNORE_PADDING, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_ABSOLUTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue lineAnchor">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue lineType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION, androidx.media3.common.text.Cue.LINE_TYPE_NUMBER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue positionAnchor">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue textSizeType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL_IGNORE_PADDING, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_ABSOLUTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue verticalType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.VERTICAL_TYPE_RL, androidx.media3.common.text.Cue.VERTICAL_TYPE_LR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.AnchorType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder androidx.media3.common.text.Cue.Builder setLine(float, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION, androidx.media3.common.text.Cue.LINE_TYPE_NUMBER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder androidx.media3.common.text.Cue.Builder setLineAnchor(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder androidx.media3.common.text.Cue.Builder setPositionAnchor(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder androidx.media3.common.text.Cue.Builder setTextSize(float, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL_IGNORE_PADDING, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_ABSOLUTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder androidx.media3.common.text.Cue.Builder setVerticalType(int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.VERTICAL_TYPE_RL, androidx.media3.common.text.Cue.VERTICAL_TYPE_LR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder int getLineAnchor()">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder int getLineType()">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION, androidx.media3.common.text.Cue.LINE_TYPE_NUMBER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder int getPositionAnchor()">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder int getTextSizeType()">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL_IGNORE_PADDING, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_ABSOLUTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder int getVerticalType()">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.VERTICAL_TYPE_RL, androidx.media3.common.text.Cue.VERTICAL_TYPE_LR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder lineAnchor">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder lineType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION, androidx.media3.common.text.Cue.LINE_TYPE_NUMBER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder positionAnchor">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.ANCHOR_TYPE_START, androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE, androidx.media3.common.text.Cue.ANCHOR_TYPE_END}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder textSizeType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL_IGNORE_PADDING, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_ABSOLUTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.Builder verticalType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.VERTICAL_TYPE_RL, androidx.media3.common.text.Cue.VERTICAL_TYPE_LR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.LineType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION, androidx.media3.common.text.Cue.LINE_TYPE_NUMBER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.TextSizeType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_FRACTIONAL_IGNORE_PADDING, androidx.media3.common.text.Cue.TEXT_SIZE_TYPE_ABSOLUTE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.Cue.VerticalType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.Cue.TYPE_UNSET, androidx.media3.common.text.Cue.VERTICAL_TYPE_RL, androidx.media3.common.text.Cue.VERTICAL_TYPE_LR}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.CustomSpanBundler android.os.Bundle spanToBundle(android.text.Spanned, java.lang.Object, int, android.os.Bundle) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.CustomSpanBundler.UNKNOWN, androidx.media3.common.text.CustomSpanBundler.RUBY, androidx.media3.common.text.CustomSpanBundler.TEXT_EMPHASIS, androidx.media3.common.text.CustomSpanBundler.HORIZONTAL_TEXT_IN_VERTICAL_CONTEXT, androidx.media3.common.text.CustomSpanBundler.VOICE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.RubySpan RubySpan(java.lang.String, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextAnnotation.POSITION_UNKNOWN, androidx.media3.common.text.TextAnnotation.POSITION_BEFORE, androidx.media3.common.text.TextAnnotation.POSITION_AFTER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.RubySpan position">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextAnnotation.POSITION_UNKNOWN, androidx.media3.common.text.TextAnnotation.POSITION_BEFORE, androidx.media3.common.text.TextAnnotation.POSITION_AFTER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.TextAnnotation.Position">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextAnnotation.POSITION_UNKNOWN, androidx.media3.common.text.TextAnnotation.POSITION_BEFORE, androidx.media3.common.text.TextAnnotation.POSITION_AFTER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.TextEmphasisSpan TextEmphasisSpan(int, int, int) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_NONE, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_CIRCLE, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_DOT, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_SESAME}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.TextEmphasisSpan TextEmphasisSpan(int, int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextEmphasisSpan.MARK_FILL_UNKNOWN, androidx.media3.common.text.TextEmphasisSpan.MARK_FILL_FILLED, androidx.media3.common.text.TextEmphasisSpan.MARK_FILL_OPEN}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.TextEmphasisSpan TextEmphasisSpan(int, int, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextAnnotation.POSITION_UNKNOWN, androidx.media3.common.text.TextAnnotation.POSITION_BEFORE, androidx.media3.common.text.TextAnnotation.POSITION_AFTER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.TextEmphasisSpan markFill">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextEmphasisSpan.MARK_FILL_UNKNOWN, androidx.media3.common.text.TextEmphasisSpan.MARK_FILL_FILLED, androidx.media3.common.text.TextEmphasisSpan.MARK_FILL_OPEN}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.TextEmphasisSpan markShape">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_NONE, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_CIRCLE, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_DOT, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_SESAME}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.TextEmphasisSpan position">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextAnnotation.POSITION_UNKNOWN, androidx.media3.common.text.TextAnnotation.POSITION_BEFORE, androidx.media3.common.text.TextAnnotation.POSITION_AFTER}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.TextEmphasisSpan.MarkFill">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextEmphasisSpan.MARK_FILL_UNKNOWN, androidx.media3.common.text.TextEmphasisSpan.MARK_FILL_FILLED, androidx.media3.common.text.TextEmphasisSpan.MARK_FILL_OPEN}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.common.text.TextEmphasisSpan.MarkShape">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_NONE, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_CIRCLE, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_DOT, androidx.media3.common.text.TextEmphasisSpan.MARK_SHAPE_SESAME}" />
+    </annotation>
+  </item>
+</root>
+

@@ -37,6 +37,7 @@ data class ExpressMedia(
         if (!anime) return listOf(title)
         // The proof-bound mapping snapshot must also recognize every searched alias. Reading
         // a separate mutable metadata alias list here can find a file the resolver must reject.
+        nativeAnimeEpisode?.let { return it.queryTitles() }
         nativeAnimeIdentity?.let { return it.queryTitles() }
         val canonical = title.trim()
         return (listOf(canonical) + titleAliases).map(String::trim)
@@ -97,7 +98,7 @@ class ExpressMetadataResolver @Inject constructor(
                 source.malId, source.title, source.alternativeTitles) else proof?.titleIdentity
             if (identity == null) throw ExpressException("A confirmed anime title identity is unavailable.")
             return ExpressMedia(if (isMovie) "movie" else "series", source.title,
-                source.imdbId, source.year, proof?.tvdbSeason, proof?.tvdbEpisode, absoluteNumber = absolute, anime = true,
+                proof?.verifiedParentImdbId, source.year, proof?.tvdbSeason, proof?.tvdbEpisode, absoluteNumber = absolute, anime = true,
                 titleAliases = source.alternativeTitles, nativeAnimeIdentity = identity,
                 nativeAnimeEpisode = proof)
         }
@@ -163,5 +164,5 @@ internal fun expressEncode(value: String): String = URLEncoder.encode(value, "UT
 internal fun ExpressMedia.acceptsNativeAnimeRow(row: ExpressRow): Boolean {
     val identity = nativeAnimeIdentity ?: return true // Non-MAL metadata paths retain prior behavior.
     val names = listOfNotNull(row.title, row.filename).filter { it.isNotBlank() }
-    return names.isNotEmpty() && names.all(identity::matchesRelease)
+    return names.isNotEmpty() && names.all { nativeAnimeEpisode?.acceptsReleaseTitle(it) ?: identity.matchesRelease(it) }
 }

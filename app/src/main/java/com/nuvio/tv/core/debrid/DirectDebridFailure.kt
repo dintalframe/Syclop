@@ -8,7 +8,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 enum class DirectDebridFailureReason {
-    PROCESSING, AUTH_EXPIRED, RATE_LIMITED, TIMED_OUT, WRONG_EPISODE, NETWORK_FAILURE, UNAVAILABLE
+    PROCESSING, AUTH_EXPIRED, RATE_LIMITED, TIMED_OUT, WRONG_EPISODE, NETWORK_FAILURE, SOURCE_REJECTED, UNAVAILABLE
 }
 
 /** Fixed classifications only: no remote message, URL, filename or credential is retained. */
@@ -24,6 +24,7 @@ data class DirectDebridFailure(
         DirectDebridFailureReason.TIMED_OUT -> R.string.syclop_resolver_timed_out
         DirectDebridFailureReason.WRONG_EPISODE -> R.string.syclop_resolver_wrong_episode
         DirectDebridFailureReason.NETWORK_FAILURE -> R.string.syclop_resolver_network_failure
+        DirectDebridFailureReason.SOURCE_REJECTED -> R.string.syclop_resolver_source_rejected
         DirectDebridFailureReason.UNAVAILABLE -> R.string.syclop_resolver_unavailable
     }
 }
@@ -36,6 +37,7 @@ internal fun directDebridHttpFailure(status: Int, providerId: String?, retryAfte
     DirectDebridFailure(when (status) {
         401, 403 -> DirectDebridFailureReason.AUTH_EXPIRED
         429 -> DirectDebridFailureReason.RATE_LIMITED
+        451 -> DirectDebridFailureReason.SOURCE_REJECTED
         in 500..599 -> DirectDebridFailureReason.NETWORK_FAILURE
         else -> DirectDebridFailureReason.UNAVAILABLE
     }, providerId, if (status == 429) retryAfterSeconds ?: parseDebridRetryAfter(retryAfter) ?: 60L else null))

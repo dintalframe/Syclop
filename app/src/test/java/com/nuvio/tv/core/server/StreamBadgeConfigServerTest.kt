@@ -9,12 +9,35 @@ import com.nuvio.tv.core.streams.StreamBadgeSettings
 import fi.iki.elonen.NanoHTTPD
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
 class StreamBadgeConfigServerTest {
+    @Test
+    fun `direct settings reject unsafe regex without exposing its contents`() {
+        var saved: StreamBadgeSettings? = null
+        val server = StreamBadgeConfigServer(
+            currentSettingsProvider = { StreamBadgeSettings() },
+            onSettingsChanged = { saved = it }
+        )
+        val rules = StreamBadgeRules(imports = listOf(StreamBadgeImport(
+            sourceUrl = "https://example.com/badges.json",
+            filters = listOf(StreamBadgeFilter(name = "Fixture", pattern = "(private-pattern-fixture)\\1"))
+        )))
+        val body = Gson().toJson(mapOf("streamBadgeRules" to rules))
+        server.serve(FakePostSession(body, authorization(server))).use { response ->
+            assertEquals(NanoHTTPD.Response.Status.BAD_REQUEST, response.status)
+            val error = response.data.bufferedReader().readText()
+            assertTrue(error.contains("unsupported syntax"))
+            assertFalse(error.contains("private-pattern-fixture"))
+        }
+        assertNull(saved)
+    }
+
     @Test
     fun `saves imported badge rules from pasted fusion json`() {
         var settings = StreamBadgeSettings()
@@ -40,7 +63,7 @@ class StreamBadgeConfigServerTest {
             )
         )
 
-        val response = server.serve(FakePostSession(body, "/api/badges/import"))
+        val response = server.serve(FakePostSession(body, authorization(server), "/api/badges/import"))
 
         assertEquals(NanoHTTPD.Response.Status.OK, response.status)
         assertEquals(1, settings.rules.imports.size)
@@ -71,7 +94,7 @@ class StreamBadgeConfigServerTest {
             )
         )
 
-        val response = server.serve(FakePostSession(body))
+        val response = server.serve(FakePostSession(body, authorization(server)))
 
         assertEquals(NanoHTTPD.Response.Status.OK, response.status)
         assertEquals(1, saved?.rules?.imports?.size)
@@ -89,7 +112,7 @@ class StreamBadgeConfigServerTest {
         )
         val body = Gson().toJson(mapOf("showFileSizeBadges" to false))
 
-        val response = server.serve(FakePostSession(body))
+        val response = server.serve(FakePostSession(body, authorization(server)))
 
         assertEquals(NanoHTTPD.Response.Status.OK, response.status)
         assertEquals(true, saved?.showInPlayer)
@@ -120,7 +143,7 @@ class StreamBadgeConfigServerTest {
         )
         val body = Gson().toJson(mapOf("streamBadgeRules" to rules))
 
-        val response = server.serve(FakePostSession(body))
+        val response = server.serve(FakePostSession(body, authorization(server)))
 
         assertEquals(NanoHTTPD.Response.Status.OK, response.status)
         assertEquals(listOf(true, false), saved?.rules?.imports?.map { it.isActive })
@@ -151,7 +174,7 @@ class StreamBadgeConfigServerTest {
             onSettingsChanged = {}
         )
 
-        val response = server.serve(FakeGetSession())
+        val response = server.serve(FakeGetSession(authorization(server)))
         val body = response.data.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
 
         assertEquals(NanoHTTPD.Response.Status.OK, response.status)
@@ -160,8 +183,12 @@ class StreamBadgeConfigServerTest {
         assertTrue(body.contains("\"badgePlacement\":\"TOP\""))
     }
 
+    private fun authorization(server: StreamBadgeConfigServer): String =
+        "Bearer " + server.pairingUrl("192.0.2.1").substringAfter('#')
+
     private class FakePostSession(
         body: String,
+        private val authorization: String,
         private val uri: String = "/api/settings"
     ) : NanoHTTPD.IHTTPSession {
         private val bytes = body.toByteArray(StandardCharsets.UTF_8)
@@ -169,6 +196,7 @@ class StreamBadgeConfigServerTest {
         override fun execute() = Unit
         override fun getCookies(): NanoHTTPD.CookieHandler? = null
         override fun getHeaders(): Map<String, String> = mapOf(
+            "authorization" to authorization,
             "content-length" to bytes.size.toString(),
             "content-type" to "application/json; charset=utf-8"
         )
@@ -188,11 +216,12 @@ class StreamBadgeConfigServerTest {
     }
 
     private class FakeGetSession(
+        private val authorization: String,
         private val uri: String = "/api/settings"
     ) : NanoHTTPD.IHTTPSession {
         override fun execute() = Unit
         override fun getCookies(): NanoHTTPD.CookieHandler? = null
-        override fun getHeaders(): Map<String, String> = emptyMap()
+        override fun getHeaders(): Map<String, String> = mapOf("authorization" to authorization)
         override fun getInputStream(): InputStream = ByteArrayInputStream(ByteArray(0))
         override fun getMethod(): NanoHTTPD.Method = NanoHTTPD.Method.GET
         @Deprecated("Deprecated in NanoHTTPD")

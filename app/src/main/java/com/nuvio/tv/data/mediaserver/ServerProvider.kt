@@ -16,7 +16,7 @@ interface ServerProvider {
     val capabilities: Set<ServerCapability>
     val minimumVersion: String
 
-    suspend fun signIn(address: String, username: String, password: String): ServerSignIn = unsupported()
+    suspend fun signIn(address: String, username: String, password: String, localHttpApproved: Boolean = false): ServerSignIn = unsupported()
 
     suspend fun libraries(session: ServerSession): List<ServerLibrary>
 

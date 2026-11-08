@@ -154,11 +154,7 @@ class HomeBrowseViewModel @Inject constructor(
         if (!selectedOrigin()) return null
         val planned = installed.filter { HomeBrowseRules.allowed(it, enabledUrls) }.flatMap { addon -> addon.catalogs.mapNotNull {
             HomeBrowseRules.request(selected, addon, it)
-        } }.distinctBy { it.key }.sortedBy { request ->
-            if (selected == HomeBrowseSection.KIDS &&
-                request.addon.id == com.nuvio.tv.data.catalog.RatedKidsCatalog.ADDON_ID &&
-                com.nuvio.tv.data.catalog.RatedKidsCatalog.isNativeAddon(request.addon.baseUrl)) 0 else 1
-        }.take(MAX_CATALOGS)
+        } }.distinctBy { it.key }.sortedBy { HomeBrowseRules.discoveryPriority(selected, it) }.take(MAX_CATALOGS)
         val identity = listOf(profile.toString(), selection.toString(), selected.name) + planned.map { request ->
             // Include real catalog/query semantics; a same-version descriptor change must still
             // invalidate the request. Hash private source identity rather than retaining its text.

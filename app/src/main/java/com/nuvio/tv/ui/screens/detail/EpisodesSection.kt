@@ -650,6 +650,7 @@ private fun EpisodeCard(
     val context = LocalContext.current
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
+    val locale = configuration.locales[0]
     val formattedDate = remember(episode.released) {
         episode.released?.let(::formatEpisodeCardDate).orEmpty()
     }
@@ -803,8 +804,8 @@ private fun EpisodeCard(
     }
     val strEpisode = stringResource(R.string.episodes_episode)
     val strUnavailable = stringResource(R.string.episodes_unavailable)
-    val episodeCode = remember(episode.episode, strEpisode) {
-        val prefix = strEpisode.uppercase(Locale.getDefault())
+    val episodeCode = remember(episode.episode, strEpisode, locale) {
+        val prefix = strEpisode.uppercase(locale)
         episode.episode?.let { number -> "$prefix $number" } ?: prefix
     }
 
@@ -1094,7 +1095,7 @@ private fun EpisodeCard(
                         )
                 ) {
                     Text(
-                        text = strUnavailable.uppercase(Locale.getDefault()),
+                        text = strUnavailable.uppercase(locale),
                         style = episodeBadgeStyle,
                         maxLines = 1
                     )

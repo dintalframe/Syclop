@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="syclop_app_controls">Syclop controls</string>
     <string name="syclop_restart_app">Restart Syclop</string>
-    <string name="syclop_restart_app_subtitle">Reopen Home and refresh startup initialization.</string>
+    <string name="syclop_restart_app_subtitle">Restart the app and return to Home.</string>
     <string name="syclop_restart_app_confirm_title">Restart Syclop?</string>
     <string name="syclop_restart_app_confirm_description">Syclop will reopen Home. Your accounts, settings, library and viewing progress will be kept.</string>
     <string name="syclop_restart_app_failed">Syclop could not restart. Please close and reopen the app.</string>
+    <string name="syclop_shutdown_app">Close Syclop</string>
+    <string name="syclop_shutdown_app_subtitle">Close Syclop and return to your home screen.</string>
+    <string name="syclop_shutdown_app_confirm_title">Close Syclop?</string>
+    <string name="syclop_shutdown_app_confirm_description">Syclop will close. Your accounts, settings, library and viewing progress will be kept.</string>
+    <string name="syclop_shutdown_app_failed">Syclop could not close. Please try again.</string>
 </resources>

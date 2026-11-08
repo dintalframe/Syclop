@@ -679,7 +679,12 @@ internal fun PlayerRuntimeController.rememberAddonSubtitleSelection(subtitle: Su
 }
 
 private fun PlayerRuntimeController.currentTrackPreferenceForPersistence(): PlayerRuntimeController.TrackPreference {
-    return rememberedTrackPreference ?: persistedTrackPreference ?: PlayerRuntimeController.TrackPreference()
+    // Track discovery can restore audio before subtitles arrive (or vice versa).
+    // Preserve the still-pending field alongside the field already restored.
+    return PlayerRuntimeController.TrackPreference(
+        audio = rememberedTrackPreference?.audio ?: persistedTrackPreference?.audio,
+        subtitle = rememberedTrackPreference?.subtitle ?: persistedTrackPreference?.subtitle
+    )
 }
 
 internal fun PlayerRuntimeController.persistTrackPreference() {

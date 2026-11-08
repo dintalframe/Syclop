@@ -23,6 +23,7 @@ import com.nuvio.tv.domain.repository.WatchProgressRepository
 import io.mockk.every
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 
@@ -51,7 +52,9 @@ internal class LibraryViewModelTestFixture(sorter: TrackingLibrarySorter? = null
         every { listSorter } returns sorter
     }
     val viewModel = LibraryViewModel(
-        libraryRepository = repository, cloudLibraryRepository = mockk(relaxed = true), cloudPlaybackSessionStore = mockk(),
+        libraryRepository = repository, cloudLibraryRepository = mockk(relaxed = true) {
+            every { completedDeletions } returns MutableSharedFlow()
+        }, cloudPlaybackSessionStore = mockk(),
         externalPlaybackTracker = mockk(), playerSettingsDataStore = mockk(), metaRepository = mockk(),
         debridSettingsDataStore = mockk<DebridSettingsDataStore> { every { settings } returns flowOf(DebridSettings(cloudLibraryEnabled = false)) },
         layoutPreferenceDataStore = mockk<LayoutPreferenceDataStore> {

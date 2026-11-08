@@ -5,6 +5,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.nuvio.tv.R
@@ -149,6 +152,7 @@ internal fun LayoutStreamsSection(
     onShowFileSizeBadgesChange: (Boolean) -> Unit,
     onShowAddonLogoChange: (Boolean) -> Unit,
     onBadgePlacementSelected: (StreamBadgePlacement) -> Unit,
+    configureBadgesFocusRequester: FocusRequester,
     onConfigureBadges: () -> Unit,
     onShowInPlayerChange: (Boolean) -> Unit,
     onPlayerBadgeSourceSelected: (String) -> Unit
@@ -172,7 +176,8 @@ internal fun LayoutStreamsSection(
     SettingsActionRow(
         title = stringResource(R.string.settings_stream_badge_urls_title),
         subtitle = streamBadgeRulesPreview(streamBadgeUiState),
-        onClick = onConfigureBadges
+        onClick = onConfigureBadges,
+        modifier = Modifier.focusRequester(configureBadgesFocusRequester)
     )
     SettingsToggleRow(
         title = stringResource(R.string.settings_stream_badges_in_player_title),

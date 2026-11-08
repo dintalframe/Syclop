@@ -3,6 +3,8 @@ package com.nuvio.tv.ui.screens.player
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
+import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.flow.update
 
 data class PlayerMediaInfo(
     val videoCodec: String? = null,
@@ -11,6 +13,7 @@ data class PlayerMediaInfo(
     val audioCodec: String? = null,
     val audioProfile: String? = null,
     val audioChannels: Int? = null,
+    val audioLanguage: String? = null,
     val hdr: List<String> = emptyList(),
     val bitDepth: Int? = null
 )
@@ -19,8 +22,27 @@ internal fun PlayerRuntimeController.playerMediaInfo(): PlayerMediaInfo =
     if (isUsingMpvEngine()) {
         mpvView?.readPlayerMediaInfo() ?: PlayerMediaInfo()
     } else {
-        exoMediaInfo(_exoPlayer?.videoFormat, _exoPlayer?.audioFormat)
+        _exoPlayer?.takeIf { it.currentMediaItem?.localConfiguration?.uri?.toString() == currentStreamUrl }
+            ?.let { exoMediaInfo(it.videoFormat, it.audioFormat) } ?: PlayerMediaInfo()
     }
+
+/** Analytics callbacks run on the player's application thread. Ignore retired players/sources. */
+internal fun PlayerRuntimeController.publishBadgeMediaInfo(
+    player: ExoPlayer,
+    video: Format? = player.videoFormat,
+    audio: Format? = player.audioFormat
+) {
+    if (_exoPlayer !== player || isReleasingPlayer || isUsingMpvEngine()) return
+    val source = currentStreamUrl
+    if (player.currentMediaItem?.localConfiguration?.uri?.toString() != source) return
+    val info = exoMediaInfo(
+        video.takeIf { player.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO) },
+        audio.takeIf { player.currentTracks.isTypeSelected(C.TRACK_TYPE_AUDIO) }
+    )
+    _uiState.update { it.copy(badgeMediaSnapshot = PlayerBadgeMediaSnapshot(
+        info, streamInfoMediaOriginKey(source), currentInternalPlayerEngine
+    )) }
+}
 
 internal fun mpvMediaInfo(property: (String) -> String?): PlayerMediaInfo =
     PlayerMediaInfo(
@@ -30,6 +52,7 @@ internal fun mpvMediaInfo(property: (String) -> String?): PlayerMediaInfo =
         audioCodec = property("current-tracks/audio/codec")?.let(::mpvCodecLabel),
         audioProfile = property("current-tracks/audio/codec-profile"),
         audioChannels = property("audio-params/channel-count")?.toIntOrNull()?.takeIf { it > 0 },
+        audioLanguage = property("current-tracks/audio/lang"),
         hdr = buildList {
             if (!property("current-tracks/video/dolby-vision-profile").isNullOrBlank()) add("DV")
             when (property("video-params/gamma")) {
@@ -40,13 +63,14 @@ internal fun mpvMediaInfo(property: (String) -> String?): PlayerMediaInfo =
         bitDepth = property("video-params/pixelformat")?.let(::mpvBitDepth)
     )
 
-private fun exoMediaInfo(video: Format?, audio: Format?): PlayerMediaInfo =
+internal fun exoMediaInfo(video: Format?, audio: Format?): PlayerMediaInfo =
     PlayerMediaInfo(
         videoCodec = CustomDefaultTrackNameProvider.formatNameFromMime(video?.sampleMimeType),
         videoWidth = video?.width?.takeIf { it > 0 },
         videoHeight = video?.height?.takeIf { it > 0 },
         audioCodec = CustomDefaultTrackNameProvider.formatNameFromMime(audio?.sampleMimeType),
         audioChannels = audio?.channelCount?.takeIf { it > 0 },
+        audioLanguage = audio?.language,
         hdr = video?.hdrFormats().orEmpty(),
         bitDepth = video?.colorInfo?.lumaBitdepth?.takeIf { it > 0 }
     )

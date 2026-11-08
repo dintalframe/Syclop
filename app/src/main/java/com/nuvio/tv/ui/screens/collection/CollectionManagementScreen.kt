@@ -199,17 +199,20 @@ fun CollectionManagementScreen(
                             try {
                                 val json = viewModel.getExportJson()
                                 withContext(Dispatchers.IO) {
+                                    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+                                        throw IllegalStateException("Collection export requires Android 10")
+                                    }
                                     val resolver = context.contentResolver
                                     // Delete existing file first
                                     val existingUri = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
                                     resolver.delete(
                                         existingUri,
                                         "${android.provider.MediaStore.Downloads.DISPLAY_NAME} = ?",
-                                        arrayOf("nuvio-collections.json")
+                                        arrayOf(COLLECTIONS_EXPORT_FILENAME)
                                     )
                                     // Write new file
                                     val values = android.content.ContentValues().apply {
-                                        put(android.provider.MediaStore.Downloads.DISPLAY_NAME, "nuvio-collections.json")
+                                        put(android.provider.MediaStore.Downloads.DISPLAY_NAME, COLLECTIONS_EXPORT_FILENAME)
                                         put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/json")
                                     }
                                     val uri = resolver.insert(existingUri, values)
@@ -268,7 +271,7 @@ fun CollectionManagementScreen(
                     items = uiState.collections,
                     key = { _, item -> item.id }
                 ) { index, collection ->
-                    val editFocusRequester = itemFocusRequesters.getOrPut(collection.id) { FocusRequester() }
+                    val editFocusRequester = itemFocusRequesters.getOrPut(collection.id) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
                     CollectionListItem(
                         collection = collection,
                         isFirst = index == 0,

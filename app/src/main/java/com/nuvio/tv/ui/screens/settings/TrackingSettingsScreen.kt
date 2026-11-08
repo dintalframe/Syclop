@@ -70,7 +70,8 @@ fun TrackingSettingsContent(
     simklViewModel: SimklSettingsViewModel = hiltViewModel(),
     mdbListViewModel: MdbListTrackerViewModel = hiltViewModel(),
     trackingViewModel: TrackingSettingsViewModel = hiltViewModel(),
-    initialFocusRequester: FocusRequester? = null
+    initialFocusRequester: FocusRequester? = null,
+    showAdvancedOptions: Boolean = true
 ) {
     val traktState by traktViewModel.uiState.collectAsStateWithLifecycle()
     val simklState by simklViewModel.uiState.collectAsStateWithLifecycle()
@@ -223,7 +224,8 @@ fun TrackingSettingsContent(
         onMdbListLibraryListsClick = {
             mdbListViewModel.onLibraryListsOpened()
             showMdbListLibraryListsDialog = true
-        }
+        },
+        showAdvancedOptions = showAdvancedOptions
     )
 
     MalSettingsDialogHost()
@@ -495,22 +497,23 @@ internal fun TrackingSettingsOverview(
     onMoreLikeThisClick: () -> Unit,
     onAnimeIdClick: () -> Unit,
     mdbListLibraryLists: MdbListLibraryListsUiState = MdbListLibraryListsUiState(),
-    onMdbListLibraryListsClick: () -> Unit = {}
+    onMdbListLibraryListsClick: () -> Unit = {},
+    showAdvancedOptions: Boolean = true
 ) {
     val listState = rememberLazyListState()
     val traktPresentation = traktConnectionPresentation(traktState)
     val simklPresentation = simklConnectionPresentation(simklState)
     val mdbListPresentation = mdbListConnectionPresentation(mdbListState)
     val traktConnected = traktState.mode == TraktConnectionMode.CONNECTED
-    val traktProgressActive = trackingState.watchProgressSource == WatchProgressSource.TRAKT
+    val traktProgressActive = trackingState.effectiveWatchProgressSource == WatchProgressSource.TRAKT
 
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         SettingsDetailHeader(
-            title = stringResource(R.string.settings_tracking_title),
-            subtitle = stringResource(R.string.settings_tracking_description)
+            title = stringResource(if (showAdvancedOptions) R.string.settings_tracking_title else R.string.settings_menu_connected_accounts),
+            subtitle = stringResource(if (showAdvancedOptions) R.string.settings_tracking_description else R.string.settings_menu_connected_accounts_description)
         )
         Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
@@ -565,7 +568,7 @@ internal fun TrackingSettingsOverview(
                         MalSettingsSection()
                     }
                 }
-                item(key = "tracking_sources") {
+                if (showAdvancedOptions) item(key = "tracking_sources") {
                     SettingsGroupCard(
                         title = stringResource(R.string.tracking_sources_title),
                         subtitle = stringResource(R.string.tracking_sources_subtitle)
@@ -573,7 +576,10 @@ internal fun TrackingSettingsOverview(
                         SettingsActionRow(
                             title = stringResource(R.string.trakt_library_source_title),
                             subtitle = stringResource(R.string.trakt_library_source_subtitle),
-                            value = librarySourceLabel(trackingState.librarySourceMode),
+                            value = if (trackingState.librarySourceMode == LibrarySourceMode.AUTO)
+                                stringResource(R.string.tracking_source_automatic_current,
+                                    librarySourceLabel(trackingState.effectiveLibrarySourceMode))
+                            else librarySourceLabel(trackingState.librarySourceMode),
                             enabled = trackingState.isReady,
                             onClick = onLibrarySourceClick,
                             modifier = Modifier
@@ -583,7 +589,10 @@ internal fun TrackingSettingsOverview(
                         SettingsActionRow(
                             title = stringResource(R.string.trakt_watch_progress_title),
                             subtitle = stringResource(R.string.trakt_watch_progress_subtitle),
-                            value = watchProgressSourceLabel(trackingState.watchProgressSource),
+                            value = if (trackingState.watchProgressSource == WatchProgressSource.AUTO)
+                                stringResource(R.string.tracking_source_automatic_current,
+                                    watchProgressSourceLabel(trackingState.effectiveWatchProgressSource))
+                            else watchProgressSourceLabel(trackingState.watchProgressSource),
                             enabled = trackingState.isReady,
                             onClick = onWatchProgressClick,
                             modifier = Modifier
@@ -604,7 +613,7 @@ internal fun TrackingSettingsOverview(
                         }
                     }
                 }
-                if (traktConnected) {
+                if (showAdvancedOptions && traktConnected) {
                     item(key = "tracking_trakt_features") {
                         SettingsGroupCard(
                             title = stringResource(R.string.tracking_trakt_features_title),
@@ -637,7 +646,7 @@ internal fun TrackingSettingsOverview(
                         }
                     }
                 }
-                if (simklState.mode == SimklConnectionMode.CONNECTED) {
+                if (showAdvancedOptions && simklState.mode == SimklConnectionMode.CONNECTED) {
                     item(key = "tracking_simkl_features") {
                         SettingsGroupCard(
                             title = stringResource(R.string.tracking_simkl_features_title),
@@ -653,7 +662,7 @@ internal fun TrackingSettingsOverview(
                         }
                     }
                 }
-                if (mdbListState.isConnected) {
+                if (showAdvancedOptions && mdbListState.isConnected) {
                     item(key = "tracking_mdblist_features") {
                         SettingsGroupCard(
                             title = stringResource(R.string.tracking_mdblist_features_title),
@@ -763,6 +772,7 @@ private fun mdbListConnectionPresentation(state: MdbListTrackerUiState): Trackin
 
 @Composable
 private fun watchProgressSourceLabel(source: WatchProgressSource): String = when (source) {
+    WatchProgressSource.AUTO -> stringResource(R.string.tracking_source_automatic)
     WatchProgressSource.TRAKT -> stringResource(R.string.trakt_name)
     WatchProgressSource.SIMKL -> stringResource(R.string.simkl_name)
     WatchProgressSource.MDBLIST -> stringResource(R.string.mdblist_name)
@@ -771,6 +781,7 @@ private fun watchProgressSourceLabel(source: WatchProgressSource): String = when
 
 @Composable
 private fun librarySourceLabel(mode: LibrarySourceMode): String = when (mode) {
+    LibrarySourceMode.AUTO -> stringResource(R.string.tracking_source_automatic)
     LibrarySourceMode.TRAKT -> stringResource(R.string.trakt_name)
     LibrarySourceMode.SIMKL -> stringResource(R.string.simkl_name)
     LibrarySourceMode.MDBLIST -> stringResource(R.string.mdblist_name)

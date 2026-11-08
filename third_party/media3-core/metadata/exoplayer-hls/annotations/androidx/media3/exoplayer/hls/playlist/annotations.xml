@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist HlsMediaPlaylist(int, java.lang.String, java.util.List&lt;java.lang.String&gt;, long, boolean, long, boolean, int, long, int, long, long, boolean, boolean, boolean, androidx.media3.common.DrmInitData, java.util.List&lt;androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Segment&gt;, java.util.List&lt;androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Part&gt;, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ServerControl, java.util.Map&lt;android.net.Uri,androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.RenditionReport&gt;, java.util.List&lt;androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial&gt;) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.PLAYLIST_TYPE_UNKNOWN, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.PLAYLIST_TYPE_VOD, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.PLAYLIST_TYPE_EVENT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist playlistType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.PLAYLIST_TYPE_UNKNOWN, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.PLAYLIST_TYPE_VOD, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.PLAYLIST_TYPE_EVENT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ClientDefinedAttribute ClientDefinedAttribute(java.lang.String, java.lang.String, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ClientDefinedAttribute.TYPE_DOUBLE, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ClientDefinedAttribute.TYPE_HEX_TEXT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ClientDefinedAttribute.TYPE_TEXT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ClientDefinedAttribute.Type">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ClientDefinedAttribute.TYPE_DOUBLE, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ClientDefinedAttribute.TYPE_HEX_TEXT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ClientDefinedAttribute.TYPE_TEXT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial Interstitial(java.lang.String, android.net.Uri, android.net.Uri, long, long, long, long, java.util.List&lt;java.lang.String&gt;, boolean, long, long, java.util.List&lt;java.lang.String&gt;, java.util.List&lt;java.lang.String&gt;, java.util.List&lt;androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ClientDefinedAttribute&gt;, boolean, java.lang.String, java.lang.String) 15">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_OCCUPIES_POINT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_OCCUPIES_RANGE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial Interstitial(java.lang.String, android.net.Uri, android.net.Uri, long, long, long, long, java.util.List&lt;java.lang.String&gt;, boolean, long, long, java.util.List&lt;java.lang.String&gt;, java.util.List&lt;java.lang.String&gt;, java.util.List&lt;androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.ClientDefinedAttribute&gt;, boolean, java.lang.String, java.lang.String) 16">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_STYLE_HIGHLIGHT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_STYLE_PRIMARY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial timelineOccupies">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_OCCUPIES_POINT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_OCCUPIES_RANGE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial timelineStyle">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_STYLE_HIGHLIGHT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_STYLE_PRIMARY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.Builder androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.Builder setTimelineOccupies(java.lang.String) 0">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_OCCUPIES_POINT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_OCCUPIES_RANGE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.Builder androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.Builder setTimelineStyle(java.lang.String) 0">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_STYLE_HIGHLIGHT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_STYLE_PRIMARY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.Builder timelineOccupies">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_OCCUPIES_POINT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_OCCUPIES_RANGE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.Builder timelineStyle">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_STYLE_HIGHLIGHT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_STYLE_PRIMARY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.CueTriggerType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.CUE_TRIGGER_PRE, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.CUE_TRIGGER_POST, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.CUE_TRIGGER_ONCE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.NavigationRestriction">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.NAVIGATION_RESTRICTION_SKIP, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.NAVIGATION_RESTRICTION_JUMP}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.SnapType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.SNAP_TYPE_IN, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.SNAP_TYPE_OUT}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TimelineOccupiesType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_OCCUPIES_POINT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_OCCUPIES_RANGE}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TimelineStyleType">
+    <annotation name="androidx.annotation.StringDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_STYLE_HIGHLIGHT, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.Interstitial.TIMELINE_STYLE_PRIMARY}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.PlaylistType">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.PLAYLIST_TYPE_UNKNOWN, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.PLAYLIST_TYPE_VOD, androidx.media3.exoplayer.hls.playlist.HlsMediaPlaylist.PLAYLIST_TYPE_EVENT}" />
+    </annotation>
+  </item>
+</root>
+

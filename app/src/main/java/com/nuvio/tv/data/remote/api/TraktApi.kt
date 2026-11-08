@@ -145,6 +145,14 @@ interface TraktApi {
         @Body body: TraktHistoryAddRequestDto
     ): Response<TraktHistoryAddResponseDto>
 
+    @GET("sync/history")
+    suspend fun getRecentHistory(
+        @Header("Authorization") authorization: String,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 200,
+        @Query("extended") extended: String = "full,images"
+    ): Response<List<TraktHistoryItemDto>>
+
     @GET("sync/history/{type}/{id}")
     suspend fun getHistoryById(
         @Header("Authorization") authorization: String,

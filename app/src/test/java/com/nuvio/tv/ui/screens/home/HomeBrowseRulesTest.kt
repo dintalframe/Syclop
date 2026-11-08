@@ -148,6 +148,24 @@ class HomeBrowseRulesTest {
         assertNull(HomeBrowseRules.request(HomeBrowseSection.ANIME, simkl, descriptor))
         assertNotNull(HomeBrowseRules.request(HomeBrowseSection.ANIME, simkl, descriptor.copy(rawType = "anime", id = "anime-week")))
     }
+    @Test fun `native discovery skips feeds incapable of proving a category and preserves exact documentary topics`() {
+        val simkl = addon().copy(id = com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog.ADDON_ID,
+            baseUrl = com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog.BASE_URL)
+        val descriptor = CatalogDescriptor(ContentType.SERIES, id = "tv-week", name = "Trending")
+        assertNull(HomeBrowseRules.request(HomeBrowseSection.DOCUMENTARY, simkl, descriptor))
+        assertNull(HomeBrowseRules.request(HomeBrowseSection.KIDS, simkl, descriptor))
+        for (id in listOf("movies-genre-documentary", "tv-genre-documentary", "tv-genre-documentary-history")) {
+            assertNotNull(HomeBrowseRules.request(HomeBrowseSection.DOCUMENTARY, simkl, descriptor.copy(id = id)))
+        }
+        assertNull(HomeBrowseRules.request(HomeBrowseSection.DOCUMENTARY, simkl, descriptor.copy(id = "tv-genre-documentary-guessed")))
+        val kids = addon().copy(id = com.nuvio.tv.data.catalog.RatedKidsCatalog.ADDON_ID,
+            baseUrl = com.nuvio.tv.data.catalog.RatedKidsCatalog.BASE_URL)
+        assertNotNull(HomeBrowseRules.request(HomeBrowseSection.KIDS, kids, descriptor))
+        assertNull(HomeBrowseRules.request(HomeBrowseSection.MOVIES, kids, descriptor.copy(type = ContentType.MOVIE)))
+        val mal = addon().copy(id = MalCatalog.ADDON_ID, baseUrl = MalCatalog.BASE_URL)
+        assertNull(HomeBrowseRules.request(HomeBrowseSection.KIDS, mal, descriptor))
+        assertNull(HomeBrowseRules.request(HomeBrowseSection.DOCUMENTARY, mal, descriptor))
+    }
     private fun item(id: String, type: ContentType) = MetaPreview(id = id, type = type, name = "Fixture", poster = null,
         posterShape = PosterShape.POSTER, background = null, logo = null, description = null, releaseInfo = null,
         imdbRating = null, genres = emptyList())

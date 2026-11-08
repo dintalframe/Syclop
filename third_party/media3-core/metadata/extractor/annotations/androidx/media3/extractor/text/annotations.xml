@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.text.SubtitleExtractor state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.text.SubtitleExtractor.STATE_CREATED, androidx.media3.extractor.text.SubtitleExtractor.STATE_INITIALIZED, androidx.media3.extractor.text.SubtitleExtractor.STATE_EXTRACTING, androidx.media3.extractor.text.SubtitleExtractor.STATE_SEEKING, androidx.media3.extractor.text.SubtitleExtractor.STATE_FINISHED, androidx.media3.extractor.text.SubtitleExtractor.STATE_RELEASED}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.SubtitleTranscodingTrackOutput int sampleData(androidx.media3.common.DataReader, int, boolean, int) 3">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.TrackOutput.SAMPLE_DATA_PART_MAIN, androidx.media3.extractor.TrackOutput.SAMPLE_DATA_PART_ENCRYPTION, androidx.media3.extractor.TrackOutput.SAMPLE_DATA_PART_SUPPLEMENTAL}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.text.SubtitleTranscodingTrackOutput void sampleData(androidx.media3.common.util.ParsableByteArray, int, int) 2">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.TrackOutput.SAMPLE_DATA_PART_MAIN, androidx.media3.extractor.TrackOutput.SAMPLE_DATA_PART_ENCRYPTION, androidx.media3.extractor.TrackOutput.SAMPLE_DATA_PART_SUPPLEMENTAL}" />
+    </annotation>
+  </item>
+</root>
+

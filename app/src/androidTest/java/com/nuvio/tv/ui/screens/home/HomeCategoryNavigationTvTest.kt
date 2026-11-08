@@ -16,6 +16,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocusable
@@ -27,6 +29,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.nuvio.tv.domain.model.CatalogRow
 import com.nuvio.tv.LocalContentFocusRequester
+import com.nuvio.tv.R
 import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.PosterShape
@@ -48,6 +51,41 @@ import org.junit.runner.RunWith
 class HomeCategoryNavigationTvTest {
     @get:Rule val compose = createComposeRule()
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
+
+    @Test
+    fun emptyHomeSetupIsReachedAndActivatedWithRemote() {
+        val canManageSources = mutableStateOf(true)
+        val requests = AtomicInteger()
+        val openSources: () -> Unit = { requests.incrementAndGet() }
+        val label = instrumentation.targetContext.getString(R.string.essential_addon_setup_title)
+        compose.setContent {
+            NuvioTheme {
+                HomeBrowseScaffold(HomeBrowseSection.HOME, onSelect = {}) { tabFocus, _ ->
+                    HomeSourceEmptyState(
+                        message = "No content sources",
+                        tabFocus = tabFocus,
+                        onSetupSources = openSources.takeIf { canManageSources.value }
+                    )
+                }
+            }
+        }
+
+        focusHeader(HomeBrowseSection.HOME)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertCardFocused(label)
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        assertHeaderFocused(HomeBrowseSection.HOME)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertEquals(1, requests.get())
+
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        compose.runOnIdle { canManageSources.value = false }
+        compose.onNodeWithText(label).assertDoesNotExist()
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertHeaderFocused(HomeBrowseSection.HOME)
+        assertEquals(1, requests.get())
+    }
 
     @Test
     fun lateHomeBodyCannotStealHeaderAndDownRestoresRememberedCard() {
@@ -162,12 +200,15 @@ class HomeCategoryNavigationTvTest {
         focusHeader(HomeBrowseSection.MOVIES)
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         assertCardFocused("Movie fixture card")
+        compose.onNodeWithText(HomeBrowseSection.MOVIES.label).assertIsSelected()
         press(KeyEvent.KEYCODE_DPAD_UP)
         assertHeaderFocused(HomeBrowseSection.MOVIES)
 
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
         waitForRows(fixture, HomeBrowseSection.TV, listOf("tv"))
         assertHeaderFocused(HomeBrowseSection.TV)
+        compose.onNodeWithText(HomeBrowseSection.TV.label).assertIsSelected()
+        compose.onNodeWithText(HomeBrowseSection.MOVIES.label).assertIsNotSelected()
         compose.onNodeWithText("Movie fixture card").assertDoesNotExist()
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         assertCardFocused("TV fixture card")
@@ -211,6 +252,43 @@ class HomeCategoryNavigationTvTest {
         assertHeaderFocused(HomeBrowseSection.ANIME)
         compose.onAllNodes(hasText("Original request card") and isFocused()).assertCountEquals(0)
         capture("category-request-order-reset")
+        fixture.assertNoNavigationOrPlaybackRequests()
+    }
+
+    @Test
+    fun repeatedUpAndLeftDoNotActivateHomeUntilExplicitCenter() {
+        val fixture = Fixture(HomeBrowseSection.MOVIES, mapOf(
+            HomeBrowseSection.MOVIES to listOf(row("movies", card("movie", "Movie boundary fixture", type = ContentType.MOVIE))),
+            HomeBrowseSection.HOME to listOf(row("home", card("home", "Explicit Home fixture", type = ContentType.MOVIE)))
+        ))
+        show(fixture)
+        waitForRows(fixture, HomeBrowseSection.MOVIES, listOf("movies"))
+        focusHeader(HomeBrowseSection.MOVIES)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertCardFocused("Movie boundary fixture")
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        assertHeaderFocused(HomeBrowseSection.MOVIES)
+        repeat(3) { press(KeyEvent.KEYCODE_DPAD_UP) }
+        assertEquals(HomeBrowseSection.MOVIES, fixture.section.value)
+        press(KeyEvent.KEYCODE_DPAD_LEFT)
+        assertHeaderFocused(HomeBrowseSection.HOME)
+        repeat(3) {
+            press(KeyEvent.KEYCODE_DPAD_UP)
+            press(KeyEvent.KEYCODE_DPAD_LEFT)
+        }
+        assertHeaderFocused(HomeBrowseSection.HOME)
+        assertEquals(HomeBrowseSection.MOVIES, fixture.section.value)
+        compose.onNodeWithText(HomeBrowseSection.HOME.label).assertIsNotSelected()
+        compose.onNodeWithText(HomeBrowseSection.MOVIES.label).assertIsSelected()
+        compose.onNode(hasText("Movie boundary fixture") and isFocusable()).assertIsDisplayed()
+        compose.onNodeWithText("Explicit Home fixture").assertDoesNotExist()
+        capture("category-boundary-home-unselected")
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitForRows(fixture, HomeBrowseSection.HOME, listOf("home"))
+        assertEquals(HomeBrowseSection.HOME, fixture.section.value)
+        assertHeaderFocused(HomeBrowseSection.HOME)
+        compose.onNodeWithText(HomeBrowseSection.HOME.label).assertIsSelected()
+        compose.onNodeWithText(HomeBrowseSection.MOVIES.label).assertIsNotSelected()
         fixture.assertNoNavigationOrPlaybackRequests()
     }
 
@@ -316,7 +394,7 @@ class HomeCategoryNavigationTvTest {
     }
 
     private fun press(code: Int) {
-        assertTrue(code in setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT))
+        assertTrue(code in setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER))
         instrumentation.sendKeyDownUpSync(code)
         compose.waitForIdle()
     }

@@ -24,19 +24,21 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 
 /** Actual router, cache, operation guards, provider resolvers and intercepted HTTP contracts. */
 class NativeDebridFallbackIntegrationTest {
-    @Test fun `AD processing falls back to RD with separate auth and actual RD grant metadata cache`() = runBlocking {
+    @Test fun `neutral hash race keeps separate service auth and actual RD grant metadata cache`() = runBlocking {
         Harness().use { h ->
             h.adProcessing(); h.rdReady()
             val attempts = mutableListOf<String>()
             val result = withTimeout(10_000) { h.resolver.resolve(source(), null, null, onProviderAttempt = { attempts += it }) }
-            assertEquals(DirectDebridResolveResult.Success(FILE, "movie.mkv", 123L), result)
-            assertEquals(listOf("alldebrid", "realdebrid"), attempts)
+            assertEquals(DirectDebridResolveResult.Success(FILE, "movie.mkv", 123L, providerId = "realdebrid"), result)
+            assertEquals(setOf("alldebrid", "realdebrid"), attempts.toSet())
+            assertEquals(2, attempts.size)
             assertEquals("alldebrid", h.settings.value.activeResolverProviderId)
             assertTrue(h.resolver.isPlaybackAuthorized(FILE, 1))
             verify(exactly = 1) { h.grants.issue(FILE, "realdebrid", any()) }
             verify(exactly = 0) { h.grants.issue(FILE, "alldebrid", any()) }
             val cached = h.resolver.cachedPlayableStream(source(), null, null)!!
             assertEquals(FILE, cached.getStreamUrl())
+            assertEquals("realdebrid", cached.nativeResolvedProviderId)
             assertEquals(123L, cached.nativeFileMetadata?.selectedFileBytes)
             assertNull(cached.behaviorHints?.proxyHeaders)
             assertNull(cached.clientResolve)
@@ -99,11 +101,26 @@ class NativeDebridFallbackIntegrationTest {
         }
     }
 
+    @Test fun `explicit connected issuer resolves alone even when another service is preferred`() = runBlocking {
+        Harness().use { h ->
+            h.settings.value = h.settings.value.copy(preferredResolverProviderId = "realdebrid")
+            h.adProcessing()
+            val result = h.resolver.resolve(source().copy(url = null, clientResolve = explicit()), null, null)
+            assertEquals(DirectDebridResolveResult.Failure(DirectDebridFailure(
+                DirectDebridFailureReason.PROCESSING, "alldebrid")), result)
+            assertEquals(2, h.ad.requestCount)
+            assertEquals(0, h.rd.requestCount)
+            assertEquals("realdebrid", h.settings.value.activeResolverProviderId)
+        }
+    }
+
     @Test fun `ambiguous source file selection is terminal instead of silently choosing another service`() = runBlocking {
         Harness().use { h ->
             h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"ready":true}]}}"""))
             h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"files":[]}]}}"""))
-            assertEquals(wrongDebridFile("alldebrid"), withTimeout(10_000) { h.resolver.resolve(source(), null, null) })
+            assertEquals(wrongDebridFile("alldebrid"), withTimeout(10_000) {
+                h.resolver.resolve(source().copy(url = null, clientResolve = explicit()), null, null)
+            })
             assertEquals(0, h.rd.requestCount); assertFalse(h.resolver.isPlaybackAuthorized(FILE))
         }
     }
@@ -128,7 +145,7 @@ class NativeDebridFallbackIntegrationTest {
                     else { h.selection.addAndGet(2L); json("""{"status":"success","data":{"magnets":[{"id":42,"statusCode":1}]}}""") }
                 }
             }
-            try { withTimeout(10_000) { h.resolver.resolve(source(), null, null) }; fail("Expected cancellation") }
+            try { withTimeout(10_000) { h.resolver.resolve(source().copy(url = null, clientResolve = explicit()), null, null) }; fail("Expected cancellation") }
             catch (error: CancellationException) { assertFalse(error is TimeoutCancellationException) }
             assertEquals(0, h.rd.requestCount); assertFalse(h.resolver.isPlaybackAuthorized(FILE))
         }
@@ -175,7 +192,7 @@ class NativeDebridFallbackIntegrationTest {
                     return json("{}", 503)
                 }
             }
-            try { withTimeout(10_000) { h.resolver.resolve(source(), null, null) }; fail("Expected cancellation") }
+            try { withTimeout(10_000) { h.resolver.resolve(source().copy(url = null, clientResolve = explicit()), null, null) }; fail("Expected cancellation") }
             catch (error: CancellationException) { assertFalse(error is TimeoutCancellationException) }
             assertEquals(0, h.rd.requestCount)
             assertFalse(h.resolver.isPlaybackAuthorized(FILE))
@@ -187,7 +204,7 @@ class NativeDebridFallbackIntegrationTest {
             h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"ready":false}]}}"""))
             h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"statusCode":1}]}}""")
                 .setBodyDelay(250, java.util.concurrent.TimeUnit.MILLISECONDS))
-            val selection = launch { h.resolver.resolve(source(), null, null) }
+            val selection = launch { h.resolver.resolve(source(), null, null, allowFallback = false) }
             withTimeout(5000) { while (h.ad.requestCount < 2) delay(10) }
             selection.cancelAndJoin()
             delay(400)
@@ -203,7 +220,7 @@ class NativeDebridFallbackIntegrationTest {
             h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"files":[{"n":"movie.mkv","s":999,"l":"https://alldebrid.example.test/hosted"}]}]}}"""))
             h.ad.enqueue(json("""{"status":"success","data":{"link":"$rejected","filename":"movie.mkv","filesize":999}}"""))
             h.rdReady()
-            assertEquals(DirectDebridResolveResult.Success(FILE, "movie.mkv", 123L),
+            assertEquals(DirectDebridResolveResult.Success(FILE, "movie.mkv", 123L, providerId = "realdebrid"),
                 withTimeout(10_000) { h.resolver.resolve(source(), null, null) })
             assertFalse(h.resolver.isPlaybackAuthorized(rejected))
             verify(exactly = 0) { h.grants.issue(rejected, any(), any()) }
@@ -228,7 +245,7 @@ class NativeDebridFallbackIntegrationTest {
                         json("""{"status":"success","data":{"magnets":[{"id":42,"statusCode":1}]}}""")
                     }
             }
-            try { withTimeout(10_000) { h.resolver.resolve(source(), null, null) }; fail("Expected stale operation cancellation") }
+            try { withTimeout(10_000) { h.resolver.resolve(source().copy(url = null, clientResolve = explicit()), null, null) }; fail("Expected stale operation cancellation") }
             catch (error: CancellationException) { assertFalse(error is TimeoutCancellationException) }
             assertEquals(2, h.ad.requestCount); assertEquals(0, h.rd.requestCount)
         }
@@ -264,7 +281,7 @@ class NativeDebridFallbackIntegrationTest {
             ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"statusCode":1}]}}"""))
         }
         fun rdReady() {
-            rd.enqueue(json("""{"id":"synthetic-job"}"""))
+            rd.enqueue(json("""{"id":"synthetic-job"}""").setBodyDelay(500, java.util.concurrent.TimeUnit.MILLISECONDS))
             rd.enqueue(json("""{"status":"downloaded","files":[{"id":1,"path":"/movie.mkv","bytes":123,"selected":0}]}"""))
             rd.enqueue(MockResponse().setResponseCode(204))
             rd.enqueue(json("""{"status":"downloaded","files":[{"id":1,"path":"/movie.mkv","bytes":123,"selected":1}],"links":["https://real-debrid.example.test/selected"]}"""))

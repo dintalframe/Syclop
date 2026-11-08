@@ -112,7 +112,7 @@ internal fun StreamSourcesSidePanel(
     val firstStreamKey = streamKeys.firstOrNull()
     val streamFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     streamKeys.forEach { key ->
-        streamFocusRequesters.getOrPut(key) { FocusRequester() }
+        streamFocusRequesters.getOrPut(key) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
     }
     var firstCardHasFocus by remember(firstStreamKey) { mutableStateOf(false) }
 

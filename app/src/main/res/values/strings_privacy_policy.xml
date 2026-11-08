@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="privacy_policy_title">Privacy Policy</string>
+    <string name="privacy_policy_body">Last updated November 7, 2026
+        \n\nData on this device
+        \nYou can use Syclop without a Syclop account. Syclop stores app preferences, local profiles, search history, watch progress, library items, add-on settings, and service connection details on this device. Syclop uses the Android Keystore to protect credentials for connected accounts. Crash report uploads are disabled in this build.
+        \n\nConnected services and playback
+        \nWhen you use connected services, media servers, add-ons, or metadata and subtitle providers, Syclop sends the information needed for those requests. Depending on the feature, this may include credentials for the connected service, search terms, media identifiers, your network address, and playback activity. Tracking services can send watch history and progress back to Syclop. Each provider handles the information it receives under its own privacy policy. If you enable automatic debrid cleanup, Syclop can ask the debrid provider to delete eligible files after you finish watching.
+        \n\nUpdates and setup on your network
+        \nSyclop can check GitHub for release information automatically or when you check manually. If you choose to update, Syclop downloads the update from the release host. Some setup tools let you connect from a browser on the same local network while the tool is open. Use those tools on a network you trust.
+        \n\nBackups and your choices
+        \nIf you export a backup, Syclop writes a local file that can include profiles, settings, library items, and watch progress. The backup file is unencrypted. Store it somewhere you trust. You can disconnect services in Settings, revoke access with the provider where available, or clear Syclop storage in Android Settings to remove local app data. Manage exported files and information held by providers separately.
+        \n\nContact
+        \nFor privacy questions, contact the Syclop maintainer through the dintalframe/Syclop project on GitHub.</string>
+</resources>

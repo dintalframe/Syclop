@@ -5,6 +5,8 @@ import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.tracking.TrackingProgressProviderRegistry
 import com.nuvio.tv.core.tracking.providerId
+import com.nuvio.tv.core.tracking.AUTOMATIC_WATCH_PROGRESS_SOURCES
+import com.nuvio.tv.data.local.WatchProgressSource
 import com.nuvio.tv.data.local.TraktSettingsDataStore
 import com.nuvio.tv.data.local.WatchedItemsPreferences
 import com.nuvio.tv.data.mediaserver.ServerItemRef
@@ -72,9 +74,16 @@ class WatchedItemsSyncService @Inject constructor(
     }
 
     private suspend fun shouldUseSupabaseWatchProgressSync(profileId: Int): Boolean {
-        val source = traktSettingsDataStore.getWatchProgressSource(profileId)
-        val providerId = source.providerId ?: return true
-        return trackingProviderRegistry.provider(providerId)?.isAuthenticated?.first() != true
+        val requested = traktSettingsDataStore.getWatchProgressSource(profileId)
+        if (requested != WatchProgressSource.AUTO) {
+            val providerId = requested.providerId ?: return true
+            return trackingProviderRegistry.provider(providerId)?.isAuthenticated?.first() != true
+        }
+        // Stop at the selected automatic service. Unrelated providers cannot block a manual
+        // local choice or a higher-priority connected account's normal synchronization.
+        return AUTOMATIC_WATCH_PROGRESS_SOURCES.none { source ->
+            trackingProviderRegistry.provider(requireNotNull(source.providerId))?.isAuthenticated?.first() == true
+        }
     }
 
     private suspend fun fetchDeltaCursor(profileId: Int): Long {

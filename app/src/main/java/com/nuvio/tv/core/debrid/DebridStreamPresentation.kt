@@ -70,11 +70,15 @@ class DebridStreamPresentation internal constructor(
             .filterNot { it.isUncachedDebridStream(settings) }) }
         val managed = visibleGroups.flatMap { it.streams }.filter { it.isManagedDebridStream(settings) }
         val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits = false)
-        val presented = ranked.associate { (stream, facts) -> stream to formatter.format(stream, settings, badgeFilters, facts) }
+        val presented = ranked.associate { (stream, facts) -> stream to formatter.format(stream, settings, badgeFilters, facts, currentScope(), clock()) }
         // Keep complete candidates for flattened All ranking/enrichment; final limits belong there.
-        return visibleGroups.map { group -> group.copy(streams = group.streams.mapNotNull { stream ->
-            if(stream.isManagedDebridStream(settings)) presented[stream] else stream
-        }.let { rankAll(it, settings, enforceLimits = false, episodeRequest = episodeRequest) }) }
+        return visibleGroups.map { group ->
+            val newlyHidden = group.streams.count { it.isManagedDebridStream(settings) && it !in presented }
+            group.copy(streams = group.streams.mapNotNull { stream ->
+                if(stream.isManagedDebridStream(settings)) presented[stream] else stream
+            }.let { rankAll(it, settings, enforceLimits = false, episodeRequest = episodeRequest) },
+                hiddenByPreferencesCount = group.hiddenByPreferencesCount + newlyHidden)
+        }
     }
 
     /** Used for the flattened All list and autoplay, before pagination. */
@@ -86,7 +90,9 @@ class DebridStreamPresentation internal constructor(
         if (!settings.canResolvePlayableLinks) return eligible
         val managed = eligible.filter { it.isManagedDebridStream(settings) }
         val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits).map { it.first }
-        return ranked + eligible.filterNot { it.isManagedDebridStream(settings) }
+        return (ranked + eligible.filterNot { it.isManagedDebridStream(settings) }).map { stream ->
+            NativeDebridServiceLabels.decorate(stream, settings, currentScope(), clock())
+        }
     }
 
     private fun getBadgeFilters(rules: StreamBadgeRules): List<CompiledStreamBadgeFilter> {
@@ -99,10 +105,10 @@ class DebridStreamPresentation internal constructor(
 
     private fun Stream.isManagedDebridStream(settings: DebridSettings): Boolean {
         if (nativeFileMetadata != null) return true
-        val active = settings.activeResolverCredential ?: return false
-        if (needsLocalDebridResolve() && active.provider.supports(DebridProviderCapability.LocalTorrentResolve)) return true
+        val connected = settings.resolverServices
+        if (clientResolve == null && needsLocalDebridResolve() && connected.any { it.provider.supports(DebridProviderCapability.LocalTorrentResolve) }) return true
         val explicitProvider = DebridProviders.byId(clientResolve?.service)?.id
-        return explicitProvider == active.provider.id && (isDirectDebrid() ||
+        return connected.any { it.provider.id == explicitProvider && it.provider.supports(DebridProviderCapability.ClientResolve) } && (isDirectDebrid() ||
             clientResolve?.type.let { it.equals("hoster", true) || it.equals("http", true) })
     }
 

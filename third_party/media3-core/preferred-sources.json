@@ -1,0 +1,212 @@
+{
+  "schema": 1,
+  "status": "Frozen maintained preferred source for coherent qualification; original historical private source not claimed",
+  "sources": {
+    "src/common/main/java/androidx/media3/common/NuvioEngineConfig.java": {
+      "module": "common",
+      "unit": "androidx/media3/common/NuvioEngineConfig.java",
+      "sha256": "1a19d766b8b50c178e30fad6a87ab3fd2e368a85f1925a131df71d6f66c4036f",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/AesCipherDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/AesCipherDataSource.java",
+      "sha256": "dd1454dc03468f3a655dd8a526a5392e3341d9a9ac0408c961304d15bc15e515",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/ByteArrayDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/ByteArrayDataSource.java",
+      "sha256": "ed6cddb947b85227e2bedff2ba873823fb5b2802a70a86e217f796008361f70e",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/ContentDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/ContentDataSource.java",
+      "sha256": "b4959af70c2690fe9a01b62e58a5be09264fb80e8f76548d48c316508d58aaee",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/DataSchemeDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/DataSchemeDataSource.java",
+      "sha256": "caae4039890a66e2729c578511378a151673a531326b4cd8de5cfdb4a647568c",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/DefaultDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/DefaultDataSource.java",
+      "sha256": "59f5c59d38f900dcc5391f6634ca842ec12bbdcbae671b4e0eaf145cbc0a1398",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/DefaultHttpDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/DefaultHttpDataSource.java",
+      "sha256": "f9e86c5f854a0b17f8f716e9520eb17878126e0d78e93b1f70843d928d398115",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/FileDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/FileDataSource.java",
+      "sha256": "a70b9ddeffe92730193e01a41d5d0f0aaebfb20b5fec17be90098775acadb86a",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/FileDescriptorDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/FileDescriptorDataSource.java",
+      "sha256": "9c1ba686beb6b1871b693e5da519d642d44c8cb5a422d93d25a909f08d95b169",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/HttpEngineDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/HttpEngineDataSource.java",
+      "sha256": "5e4edb454e27a95f31db09c39605643b5af9448090d1798d3ea167febe8faa81",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/PriorityDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/PriorityDataSource.java",
+      "sha256": "b778700091c35bc3debc16c64ed869e183f6a8ab5f636820bed776e265cef9fa",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/RawResourceDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/RawResourceDataSource.java",
+      "sha256": "c7f15ce270ca56990a8d30b8e3e1beb7518f428d67a09d853c6678fa2ce2b9d3",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/ResolvingDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/ResolvingDataSource.java",
+      "sha256": "8229bde93b655ad1111dc370b9dbf19445b2bdc96f7a63787e766359c651fe5b",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/StatsDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/StatsDataSource.java",
+      "sha256": "319728a9d88d6aec424381c0a9bca7a34ebe5a4272bcffe4185530684204cab2",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/TeeDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/TeeDataSource.java",
+      "sha256": "b32534457e957055ba9ae76ef3dd43268ef1e35a3d77c5d2d7e4a00a0795b88b",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/UdpDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/UdpDataSource.java",
+      "sha256": "cd7dc8fa09cb0e191931caf5da6405f7f2d1574a276b1aa364871c18a5289fa4",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/cache/CacheDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/cache/CacheDataSource.java",
+      "sha256": "8d12335865c7d4958a636faaec75b73b7f7266f170cf7ac8fac0b4a812e82dff",
+      "sourceGroup": "transport"
+    },
+    "src/datasource/main/java/androidx/media3/datasource/LocalhostZeroCopyDataSource.java": {
+      "module": "datasource",
+      "unit": "androidx/media3/datasource/LocalhostZeroCopyDataSource.java",
+      "sha256": "c18638ca4e06bb4167a05ce46cd10131dc23c44d9a8647171b3f9a08483eb1db",
+      "sourceGroup": "transport"
+    },
+    "src/datasource-okhttp/main/java/androidx/media3/datasource/okhttp/OkHttpDataSource.java": {
+      "module": "datasource-okhttp",
+      "unit": "androidx/media3/datasource/okhttp/OkHttpDataSource.java",
+      "sha256": "4afb476926107abfe011fd3140d38ca2644ac335d3e7c0e8450734853e631a95",
+      "sourceGroup": "transport"
+    },
+    "src/exoplayer/main/java/androidx/media3/exoplayer/source/IcyDataSource.java": {
+      "module": "exoplayer",
+      "unit": "androidx/media3/exoplayer/source/IcyDataSource.java",
+      "sha256": "dc6e1f4e009b98f0d2f0b1180cb94492057baf797f7eae6342ef96abe8611841",
+      "sourceGroup": "transport"
+    },
+    "src/extractor/main/java/androidx/media3/extractor/DefaultExtractorInput.java": {
+      "module": "extractor",
+      "unit": "androidx/media3/extractor/DefaultExtractorInput.java",
+      "sha256": "8bc6273d6140d915a785c157e0d8a0ba48a4f4c9a0e7931758659bb45b2b13cf",
+      "sourceGroup": "transport"
+    },
+    "src/extractor/main/java/androidx/media3/extractor/ForwardingExtractorInput.java": {
+      "module": "extractor",
+      "unit": "androidx/media3/extractor/ForwardingExtractorInput.java",
+      "sha256": "aa1558e654052bce1bf76bd7a51fdc28b77537c694de05f208e011d6697cdb85",
+      "sourceGroup": "transport"
+    },
+    "src/common/main/java/androidx/media3/common/ByteBufferDataReader.java": {
+      "module": "common",
+      "unit": "androidx/media3/common/ByteBufferDataReader.java",
+      "sha256": "36a3335a75ed134d7c570f28fbae7dfd4c9b4bd744d17bb6417fc9df5fc0d27c",
+      "sourceGroup": "previously-solved"
+    },
+    "src/exoplayer-hls/main/java/androidx/media3/exoplayer/hls/Aes128DataSource.java": {
+      "module": "exoplayer-hls",
+      "unit": "androidx/media3/exoplayer/hls/Aes128DataSource.java",
+      "sha256": "8f74ed5fb5540f8549fb1c07a4a1fe79520b076d8eb0a6f0886b58892e2d07ea",
+      "sourceGroup": "previously-solved"
+    },
+    "src/exoplayer/main/java/androidx/media3/exoplayer/DefaultRenderersFactory.java": {
+      "module": "exoplayer",
+      "unit": "androidx/media3/exoplayer/DefaultRenderersFactory.java",
+      "sha256": "a3e48838fc366e423e217e1ec7ebf3dcfe9f334abd324fba8ccedff67d48c10f",
+      "sourceGroup": "video-text"
+    },
+    "src/exoplayer/main/java/androidx/media3/exoplayer/mediacodec/MediaCodecUtil.java": {
+      "module": "exoplayer",
+      "unit": "androidx/media3/exoplayer/mediacodec/MediaCodecUtil.java",
+      "sha256": "f62cbb37cd67e699d5c43b5d90d21a1755360e051c37251896af1b14f791c1d1",
+      "sourceGroup": "video-text"
+    },
+    "src/exoplayer/main/java/androidx/media3/exoplayer/video/MediaCodecVideoRenderer.java": {
+      "module": "exoplayer",
+      "unit": "androidx/media3/exoplayer/video/MediaCodecVideoRenderer.java",
+      "sha256": "3de0df71d47b74d93deb43576b5f59609849a7153596b02aed9b6cd12a7ee0e8",
+      "sourceGroup": "video-text"
+    },
+    "src/extractor/main/java/androidx/media3/extractor/mp4/Mp4Extractor.java": {
+      "module": "extractor",
+      "unit": "androidx/media3/extractor/mp4/Mp4Extractor.java",
+      "sha256": "9897614b7fb709a242b2ee7d2d98bdec4d38fc6f21484f85119462d4d878d6ca",
+      "sourceGroup": "video-text"
+    },
+    "src/exoplayer/main/java/androidx/media3/exoplayer/source/SampleDataQueue.java": {
+      "module": "exoplayer",
+      "unit": "androidx/media3/exoplayer/source/SampleDataQueue.java",
+      "sha256": "afcd5b0809d50ca06d9305554698ea93d6af04bf7907fe6fd2da0e5b1b0474a0",
+      "sourceGroup": "memory"
+    },
+    "src/exoplayer/main/java/androidx/media3/exoplayer/source/SampleDataQueueNative.java": {
+      "module": "exoplayer",
+      "unit": "androidx/media3/exoplayer/source/SampleDataQueueNative.java",
+      "sha256": "f2ec6dd81fee16421e8de2623089d12a803a093b3877f52d8787f3f04a05e183",
+      "sourceGroup": "memory"
+    },
+    "src/exoplayer/main/java/androidx/media3/exoplayer/upstream/Allocation.java": {
+      "module": "exoplayer",
+      "unit": "androidx/media3/exoplayer/upstream/Allocation.java",
+      "sha256": "695075d7a84487b005f15672f105fb4caf0baa602179a9565750d0b556c38b9f",
+      "sourceGroup": "memory"
+    },
+    "src/exoplayer/main/java/androidx/media3/exoplayer/upstream/DefaultAllocator.java": {
+      "module": "exoplayer",
+      "unit": "androidx/media3/exoplayer/upstream/DefaultAllocator.java",
+      "sha256": "8eae6c959b07b0e27b65c5eac221f931a74a26b3eb4ec3e7d18d2084b5be390d",
+      "sourceGroup": "memory",
+      "integrationNote": "Restored two original NullableType field annotations after ASM metadata comparison; no executable change"
+    },
+    "src/exoplayer/main/java/androidx/media3/exoplayer/upstream/DefaultAllocatorNative.java": {
+      "module": "exoplayer",
+      "unit": "androidx/media3/exoplayer/upstream/DefaultAllocatorNative.java",
+      "sha256": "9f619c48fc0b6dac93cfd34a1f5897f8948a906b542a819fd6b77c404a65055c",
+      "sourceGroup": "memory"
+    }
+  },
+  "supportFiles": {
+    "upstream/media3-core-preferred-base-sources.tar.gz": "b7d6d9ba0e25fff031e5384eb05acf003063edd4174d0879d5caff71a59f2214",
+    "upstream/preferred-base-manifest.json": "6eaf38d0dbe2f292ea171fb453a86ad7ac68a3036059a233d771807c077c8f86",
+    "patches/maintained-player-core.patch": "0ded552b30938658f60bc4317effecec173f39de45809635556205040294b895",
+    "patch-source-map.json": "e368c8e59858857cadf02a0d17d9b3ad84be2ffca7a8a71ad7f1324819021aa5",
+    "upstream/androidx-source-archive.json": "c5fbba78558e13a105bd594d6fdd32a86d3bc9c1923715cd0a92989b772cc5ae"
+  }
+}

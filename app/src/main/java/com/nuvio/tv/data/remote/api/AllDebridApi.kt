@@ -2,6 +2,7 @@ package com.nuvio.tv.data.remote.api
 
 import com.nuvio.tv.data.remote.dto.AllDebridEnvelope
 import com.nuvio.tv.data.remote.dto.AllDebridLinkDto
+import com.nuvio.tv.data.remote.dto.AllDebridMagnetInventoryDto
 import com.nuvio.tv.data.remote.dto.AllDebridMagnetsDataDto
 import com.nuvio.tv.data.remote.dto.AllDebridUserDataDto
 import retrofit2.Response
@@ -39,4 +40,19 @@ interface AllDebridApi {
     @FormUrlEncoded
     @POST("v4/magnet/files")
     suspend fun magnetFiles(@Header("Authorization") authorization: String, @Field("id[]") ids: List<Long>): Response<AllDebridEnvelope<AllDebridMagnetsDataDto>>
+
+    @FormUrlEncoded
+    @POST("v4.1/magnet/status")
+    suspend fun magnetInventory(
+        @Header("Authorization") authorization: String,
+        @Field("session") session: Int,
+        @Field("counter") counter: Int = 0
+    ): Response<AllDebridEnvelope<AllDebridMagnetInventoryDto>>
+
+    @FormUrlEncoded
+    @POST("v4/magnet/delete")
+    suspend fun deleteMagnet(
+        @Header("Authorization") authorization: String,
+        @Field("id") id: Long
+    ): Response<AllDebridEnvelope<Map<String, String>>>
 }

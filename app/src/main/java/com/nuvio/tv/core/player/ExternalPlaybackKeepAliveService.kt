@@ -67,6 +67,8 @@ class ExternalPlaybackKeepAliveService : Service() {
         createNotificationChannel()
     }
 
+    // Main/merged manifests declare mediaPlayback; the flavor-only manifest has only a job service.
+    @android.annotation.SuppressLint("ForegroundServiceType")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
             startForeground(NOTIFICATION_ID, buildNotification())
@@ -119,7 +121,7 @@ class ExternalPlaybackKeepAliveService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.external_playback_notification_text))
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(android.R.drawable.ic_media_play)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setSilent(true)

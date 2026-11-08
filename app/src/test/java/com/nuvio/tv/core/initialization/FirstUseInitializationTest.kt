@@ -43,6 +43,43 @@ class FirstUseInitializationTest {
         gate.reset(1,0); gate.run(1,0,listOf(participant)){true}
         assertEquals(InitializationFailure.TIMEOUT,gate.state.value.stages.single().failure); assertTrue(markers.keys.isEmpty())
     }
+    @Test fun `typed capture failures retain their reason and retry can complete`() = runTest {
+        val markers = MemoryMarkers(); val gate = FirstUseInitialization(markers)
+        var failCapture = true
+        val delegate = Participant { InitializationReadResult(2) }
+        val participant = object : InitializationParticipant by delegate {
+            override suspend fun capture(profileId: Int, selectionRevision: Long): InitializationSession? {
+                if (failCapture) throw InitializationReadException(InitializationFailure.NETWORK)
+                return delegate.capture(profileId, selectionRevision)
+            }
+        }
+        gate.reset(1, 0); gate.run(1, 0, listOf(participant)) { true }
+        assertEquals(InitializationFailure.NETWORK, gate.state.value.stages.single().failure)
+        assertEquals(InitializationPhase.NEEDS_ATTENTION, gate.state.value.phase)
+        assertTrue(markers.keys.isEmpty())
+        failCapture = false
+        gate.reset(1, 0); gate.run(1, 0, listOf(participant)) { true }
+        assertEquals(InitializationPhase.READY, gate.state.value.phase)
+        assertEquals(1, markers.keys.size)
+    }
+    @Test fun `ownership loss during capture propagates instead of becoming unavailable`() = runTest {
+        val markers = MemoryMarkers(); val gate = FirstUseInitialization(markers)
+        val participant = object : InitializationParticipant {
+            override val provider = InitializationProvider.TRAKT
+            override val accountChanges = flowOf("synthetic")
+            override suspend fun capture(profileId: Int, selectionRevision: Long): InitializationSession? =
+                throw InitializationReadException(InitializationFailure.ACCOUNT_CHANGED)
+        }
+        gate.reset(1, 0)
+        try {
+            gate.run(1, 0, listOf(participant)) { true }
+            fail("Replaced capture owner was accepted")
+        } catch (failure: InitializationReadException) {
+            assertEquals(InitializationFailure.ACCOUNT_CHANGED, failure.reason)
+        }
+        assertTrue(markers.keys.isEmpty())
+        assertTrue(gate.state.value.stages.isEmpty())
+    }
     @Test fun `caller cancellation propagates without success marker`() = runTest {
         val markers=MemoryMarkers(); val gate=FirstUseInitialization(markers); val entered=CompletableDeferred<Unit>()
         gate.reset(1,0); val job=launch { gate.run(1,0,listOf(Participant { entered.complete(Unit); awaitCancellation() })){true} }

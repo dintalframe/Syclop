@@ -8,10 +8,11 @@ fun UpdateBannerHost(
     state: UpdateUiState,
     onDismissBanner: () -> Unit,
     onDownload: () -> Unit,
-    onInstall: () -> Unit,
     onDismissUnknownSources: () -> Unit,
     onOpenUnknownSources: () -> Unit,
     onFeedbackShown: () -> Unit,
+    automaticCheckReady: Boolean = false,
+    onAutomaticCheck: suspend () -> Unit = {},
     content: @Composable () -> Unit
 ) {
     content()

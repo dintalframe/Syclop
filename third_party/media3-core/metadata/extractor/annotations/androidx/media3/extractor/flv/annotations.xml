@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.flv.FlvExtractor state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.flv.FlvExtractor.STATE_READING_FLV_HEADER, androidx.media3.extractor.flv.FlvExtractor.STATE_SKIPPING_TO_TAG_HEADER, androidx.media3.extractor.flv.FlvExtractor.STATE_READING_TAG_HEADER, androidx.media3.extractor.flv.FlvExtractor.STATE_READING_TAG_DATA}" />
+    </annotation>
+  </item>
+</root>
+

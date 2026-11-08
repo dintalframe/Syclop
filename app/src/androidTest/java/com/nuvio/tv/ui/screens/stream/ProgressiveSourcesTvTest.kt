@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.nuvio.tv.R
 import com.nuvio.tv.core.streams.StreamBadgePlacement
 import com.nuvio.tv.domain.model.SourceSearchDiagnostics
 import com.nuvio.tv.domain.model.SourceSearchReason
@@ -55,10 +56,23 @@ class ProgressiveSourcesTvTest {
         val diagnostic = SourceSearchDiagnostics(providers = 4, completed = 2, failed = 2,
             complete = true, counts = mapOf(SourceSearchReason.SEASON_PACK_HIDDEN to 12,
                 SourceSearchReason.RATE_LIMITED to 1, SourceSearchReason.TIMEOUT to 1))
+        val detailsLabel = instrumentation.targetContext.getString(R.string.source_search_details)
+        val hideDetailsLabel = instrumentation.targetContext.getString(R.string.source_hide_search_details)
+        val summary = "2/4 providers completed · 1 timed out · 1 rate limited · 12 season packs hidden"
         show(streams = { emptyList() }, diagnostics = listOf(diagnostic))
-        compose.onNodeWithText("Why no sources? 2/4 providers completed · 1 timed out · 1 rate limited · 12 season packs hidden")
-            .assertIsDisplayed()
+        compose.onNodeWithText(summary).assertDoesNotExist()
+        compose.onNodeWithText(detailsLabel).assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onNodeWithText(detailsLabel).assertIsFocused()
+
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+        compose.onNodeWithText(hideDetailsLabel).assertIsFocused()
+        compose.onNodeWithText(summary).assertIsDisplayed()
         capture("progressive-sources-empty-diagnostics")
+
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+        compose.onNodeWithText(detailsLabel).assertIsFocused()
+        compose.onNodeWithText(summary).assertDoesNotExist()
     }
 
     private fun show(streams: () -> List<Stream>, diagnostics: List<SourceSearchDiagnostics> = emptyList(),

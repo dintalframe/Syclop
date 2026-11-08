@@ -419,7 +419,7 @@ class ExpressAddonAdapter internal constructor(
     internal fun providerQueries(provider: JsonObject, media: ExpressMedia): List<String> {
         val scopes = when {
             media.type == "movie" -> listOf("movie")
-            media.anime && media.hasMappedEpisodeCoordinates -> listOf("anime", "episode")
+            media.anime && media.hasMappedEpisodeCoordinates -> listOf("episode", "anime")
             media.anime -> listOf("anime")
             else -> listOf("episode")
         }
@@ -448,8 +448,9 @@ class ExpressAddonAdapter internal constructor(
                 }
             }
         }
-        // Alternate coordinate strategies before taking the bound: a valid mapped S/E query
-        // cannot be crowded out by three absolute-title aliases from the first scope.
+        // Verified S/E runs in the first provider round. Shared origins may exhaust their
+        // request cap before a second round, so broad absolute searches must not take
+        // that only turn. Alternate remaining strategies within the existing bound.
         return buildList {
             repeat(scopeQueries.maxOfOrNull { it.size } ?: 0) { index ->
                 scopeQueries.forEach { queries -> queries.getOrNull(index)?.let(::add) }

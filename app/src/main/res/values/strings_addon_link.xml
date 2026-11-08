@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="addon_link_title">Add this provider?</string>
+    <string name="addon_link_description">%1$s can receive requests about titles you browse or play. Add it only if you trust this provider.</string>
+    <string name="addon_link_add">Add provider</string>
+</resources>

@@ -50,6 +50,11 @@ data class PremiumizeItemListAllDto(
     @Json(name = "files") val files: List<PremiumizeCloudFileDto>? = null
 )
 
+data class PremiumizeRootFolderDto(
+    val status: String? = null,
+    val content: List<PremiumizeCloudFileDto>? = null
+)
+
 @JsonClass(generateAdapter = true)
 data class PremiumizeCloudFileDto(
     @Json(name = "id") val id: String? = null,

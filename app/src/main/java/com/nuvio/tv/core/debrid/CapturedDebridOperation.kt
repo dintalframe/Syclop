@@ -1,5 +1,8 @@
 package com.nuvio.tv.core.debrid
 
+import com.nuvio.tv.core.cloud.CloudLibraryFile
+import com.nuvio.tv.core.cloud.CloudLibraryItem
+import com.nuvio.tv.core.cloud.CloudLibraryItemType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -9,12 +12,20 @@ class CapturedDebridOperation private constructor(
     private val providerId: String,
     private val apiKey: String,
     private val isCurrent: () -> Boolean,
-    internal val animeProof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof?
+    internal val animeProof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof?,
+    private val captureTorrentInventory: (suspend () -> Set<String>?)?
 ) {
-    internal constructor(providerId: String, apiKey: String, isCurrent: () -> Boolean) : this(providerId, apiKey, isCurrent, null)
+    internal constructor(providerId: String, apiKey: String, isCurrent: () -> Boolean) :
+        this(providerId, apiKey, isCurrent, null, null)
 
     internal fun withAnimeProof(proof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof?): CapturedDebridOperation =
-        if (proof == null) this else CapturedDebridOperation(providerId, apiKey, isCurrent, proof)
+        if (proof == null) this else CapturedDebridOperation(providerId, apiKey, isCurrent, proof, captureTorrentInventory)
+
+    internal fun withTorrentInventory(capture: suspend () -> Set<String>?): CapturedDebridOperation =
+        CapturedDebridOperation(providerId, apiKey, isCurrent, animeProof, capture)
+
+    internal suspend fun torrentIdsBeforeCreate(): Set<String>? =
+        captureTorrentInventory?.let { request(it) }
 
     fun credential(expectedProviderId: String): String {
         checkCurrent()
@@ -57,3 +68,21 @@ class CapturedDebridOperation private constructor(
 
 internal suspend fun <T> scopedDebridRequest(operation: CapturedDebridOperation?, block: suspend () -> T): T =
     if (operation == null) block() else operation.request(block)
+
+internal fun newSingleFileCloudTorrent(
+    beforeCreate: Set<String>?,
+    provider: DebridProvider,
+    torrentId: String,
+    file: CloudLibraryFile
+): CloudLibraryItem? {
+    if (beforeCreate == null || torrentId.isBlank() || torrentId in beforeCreate ||
+        file.id.isNullOrBlank() || !file.playable || file.name.isBlank()) return null
+    return CloudLibraryItem(
+        providerId = provider.id,
+        providerName = provider.displayName,
+        id = torrentId,
+        type = CloudLibraryItemType.Torrent,
+        name = file.name,
+        files = listOf(file)
+    )
+}

@@ -95,6 +95,12 @@ interface TrackingHistoryWriter {
 
 interface TrackingScrobbler {
     val providerId: TrackingProviderId
+    /** Pin native grant/selection synchronously before UUID backfill may suspend. */
+    fun preparePlaybackGrant(profileId: Int): TrackingPlaybackGrantCapture? = null
+
+    suspend fun recoverPlaybackGrant(profileId: Int, grantId: String): TrackingPlaybackGrant? =
+        preparePlaybackGrant(profileId)?.resolve()?.takeIf { it.grantId == grantId }
+
     val seekScrobblePolicy: TrackingSeekScrobblePolicy
         get() = TrackingSeekScrobblePolicy.NONE
 

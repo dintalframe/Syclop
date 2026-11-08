@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <item name="androidx.media3.extractor.avi.AviExtractor AviExtractor(int, androidx.media3.extractor.text.SubtitleParser.Factory) 0">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.avi.AviExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.avi.AviExtractor state">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.avi.AviExtractor.STATE_SKIPPING_TO_HDRL, androidx.media3.extractor.avi.AviExtractor.STATE_READING_HDRL_HEADER, androidx.media3.extractor.avi.AviExtractor.STATE_READING_HDRL_BODY, androidx.media3.extractor.avi.AviExtractor.STATE_FINDING_MOVI_HEADER, androidx.media3.extractor.avi.AviExtractor.STATE_FINDING_IDX1_HEADER, androidx.media3.extractor.avi.AviExtractor.STATE_READING_IDX1_BODY, androidx.media3.extractor.avi.AviExtractor.STATE_READING_SAMPLES}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.avi.AviExtractor.Flags">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="flag" val="true" />
+      <val name="value" val="{androidx.media3.extractor.avi.AviExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA}" />
+    </annotation>
+  </item>
+  <item name="androidx.media3.extractor.avi.ChunkReader int getChunkIdFourCc(int, int) 1">
+    <annotation name="androidx.annotation.IntDef">
+      <val name="value" val="{androidx.media3.extractor.avi.ChunkReader.CHUNK_TYPE_VIDEO_COMPRESSED, androidx.media3.extractor.avi.ChunkReader.CHUNK_TYPE_VIDEO_UNCOMPRESSED, androidx.media3.extractor.avi.ChunkReader.CHUNK_TYPE_AUDIO}" />
+    </annotation>
+  </item>
+</root>
+

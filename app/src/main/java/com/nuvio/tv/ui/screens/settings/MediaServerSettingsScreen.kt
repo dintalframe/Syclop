@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -36,6 +37,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.R
 import com.nuvio.tv.data.mediaserver.ServerCapability
+import com.nuvio.tv.data.mediaserver.ServerConnection
 import com.nuvio.tv.data.mediaserver.messageRes
 import com.nuvio.tv.data.mediaserver.supports
 import com.nuvio.tv.ui.components.NuvioDialog
@@ -57,10 +59,14 @@ internal fun MediaServerSettingsContent(
         return
     }
     val context = LocalContext.current
+    val resources = LocalResources.current
     val provider = viewModel.provider(connection)
     val providerName = provider?.displayName ?: connection.providerId
     var signIn by remember { mutableStateOf<ServerSignInRequest?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
+    var approveLocalHttp by remember { mutableStateOf<ServerConnection?>(null) }
+    val needsLocalHttpApproval = !connection.localHttpApproved &&
+        com.nuvio.tv.data.mediaserver.ServerTransportPolicy.localHttpHost(connection.address) != null
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SettingsDetailHeader(
@@ -80,13 +86,24 @@ internal fun MediaServerSettingsContent(
                     contentPadding = PaddingValues(bottom = NuvioTheme.spacing.sm),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    if (needsLocalHttpApproval) {
+                        item(key = "server_transport_review") {
+                            SettingsActionRow(
+                                title = stringResource(R.string.servers_status_review_connection),
+                                subtitle = stringResource(R.string.servers_error_insecure_connection),
+                                leadingIcon = Icons.Default.Lock,
+                                onClick = { approveLocalHttp = connection },
+                                modifier = initialFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier
+                            )
+                        }
+                    }
                     item(key = "server_enabled") {
                         SettingsToggleRow(
                             title = stringResource(R.string.servers_enabled),
                             subtitle = stringResource(R.string.servers_enabled_description),
                             checked = connection.enabled,
                             onToggle = { viewModel.setEnabled(connection.id, !connection.enabled) },
-                            modifier = initialFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier
+                            modifier = initialFocusRequester?.takeUnless { needsLocalHttpApproval }?.let { Modifier.focusRequester(it) } ?: Modifier
                         )
                     }
                     if (provider?.supports(ServerCapability.EXTERNAL_ID_LOOKUP) == true) {
@@ -142,7 +159,7 @@ internal fun MediaServerSettingsContent(
                             leadingIcon = Icons.Default.Sync,
                             onClick = {
                                 viewModel.refreshLibraries(connection.id) { failure ->
-                                    Toast.makeText(context, context.getString(failure.messageRes()), Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, resources.getString(failure.messageRes()), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
@@ -171,6 +188,17 @@ internal fun MediaServerSettingsContent(
                 SettingsVerticalScrollIndicators(state = listState)
             }
         }
+    }
+
+    approveLocalHttp?.let { requested ->
+        ServerLocalHttpConfirmationDialog(
+            host = com.nuvio.tv.data.mediaserver.ServerTransportPolicy.localHttpHost(requested.address).orEmpty(),
+            onCancel = { approveLocalHttp = null },
+            onAllow = {
+                approveLocalHttp = null
+                viewModel.approveLocalHttp(requested)
+            }
+        )
     }
 
     signIn?.let { request ->
