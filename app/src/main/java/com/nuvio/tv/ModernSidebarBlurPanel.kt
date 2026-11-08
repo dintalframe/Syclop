@@ -93,16 +93,12 @@ internal fun ModernSidebarBlurPanel(
     showProfileSelector: Boolean,
     onSwitchProfile: () -> Unit
 ) {
-    val delayedBlurProgress =
-        ((sidebarExpandProgress - 0.34f) / 0.66f).coerceIn(0f, 1f)
-    val showPanelBlur = blurEnabled &&
-        isSidebarExpanded &&
-        !sidebarCollapsePending &&
-        delayedBlurProgress > 0f
+    val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    val showPanelBlur = blurEnabled && sidebarExpandProgress > 0f
     val expandedPanelBlurModifier = if (showPanelBlur) {
         Modifier.hazeEffect(state = sidebarHazeState) {
-            blurRadius = NuvioTheme.effects.blurPanel * delayedBlurProgress
-            noiseFactor = 0.04f * delayedBlurProgress
+            blurRadius = NuvioTheme.effects.blurPanel
+            noiseFactor = 0.04f
             inputScale = HazeInputScale.Fixed(0.66f)
         }
     } else {
@@ -135,10 +131,7 @@ internal fun ModernSidebarBlurPanel(
             .graphicsLayer {
                 val p = sidebarExpandProgress
                 alpha = p
-                val s = 0.97f + (0.03f * p)
-                scaleX = s
-                scaleY = s
-                transformOrigin = TransformOrigin(0f, 0f)
+                translationX = (if (isRtl) 1f else -1f) * 16.dp.toPx() * (1f - p)
             }
             .clip(panelShape)
             .then(expandedPanelBlurModifier)
@@ -253,24 +246,22 @@ private fun SidebarNavigationItem(
         selected -> accentColor.copy(alpha = 0.15f)
         else -> Color.Transparent
     }
-    val animatedBackgroundColor by animateColorAsState(
+    val backgroundColor by animateColorAsState(
         targetValue = backgroundColorTarget,
-        animationSpec = tween(durationMillis = NuvioMotion.tokens.durations.fast),
+        animationSpec = tween(durationMillis = 140),
         label = "sidebarItemBackground"
     )
-    val backgroundColor = if (selected && !isFocused) backgroundColorTarget else animatedBackgroundColor
 
     val contentColorTarget = when {
         selected -> accentColor
         isFocused -> colors.TextPrimary
         else -> colors.text.onOverlay
     }
-    val animatedContentColor by animateColorAsState(
+    val contentColor by animateColorAsState(
         targetValue = contentColorTarget,
-        animationSpec = tween(durationMillis = NuvioMotion.tokens.durations.fast),
+        animationSpec = tween(durationMillis = 140),
         label = "sidebarItemContent"
     )
-    val contentColor = if (selected && !isFocused) contentColorTarget else animatedContentColor
 
     val iconBrush = if (selected) palette.accentBrush() else null
     val iconTintTarget = when {
@@ -278,15 +269,14 @@ private fun SidebarNavigationItem(
         isFocused -> colors.TextPrimary
         else -> colors.text.onOverlay
     }
-    val animatedIconTint by animateColorAsState(
+    val iconTint by animateColorAsState(
         targetValue = iconTintTarget,
-        animationSpec = tween(durationMillis = NuvioMotion.tokens.durations.fast),
+        animationSpec = tween(durationMillis = 140),
         label = "sidebarItemIconTint"
     )
-    val iconTint = if (selected && !isFocused) iconTintTarget else animatedIconTint
     val itemScale by animateFloatAsState(
-        targetValue = if (isFocused) 1.1f else 1f,
-        animationSpec = tween(durationMillis = NuvioMotion.tokens.durations.fast, easing = NuvioMotion.tokens.easings.standard),
+        targetValue = if (isFocused) 1.02f else 1f,
+        animationSpec = tween(durationMillis = 140, easing = NuvioMotion.tokens.easings.standard),
         label = "sidebarItemScale"
     )
 
@@ -392,7 +382,11 @@ private fun SidebarProfileItem(
     var isFocused by remember { mutableStateOf(false) }
     val colors = NuvioTheme.colors
     val shape = RoundedCornerShape(NuvioRadii.tokens.full)
-    val backgroundColor = if (isFocused) Color.White.copy(alpha = 0.12f) else Color.Transparent
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isFocused) Color.White.copy(alpha = 0.12f) else Color.Transparent,
+        animationSpec = tween(140),
+        label = "sidebarProfileBackground"
+    )
     Card(
         onClick = onClick,
         modifier = modifier

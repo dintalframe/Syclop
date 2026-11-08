@@ -20,16 +20,10 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -48,6 +42,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
@@ -1445,6 +1441,13 @@ private fun SidebarFocusRecoveryEffect(
     }
 }
 
+@Composable
+internal fun rememberSidebarExpandProgress(expanded: Boolean) = animateFloatAsState(
+    targetValue = if (expanded) 1f else 0f,
+    animationSpec = tween(durationMillis = if (expanded) 240 else 200, easing = FastOutSlowInEasing),
+    label = "sidebarExpandProgress"
+)
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun LegacySidebarScaffold(
@@ -1479,6 +1482,7 @@ private fun LegacySidebarScaffold(
     val closedDrawerWidth = if (sidebarCollapsed) NuvioTheme.spacing.none else sidebarTokens.legacyCollapsedWidth
     val openDrawerWidth = sidebarTokens.legacyExpandedWidth
     val openDrawerItemWidth = sidebarTokens.itemWidth
+    val sidebarExpandProgress by rememberSidebarExpandProgress(drawerState.currentValue == DrawerValue.Open)
 
     val focusManager = LocalFocusManager.current
     val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
@@ -1547,11 +1551,12 @@ private fun LegacySidebarScaffold(
         drawerState = drawerState,
         drawerContent = { drawerValue ->
             if (showSidebar) {
-                val drawerWidth = if (drawerValue == DrawerValue.Open) openDrawerWidth else closedDrawerWidth
+                val drawerWidth = androidx.compose.ui.unit.lerp(closedDrawerWidth, openDrawerWidth, sidebarExpandProgress)
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
                         .width(drawerWidth)
+                        .clip(RectangleShape)
                         .background(NuvioTheme.colors.Background)
                         .padding(NuvioTheme.spacing.card.outer)
                         .selectableGroup()
@@ -1570,17 +1575,20 @@ private fun LegacySidebarScaffold(
                         }
                 ) {
                     val isExpanded = drawerValue == DrawerValue.Open
-                    val itemWidth by animateDpAsState(
-                        targetValue = if (isExpanded) openDrawerItemWidth else NuvioTheme.sizes.avatars.md,
-                        animationSpec = tween(durationMillis = NuvioMotion.tokens.durations.fast, easing = NuvioMotion.tokens.easings.standard),
-                        label = "legacySidebarItemWidth"
+                    val itemWidth = androidx.compose.ui.unit.lerp(
+                        NuvioTheme.sizes.avatars.md, openDrawerItemWidth, sidebarExpandProgress
                     )
 
-                    if (isExpanded) {
+                    if (isExpanded || sidebarExpandProgress > 0f) {
                         Column(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
-                                .fillMaxWidth()
+                                .wrapContentWidth(Alignment.Start, unbounded = true)
+                                .requiredWidth(openDrawerWidth - NuvioTheme.spacing.card.outer * 2)
+                                .graphicsLayer {
+                                    alpha = sidebarExpandProgress
+                                    translationX = (if (isRtl) 1f else -1f) * 16.dp.toPx() * (1f - sidebarExpandProgress)
+                                }
                         ) {
                             Spacer(modifier = Modifier.height(30.dp))
                             if (showProfileSelector && activeProfileName.isNotEmpty()) {
@@ -1591,18 +1599,22 @@ private fun LegacySidebarScaffold(
                                 val profileLabelStart = 60.dp
                                 val profileGapAfterAvatar =
                                     (profileLabelStart - profileLeadingInset - profileAvatarSize).coerceAtLeast(NuvioTheme.spacing.none)
-                                val profileBgColor = if (isProfileFocused) NuvioTheme.colors.FocusBackground else Color.Transparent
+                                val profileBgColor by animateColorAsState(
+                                    targetValue = if (isProfileFocused) NuvioTheme.colors.FocusBackground else Color.Transparent,
+                                    animationSpec = tween(140),
+                                    label = "legacySidebarProfileBackground"
+                                )
                                 Box(
                                     modifier = Modifier.fillMaxWidth(),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Row(
                                         modifier = Modifier
-                                            .width(itemWidth)
+                                            .width(openDrawerItemWidth)
                                             .height(sidebarTokens.itemHeight)
                                             .background(color = profileBgColor, shape = profileItemShape)
                                             .onFocusChanged { isProfileFocused = it.isFocused }
-                                            .clickable {
+                                            .clickable(enabled = isExpanded) {
                                                 onSwitchProfile()
                                                 drawerState.setValue(DrawerValue.Closed)
                                             },
@@ -1654,6 +1666,7 @@ private fun LegacySidebarScaffold(
                                     icon = item.icon,
                                     selected = selectedDrawerRoute == item.route,
                                     expanded = isExpanded,
+                                    expandProgress = sidebarExpandProgress,
                                     onClick = {
                                         keyboardController?.hide()
                                         onNavigate(item.route)
@@ -1752,16 +1765,18 @@ private fun LegacySidebarScaffold(
 }
 
 @Composable
-private fun LegacySidebarButton(
+internal fun LegacySidebarButton(
     label: String,
     iconRes: Int?,
     icon: ImageVector?,
     selected: Boolean,
     expanded: Boolean,
+    expandProgress: Float = if (expanded) 1f else 0f,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     val itemShape = NuvioTheme.shapes.navItem
     val backgroundColor by animateColorAsState(
         targetValue = when {
@@ -1769,6 +1784,7 @@ private fun LegacySidebarButton(
             expanded && selected -> NuvioTheme.colors.Secondary
             else -> Color.Transparent
         },
+        animationSpec = tween(140),
         label = "legacySidebarItemBackground"
     )
     val contentColor by animateColorAsState(
@@ -1777,6 +1793,7 @@ private fun LegacySidebarButton(
             expanded && selected -> NuvioTheme.colors.OnSecondary
             else -> NuvioTheme.colors.TextSecondary
         },
+        animationSpec = tween(140),
         label = "legacySidebarItemContent"
     )
     val iconTint by animateColorAsState(
@@ -1787,6 +1804,7 @@ private fun LegacySidebarButton(
             !expanded -> NuvioTheme.colors.TextTertiary
             else -> NuvioTheme.colors.TextSecondary
         },
+        animationSpec = tween(140),
         label = "legacySidebarItemIconTint"
     )
     val selectedCollapsedIconBrush = if (selected && !expanded) {
@@ -1795,8 +1813,8 @@ private fun LegacySidebarButton(
         null
     }
     val itemScale by animateFloatAsState(
-        targetValue = if (isFocused && expanded) 1.1f else 1f,
-        animationSpec = tween(durationMillis = NuvioMotion.tokens.durations.fast, easing = NuvioMotion.tokens.easings.standard),
+        targetValue = if (isFocused && expanded) 1.02f else 1f,
+        animationSpec = tween(durationMillis = 140, easing = NuvioMotion.tokens.easings.standard),
         label = "legacySidebarItemScale"
     )
 
@@ -1844,14 +1862,20 @@ private fun LegacySidebarButton(
                 .align(Alignment.CenterStart)
                 .offset(x = 13.dp)
         )
-        if (expanded) {
+        if (expanded || expandProgress > 0f) {
             com.nuvio.tv.ui.components.AutoResizeText(
                 text = label,
                 color = contentColor,
                 textAlign = TextAlign.Start,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .padding(start = 54.dp, end = 14.dp)
+                    .wrapContentWidth(Alignment.Start, unbounded = true)
+                    .requiredWidth(NuvioComponents.tokens.sidebar.itemWidth - 68.dp)
+                    .offset(x = 54.dp)
+                    .graphicsLayer {
+                        alpha = expandProgress
+                        translationX = (if (isRtl) 1f else -1f) * 16.dp.toPx() * (1f - expandProgress)
+                    }
             )
         }
     }
@@ -1881,7 +1905,6 @@ private fun ModernSidebarScaffold(
 ) {
     val showSidebar = currentRoute in rootRoutes
     val sidebarTokens = NuvioComponents.tokens.sidebar
-    val collapsedSidebarWidth = if (sidebarCollapsed) NuvioTheme.spacing.none else sidebarTokens.collapsedWidth
     val openSidebarWidth = sidebarTokens.expandedWidth
 
     val focusManager = LocalFocusManager.current
@@ -1985,49 +2008,17 @@ private fun ModernSidebarScaffold(
 
     val sidebarVisible = showSidebar && (isSidebarExpanded || !sidebarCollapsed)
     val sidebarHazeState = remember { HazeState() }
-    // Panel is always laid out at full expanded width; open/close is
-    // purely a graphicsLayer transform (scale + alpha) so Compose never
-    // re-layouts and haze doesn't re-render blur every frame.
-    val sidebarWidth = if (sidebarVisible) openSidebarWidth else collapsedSidebarWidth
-    val animationDuration = if (sidebarVisible) 400 else 300
-    val animationEasing = if (sidebarVisible) FastOutSlowInEasing else FastOutLinearInEasing
-
-    val sidebarSlideX = NuvioTheme.spacing.none
-    val sidebarSurfaceAlpha by animateFloatAsState(
-        targetValue = if (isSidebarExpanded) 1f else 0f,
-        animationSpec = tween(durationMillis = if (isSidebarExpanded) 280 else 200, easing = animationEasing),
-        label = "sidebarSurfaceAlpha"
-    )
+    // Keep the panel at its full size; only its GPU layer moves and fades.
+    val sidebarExpandProgress by rememberSidebarExpandProgress(isSidebarExpanded && !sidebarCollapsePending)
     val shouldApplySidebarHaze = showSidebar && modernSidebarBlurEnabled
-    val sidebarTransition = updateTransition(
-        targetState = isSidebarExpanded,
-        label = "sidebarTransition"
-    )
-    // Labels and icons are always at full size — the panel is rendered
-    // complete and the open/close animation is purely graphicsLayer.
     val sidebarLabelAlpha = 1f
-    val sidebarExpandProgress by sidebarTransition.animateFloat(
-        transitionSpec = {
-            if (targetState) {
-                tween(durationMillis = NuvioMotion.tokens.durations.sidebarPanelIn, easing = FastOutSlowInEasing)
-            } else {
-                tween(durationMillis = NuvioMotion.tokens.durations.sidebarPanelOut, easing = LinearOutSlowInEasing)
-            }
-        },
-        label = "sidebarExpandProgress"
-    ) { expanded ->
-        if (expanded) 1f else 0f
-    }
 
     // derivedStateOf prevents per-frame recomposition — only triggers when the boolean crosses the threshold
     val sidebarBlocksContentKeys by remember { derivedStateOf { sidebarExpandProgress > 0.2f } }
-    val sidebarShowExpandedPanel by remember { derivedStateOf { sidebarExpandProgress > 0.01f } }
-    val sidebarShowCollapsedPill by remember { derivedStateOf { sidebarExpandProgress < 0.98f } }
+    val sidebarShowExpandedPanel by remember { derivedStateOf { sidebarExpandProgress > 0f } }
+    val sidebarShowCollapsedPill by remember { derivedStateOf { sidebarExpandProgress < 1f } }
 
     val sidebarIconScale = 1f
-    val sidebarBloomScale = 1f
-    val sidebarDeflateOffsetX = NuvioTheme.spacing.none
-    val sidebarDeflateOffsetY = NuvioTheme.spacing.none
 
     LaunchedEffect(isSidebarExpanded, sidebarCollapsePending, pendingContentFocusTransfer, showSidebar) {
         if (!showSidebar || !pendingContentFocusTransfer || isSidebarExpanded || sidebarCollapsePending) {
@@ -2171,14 +2162,6 @@ private fun ModernSidebarScaffold(
                     .align(Alignment.TopStart)
                     .width(openSidebarWidth)
                     .padding(start = NuvioTheme.spacing.lg - NuvioTheme.spacing.xxs, top = NuvioTheme.spacing.lg, bottom = NuvioTheme.spacing.md, end = NuvioTheme.spacing.sm)
-                    .graphicsLayer {
-                        val progress = sidebarExpandProgress
-                        alpha = sidebarSurfaceAlpha
-                        val s = 0.92f + 0.08f * progress
-                        scaleX = s
-                        scaleY = s
-                        transformOrigin = TransformOrigin(0f, 0f)
-                    }
                     .selectableGroup()
                     .onPreviewKeyEvent { keyEvent ->
                         if (!isSidebarExpanded || keyEvent.type != KeyEventType.KeyDown) {
@@ -2283,16 +2266,13 @@ private fun ModernSidebarScaffold(
                         .offset {
                             IntOffset(
                                 (NuvioTheme.spacing.lg - NuvioTheme.spacing.xxs).roundToPx(),
-                                (NuvioTheme.spacing.lg + sidebarDeflateOffsetY).roundToPx()
+                                NuvioTheme.spacing.lg.roundToPx()
                             )
                         }
                         .graphicsLayer {
                             val progress = sidebarExpandProgress
                             alpha = 1f - progress
-                            val s = 0.9f + (0.1f * (1f - progress))
-                            scaleX = s
-                            scaleY = s
-                            transformOrigin = TransformOrigin(0f, 0f)
+                            translationX = (if (isRtl) 1f else -1f) * 16.dp.toPx() * progress
                         },
                     onExpand = {
                         isSidebarExpanded = true
