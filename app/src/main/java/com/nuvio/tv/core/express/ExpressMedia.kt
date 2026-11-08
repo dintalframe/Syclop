@@ -202,8 +202,7 @@ private fun foldExpressTitle(value: String): String = Normalizer.normalize(
 /** Only an explicit year immediately after a known title is evidence of another edition. */
 internal fun ExpressMedia.acceptsInternationalYearHints(row: ExpressRow): Boolean {
     val premiere = year ?: return true
-    val original = originalTitle?.let(::expressQueryTitle) ?: return true
-    if (anime || original == expressQueryTitle(title)) return true
+    if (anime || queryTitles().none { it != expressQueryTitle(title) }) return true
     fun normalized(value: String) = foldExpressTitle(value).lowercase(Locale.ROOT)
         .replace(Regex("[\\s._:–—-]+"), " ").trim()
     val titles = queryTitles().map(::normalized).distinct()

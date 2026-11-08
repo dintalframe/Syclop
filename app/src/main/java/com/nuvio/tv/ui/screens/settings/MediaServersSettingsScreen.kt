@@ -39,6 +39,7 @@ import com.nuvio.tv.ui.theme.NuvioTheme
 internal fun MediaServersSettingsContent(
     initialFocusRequester: FocusRequester?,
     onOpenServer: (String) -> Unit,
+    activePane: Boolean = true,
     viewModel: MediaServersViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -103,7 +104,7 @@ internal fun MediaServersSettingsContent(
         }
     }
 
-    signIn?.let { request ->
+    signIn?.takeIf { activePane }?.let { request ->
         ServerSignInDialog(
             request = request,
             viewModel = viewModel,

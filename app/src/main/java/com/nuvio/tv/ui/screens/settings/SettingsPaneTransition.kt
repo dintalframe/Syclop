@@ -27,13 +27,24 @@ import androidx.compose.ui.unit.dp
 
 internal data class SettingsPane(
     val category: SettingsCategory,
-    val integrationSection: IntegrationSettingsSection = IntegrationSettingsSection.Hub
+    val integrationSection: IntegrationSettingsSection = IntegrationSettingsSection.Hub,
+    val contentDiscoveryPage: String? = null
 )
+
+private val SettingsPane.nestedDepth: Int
+    get() = if (category == SettingsCategory.CONTENT_DISCOVERY) {
+        when (contentDiscoveryPage) {
+            null -> 0
+            SERVERS_PAGE -> 1
+            else -> 2
+        }
+    } else integrationSection.ordinal
 
 @Composable
 internal fun SettingsPaneTransition(
     targetState: SettingsPane,
     modifier: Modifier = Modifier,
+    activePane: Boolean = true,
     content: @Composable (SettingsPane, Boolean) -> Unit
 ) {
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -49,7 +60,7 @@ internal fun SettingsPaneTransition(
             val forward = when {
                 fromRail != toRail -> order.indexOf(toRail) > order.indexOf(fromRail)
                 initialState.category == targetState.category ->
-                    targetState.integrationSection.ordinal > initialState.integrationSection.ordinal
+                    targetState.nestedDepth > initialState.nestedDepth
                 initialState.category == toRail -> true
                 targetState.category == fromRail -> false
                 else -> {
@@ -68,7 +79,7 @@ internal fun SettingsPaneTransition(
         },
         label = "settingsDetailTransition"
     ) { pane ->
-        val active = pane == targetState
+        val active = activePane && pane == targetState
         var paneHasFocus by remember { mutableStateOf(false) }
         SideEffect {
             // Release outgoing focus before incoming effects run, including on a rapid reversal.

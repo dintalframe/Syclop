@@ -49,13 +49,14 @@ internal fun MediaServerSettingsContent(
     initialFocusRequester: FocusRequester?,
     onOpenServer: (String) -> Unit,
     onBack: () -> Unit,
+    activePane: Boolean = true,
     viewModel: MediaServersViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val connection = uiState.connections.firstOrNull { it.id == connectionId }
     if (connection == null) {
-        LaunchedEffect(Unit) { onBack() }
+        LaunchedEffect(connectionId, activePane) { if (activePane) onBack() }
         return
     }
     val context = LocalContext.current
@@ -190,7 +191,7 @@ internal fun MediaServerSettingsContent(
         }
     }
 
-    approveLocalHttp?.let { requested ->
+    approveLocalHttp?.takeIf { activePane }?.let { requested ->
         ServerLocalHttpConfirmationDialog(
             host = com.nuvio.tv.data.mediaserver.ServerTransportPolicy.localHttpHost(requested.address).orEmpty(),
             onCancel = { approveLocalHttp = null },
@@ -201,7 +202,7 @@ internal fun MediaServerSettingsContent(
         )
     }
 
-    signIn?.let { request ->
+    signIn?.takeIf { activePane }?.let { request ->
         ServerSignInDialog(
             request = request,
             viewModel = viewModel,
@@ -213,7 +214,7 @@ internal fun MediaServerSettingsContent(
         )
     }
 
-    if (confirmRemove) {
+    if (confirmRemove && activePane) {
         NuvioDialog(
             onDismiss = { confirmRemove = false },
             title = stringResource(R.string.servers_remove_confirm_title),

@@ -34,6 +34,37 @@ internal fun ContentDiscoverySettingsContent(
     initialFocusRequester: FocusRequester?,
     activePane: Boolean
 ) {
+    ContentDiscoveryPages(activePane) { page, requester, openServer, back, active ->
+        when (page) {
+            null -> ContentDiscoveryHub(
+                onNavigateToAddons = onNavigateToAddons,
+                onNavigateToPlugins = onNavigateToPlugins,
+                onNavigateToServers = { openServer(SERVERS_PAGE) },
+                showPlugins = showPlugins,
+                initialFocusRequester = initialFocusRequester.takeIf { active },
+                serversFocusRequester = requester
+            )
+            SERVERS_PAGE -> MediaServersSettingsContent(
+                initialFocusRequester = requester.takeIf { active },
+                onOpenServer = openServer,
+                activePane = active
+            )
+            else -> MediaServerSettingsContent(
+                connectionId = page,
+                initialFocusRequester = requester.takeIf { active },
+                onOpenServer = openServer,
+                onBack = back,
+                activePane = active
+            )
+        }
+    }
+}
+
+@Composable
+internal fun ContentDiscoveryPages(
+    activePane: Boolean,
+    content: @Composable (String?, FocusRequester, (String) -> Unit, () -> Unit, Boolean) -> Unit
+) {
     var serverPage by rememberSaveable { mutableStateOf<String?>(null) }
     val hubServersRequester = remember { FocusRequester() }
     val serversRequester = remember { FocusRequester() }
@@ -45,36 +76,23 @@ internal fun ContentDiscoverySettingsContent(
         if (serverPage == null) returningToHub = true
     }
 
-    LaunchedEffect(serverPage, activePane) {
-        if (!activePane) return@LaunchedEffect
-        val requester = when (serverPage) {
-            null -> hubServersRequester.takeIf { returningToHub }
+    SettingsPaneTransition(
+        targetState = SettingsPane(SettingsCategory.CONTENT_DISCOVERY, contentDiscoveryPage = serverPage),
+        modifier = Modifier.fillMaxSize(),
+        activePane = activePane
+    ) { pane, active ->
+        val page = pane.contentDiscoveryPage
+        val requester = when (page) {
+            null -> hubServersRequester
             SERVERS_PAGE -> serversRequester
             else -> serverRequester
-        } ?: return@LaunchedEffect
-        returningToHub = false
-        runCatching { requester.requestFocus() }
-    }
-
-    when (val page = serverPage) {
-        null -> ContentDiscoveryHub(
-            onNavigateToAddons = onNavigateToAddons,
-            onNavigateToPlugins = onNavigateToPlugins,
-            onNavigateToServers = { serverPage = SERVERS_PAGE },
-            showPlugins = showPlugins,
-            initialFocusRequester = initialFocusRequester,
-            serversFocusRequester = hubServersRequester
-        )
-        SERVERS_PAGE -> MediaServersSettingsContent(
-            initialFocusRequester = serversRequester,
-            onOpenServer = { serverPage = it }
-        )
-        else -> MediaServerSettingsContent(
-            connectionId = page,
-            initialFocusRequester = serverRequester,
-            onOpenServer = { serverPage = it },
-            onBack = { serverPage = SERVERS_PAGE }
-        )
+        }
+        LaunchedEffect(page, active) {
+            if (!active || (page == null && !returningToHub)) return@LaunchedEffect
+            returningToHub = false
+            runCatching { requester.requestFocus() }
+        }
+        content(page, requester, { serverPage = it }, { serverPage = SERVERS_PAGE }, active)
     }
 }
 
@@ -126,4 +144,4 @@ private fun ContentDiscoveryHub(
     }
 }
 
-private const val SERVERS_PAGE = "servers"
+internal const val SERVERS_PAGE = "servers"

@@ -161,6 +161,59 @@ class ExpressInternationalTitleTest {
     }
 
     @Test
+    fun `folded search rejects an earlier remake when canonical and original are the same Turkish title`() = runTest {
+        Fixture(canonical = "Aşk-ı Memnu", original = "Aşk-ı Memnu").use { fixture ->
+            assertFoldedOnlyAdmission(fixture, expectedOriginal = "Aşk-ı Memnu")
+        }
+    }
+
+    @Test
+    fun `folded canonical search rejects an earlier remake when optional enrichment is unavailable`() = runTest {
+        Fixture(canonical = "Aşk-ı Memnu").use { fixture ->
+            coEvery { fixture.api.findByExternalId(any(), any(), any()) } throws IllegalStateException("Unavailable")
+            assertFoldedOnlyAdmission(fixture, expectedOriginal = null)
+        }
+    }
+
+    @Test
+    fun `unchanged ASCII query retains existing admission without an international year guard`() = runTest {
+        Fixture(canonical = "Forbidden Love", original = "Forbidden Love").use { fixture ->
+            fixture.rows = """{"streams":[{"infoHash":"${hash('1')}","title":"Forbidden Love [1975] S02E01"}]}"""
+            val adapter = fixture.adapter()
+            val addon = (adapter.discover(fixture.server.url("/config").toString()) as NetworkResult.Success).data
+            val result = withContext(Dispatchers.IO) {
+                adapter.search(addon, ExpressMediaRequest("series", "tt1286677:2:1"))
+            }
+            assertTrue("Search failed: $result", result is NetworkResult.Success)
+            assertEquals(setOf(hash('1')), (result as NetworkResult.Success).data.mapNotNull { it.infoHash }.toSet())
+        }
+    }
+
+    private suspend fun assertFoldedOnlyAdmission(fixture: Fixture, expectedOriginal: String?) {
+        val media = fixture.resolver.resolve(ExpressMediaRequest("series", "tt1286677:2:1"))
+        assertEquals(expectedOriginal, media.originalTitle)
+        assertEquals(listOf("Aşk-ı Memnu", "Ask-i Memnu"), media.queryTitles())
+        assertEquals(listOf(
+            "https://example.org/search?q=A%C5%9Fk-%C4%B1%20Memnu%202008%20s02e01&imdb=tt1286677&season=2&episode=1",
+            "https://example.org/search?q=Ask-i%20Memnu%202008%20s02e01&imdb=tt1286677&season=2&episode=1"
+        ), fixture.adapter().providerQueries(episodeProvider, media))
+        fixture.rows = """{"streams":[
+          {"infoHash":"${hash('1')}","title":"Ask-i Memnu [1975] S02E01","behaviorHints":{"filename":"Ask-i.Memnu.2008.S02E01.mkv"}},
+          {"infoHash":"${hash('2')}","title":"Aşk-ı Memnu 2008 S02E01","behaviorHints":{"filename":"Ask-i.Memnu.[1975].S02E01.mkv"}},
+          {"infoHash":"${hash('3')}","title":"Ask-i Memnu [2009] S02E01","behaviorHints":{"filename":"Ask-i.Memnu.2009.S02E01.mkv"}},
+          {"infoHash":"${hash('4')}","title":"Ask-i Memnu S02E01","behaviorHints":{"filename":"Ask-i.Memnu.S02E01.[1975].Remaster.mkv"}},
+          {"infoHash":"${hash('5')}","title":"Ask-i Memnu S02E01","behaviorHints":{"filename":"Ask-i.Memnu.S02E01.mkv"}}
+        ]}"""
+        val adapter = fixture.adapter()
+        val addon = (adapter.discover(fixture.server.url("/config").toString()) as NetworkResult.Success).data
+        val result = withContext(Dispatchers.IO) {
+            adapter.search(addon, ExpressMediaRequest("series", "tt1286677:2:1"))
+        }
+        assertTrue("Search failed: $result", result is NetworkResult.Success)
+        assertEquals(setOf(hash('3'), hash('4'), hash('5')), (result as NetworkResult.Success).data.mapNotNull { it.infoHash }.toSet())
+    }
+
+    @Test
     fun `movie international search rejects conflicting prefix year while retaining one year drift`() = runTest {
         Fixture(type = "movie", canonical = "The Secret in Their Eyes", original = "El secreto de sus ojos", year = 2009).use { fixture ->
             fixture.rows = """{"streams":[
