@@ -2383,6 +2383,7 @@
     <string name="update_title">App Update</string>
     <string name="update_available">Update available</string>
     <string name="update_version_available">Syclop %1$s is ready to download.</string>
+    <string name="update_version_range">%1$s → %2$s</string>
     <string name="update_now">Update now</string>
     <string name="update_later">Later</string>
     <string name="update_downloading">Downloading update</string>
