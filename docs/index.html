@@ -4,46 +4,84 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <meta name="description" content="Syclop is a native Android TV media app. Learn how to set it up, build it from source, or report an issue.">
+  <meta name="description" content="Your media. Made for TV. Download Syclop, an independent Android TV media app for your own library and connected services.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>Syclop for Android TV</title>
+  <title>Syclop — Your media. Made for TV.</title>
   <link rel="icon" type="image/png" href="assets/syclop-primary-head.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to content</a>
   <div class="page">
     <header>
-      <a class="wordmark" href="./" aria-label="Syclop home">SYCLOP</a>
+      <a class="wordmark" href="./" aria-label="Syclop home">Syclop</a>
       <nav aria-label="Main navigation">
-        <a href="https://github.com/dintalframe/Syclop/blob/syclop/SYCLOP_FEATURE_AUDIT.md">Project status</a>
+        <a href="https://github.com/dintalframe/Syclop/releases">Releases</a>
         <a href="https://github.com/dintalframe/Syclop">GitHub <span aria-hidden="true">↗</span></a>
       </nav>
     </header>
-    <main>
+    <main id="main" tabindex="-1">
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <p class="eyebrow"><span aria-hidden="true"></span> Development / private beta</p>
-          <h1 id="hero-title">Media for<br>Android TV.</h1>
-          <p class="intro">Browse and play your media with a remote-friendly interface, local profiles, and your own connected services.</p>
+          <p class="eyebrow">For Android TV</p>
+          <h1 id="hero-title">Your media.<br>Made for TV.</h1>
+          <p class="intro">Your library and connected services, together on the big screen. An independent media app built for your remote.</p>
           <div class="actions">
-            <a class="button primary" href="https://github.com/dintalframe/Syclop/blob/syclop/README.md#set-up-your-tv">Set up Syclop</a>
-            <a class="button secondary" href="https://github.com/dintalframe/Syclop/blob/syclop/SYCLOP_BUILD.md">Build guide</a>
+            <a class="button primary" href="https://github.com/dintalframe/Syclop/releases/latest">Download latest release <span aria-hidden="true">↗</span></a>
+            <a class="button secondary" href="https://github.com/dintalframe/Syclop/releases">Release notes</a>
           </div>
-          <p class="release-note">Syclop is available to build from source. There is no public APK download or stable release.</p>
+          <p class="release-note">Choose your APK on GitHub. Release notes include checksums and verification limits.</p>
         </div>
         <div class="hero-art">
           <img src="assets/syclop-primary-head.png" width="512" height="512" alt="Syclop's one-eyed mascot wearing a blue visor and headphones" fetchpriority="high">
         </div>
       </section>
-      <section class="details" aria-label="About Syclop">
-        <article><p class="number" aria-hidden="true">01</p><h2>Made for your TV.</h2><p>A quiet, dark interface designed around the big screen and D-pad navigation.</p></article>
-        <article><p class="number" aria-hidden="true">02</p><h2>Your accounts.</h2><p>Connect supported media and tracking services. Third-party accounts and subscriptions remain separate.</p></article>
-        <article><p class="number" aria-hidden="true">03</p><h2>Open development.</h2><p>The GPLv3 app source, build instructions and known limitations are available on GitHub.</p></article>
+      <section class="benefits" aria-label="Made for the way you watch">
+        <article>
+          <p class="number" aria-hidden="true">01</p>
+          <h2>Remote in hand.</h2>
+          <p>Browse, search, and play with a clear interface designed for TV navigation.</p>
+        </article>
+        <article>
+          <p class="number" aria-hidden="true">02</p>
+          <h2>Your services, connected.</h2>
+          <p>Bring your own media server or supported source, and connect the services you use.</p>
+        </article>
+        <article>
+          <p class="number" aria-hidden="true">03</p>
+          <h2>A place for everyone.</h2>
+          <p>Keep local profiles and watch progress, then return with Continue Watching.</p>
+        </article>
+      </section>
+      <section class="setup" aria-labelledby="setup-title">
+        <div class="section-heading">
+          <p class="eyebrow">Get started</p>
+          <h2 id="setup-title">Three steps to your next watch.</h2>
+          <p>Requires Android 7.0+ and a media source you are authorized to use. Syclop does not supply media; service accounts and subscriptions are separate.</p>
+        </div>
+        <ol class="steps" role="list">
+          <li>
+            <h3>Install Syclop.</h3>
+            <p>Download the signed APK from the <a href="https://github.com/dintalframe/Syclop/releases/latest">latest release</a>, install it on your TV, and complete first-run setup.</p>
+          </li>
+          <li>
+            <h3>Connect your source.</h3>
+            <p>Open Settings → Connected Services → Add-ons and media servers. Debrid services are in the same Connected Services menu.</p>
+          </li>
+          <li>
+            <h3>Make yourself at home.</h3>
+            <p>Choose a profile and start watching. Optional trackers under Connected accounts can sync supported library and watch-progress data.</p>
+          </li>
+        </ol>
       </section>
     </main>
     <footer>
-      <p>Built from <a href="https://github.com/NuvioMedia/NuvioTV">NuvioTV</a>. Independent development.</p>
-      <div><a href="https://github.com/dintalframe/Syclop/issues">Report a bug</a><a href="https://github.com/dintalframe/Syclop/blob/syclop/LICENSE">App license</a></div>
+      <p>Independent. Open source. Built from <a href="https://github.com/NuvioMedia/NuvioTV">NuvioTV</a>.</p>
+      <nav aria-label="Project resources">
+        <a href="https://github.com/dintalframe/Syclop/issues">Support</a>
+        <a href="https://github.com/dintalframe/Syclop/blob/syclop/SYCLOP_BUILD.md">Build guide</a>
+        <a href="https://github.com/dintalframe/Syclop/blob/syclop/LICENSE">GPLv3</a>
+      </nav>
     </footer>
   </div>
 </body>
