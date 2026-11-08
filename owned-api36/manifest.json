@@ -1,0 +1,24 @@
+{
+  "id": "org.syclop.owned.finalapi36",
+  "version": "1.0.0",
+  "name": "Owned API36 Qualification",
+  "description": "Public synthetic H264/AAC qualification fixture; no account or auth data",
+  "resources": [
+    "catalog",
+    "meta",
+    "stream"
+  ],
+  "types": [
+    "movie"
+  ],
+  "idPrefixes": [
+    "owned:"
+  ],
+  "catalogs": [
+    {
+      "type": "movie",
+      "id": "owned-final-api36",
+      "name": "Owned API36 Fixture"
+    }
+  ]
+}

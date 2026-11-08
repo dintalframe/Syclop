@@ -1,0 +1,12 @@
+{
+  "streams": [
+    {
+      "name": "Owned HTTPS H264/AAC",
+      "title": "Six seconds \u00b7 1280x720 \u00b7 30fps",
+      "url": "https://raw.githubusercontent.com/dintalframe/Syclop/a212e9016e823c56e8c8bff30e8c13557e1bde71/owned-api36/hd.mp4?cycle=99",
+      "behaviorHints": {
+        "notWebReady": false
+      }
+    }
+  ]
+}

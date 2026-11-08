@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "id": "owned:final-api36-hd:41",
+    "type": "movie",
+    "name": "Owned API36 H264 AAC",
+    "description": "Owned six-second H264/AAC synthetic qualification media. No account or external authorization flow.",
+    "poster": "https://raw.githubusercontent.com/dintalframe/Syclop/a212e9016e823c56e8c8bff30e8c13557e1bde71/owned-api36/poster.png",
+    "background": "https://raw.githubusercontent.com/dintalframe/Syclop/a212e9016e823c56e8c8bff30e8c13557e1bde71/owned-api36/poster.png",
+    "genres": [
+      "Owned fixture"
+    ],
+    "released": "2026-01-01T00:00:00.000Z"
+  }
+}
