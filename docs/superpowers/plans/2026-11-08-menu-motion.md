@@ -27,7 +27,7 @@
 - System animation scale0 has no stranded visible/focusable layers or waits for animation completion.
 - Long/blank notes remain readable and navigable; Back from notes restores the offer without downloading.
 
-### Task1: Coordinated sidebar motion
+### Task 1: Coordinated sidebar motion
 
 **Files:** Modify app/src/main/java/com/nuvio/tv/MainActivity.kt and ModernSidebarBlurPanel.kt. A small internal sidebar-motion helper may be added under the same package if both production styles share it; no generic animation framework. Test app/src/androidTest/java/com/nuvio/tv/SidebarMotionTvTest.kt and relevant existing requester tests.
 
@@ -39,7 +39,7 @@
 - [ ] Run GREEN and existing DrawerFocusRequesterStateTest/Home navigation checks; inspect both styles and interruption/blur/RTL on the owned emulator.
 - [ ] Self-review and commit only owned files; report commit range/test evidence/limits to root.
 
-### Task2: Fluid Settings panes
+### Task 2: Fluid Settings panes
 
 **Files:** Modify app/src/main/java/com/nuvio/tv/ui/screens/settings/SettingsScreen.kt; a focused internal Settings transition component may be extracted beside it for both layout branches. Modify SettingsDesignSystem.kt only if focused visuals need the scoped140ms response. Test app/src/androidTest/java/com/nuvio/tv/ui/screens/settings/SettingsMotionTvTest.kt and existing SettingsStructureTest/SettingsCatalogTest.
 
@@ -51,7 +51,7 @@
 - [ ] Run GREEN plus existing SettingsStructureTest/SettingsCatalogTest. Root records actual full-app visual/navigation verification in all three styles.
 - [ ] Self-review and commit only owned files; report evidence and any limits.
 
-### Task3: Version and patch notes in update offer (root)
+### Task 3: Version and patch notes in update offer (root)
 
 **Files:** Modify app/src/full/java/com/nuvio/tv/updater/ui/UpdateBannerHost.kt, existing UpdateDialogs.kt if needed, app/src/main/res/values/strings.xml and app/build.gradle.kts. Add app/src/androidTest/java/com/nuvio/tv/updater/ui/UpdateOfferDetailsTvTest.kt. Add docs/releases/0.1.2.md with accurate implemented changes before final build.
 
