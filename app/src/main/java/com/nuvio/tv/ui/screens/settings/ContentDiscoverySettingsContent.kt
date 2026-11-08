@@ -31,7 +31,8 @@ internal fun ContentDiscoverySettingsContent(
     onNavigateToAddons: () -> Unit,
     onNavigateToPlugins: () -> Unit,
     showPlugins: Boolean,
-    initialFocusRequester: FocusRequester?
+    initialFocusRequester: FocusRequester?,
+    activePane: Boolean
 ) {
     var serverPage by rememberSaveable { mutableStateOf<String?>(null) }
     val hubServersRequester = remember { FocusRequester() }
@@ -39,12 +40,13 @@ internal fun ContentDiscoverySettingsContent(
     val serverRequester = remember { FocusRequester() }
     var returningToHub by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = serverPage != null) {
+    BackHandler(enabled = activePane && serverPage != null) {
         serverPage = if (serverPage == SERVERS_PAGE) null else SERVERS_PAGE
         if (serverPage == null) returningToHub = true
     }
 
-    LaunchedEffect(serverPage) {
+    LaunchedEffect(serverPage, activePane) {
+        if (!activePane) return@LaunchedEffect
         val requester = when (serverPage) {
             null -> hubServersRequester.takeIf { returningToHub }
             SERVERS_PAGE -> serversRequester

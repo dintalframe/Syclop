@@ -8,15 +8,9 @@ import com.nuvio.tv.ui.theme.NuvioTheme
 
 import androidx.activity.compose.BackHandler
 import androidx.annotation.RawRes
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -103,7 +97,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 
-private enum class IntegrationSettingsSection {
+internal enum class IntegrationSettingsSection {
     Hub,
     Debrid,
     Tmdb,
@@ -136,16 +130,8 @@ private const val SETTINGS_RAIL_FOCUS_RETRY_WINDOW_MS = 200L
  */
 private const val NO_RAIL_FALLBACK = -1L
 private const val SETTINGS_TAB_FOCUS_SELECT_DELAY_MS = 140L
-private const val SETTINGS_DETAIL_ANIM_IN_DURATION_MS = 200
-private const val SETTINGS_DETAIL_ANIM_OUT_DURATION_MS = 180
-
-// The focus window has two parts: SETTINGS_DETAIL_FOCUS_DELAY_MS before the first request, then
-// this long retrying once per frame, so a category has both added together before focus falls
-// back to a directional move. This part is taken from the enter animation so the two cannot
-// drift apart, and is timed rather than counted in frames since a frame count assumes a
-// refresh rate. The worst case wait before the fallback is SETTINGS_DETAIL_FOCUS_DELAY_MS plus
-// this window, not this window alone.
-private const val SETTINGS_DETAIL_FOCUS_RETRY_WINDOW_MS = SETTINGS_DETAIL_ANIM_IN_DURATION_MS
+// Keep the existing focus retry window independent of the shorter pane animation.
+private const val SETTINGS_DETAIL_FOCUS_RETRY_WINDOW_MS = 200L
 
 private sealed interface ExperienceModeLoadState {
     data object Loading : ExperienceModeLoadState
@@ -369,7 +355,7 @@ fun SettingsScreen(
     // Back inside the options pane returns to its menu before the rail and then Settings, the
     // way back inside a row returns to the start of that row. Anything the pane declares itself,
     // such as the integrations sub sections, composes later and so is asked first.
-    BackHandler(enabled = detailHasFocus) {
+    BackHandler(enabled = detailHasFocus || (allowDetailAutofocus && pendingContentFocusCategory != null)) {
         val parent = settingsBackTarget(selectedCategory)
         if (parent != null) {
             menuReturnCategoryName = selectedCategory.name
@@ -381,6 +367,8 @@ fun SettingsScreen(
         // leaving settings. The result of the request is deliberately not read: either way this
         // press was the step back, and with the flag already cleared the next one carries on out.
         detailHasFocus = false
+        allowDetailAutofocus = false
+        pendingContentFocusCategory = null
         focusRailCategory(railFocusCategory)
     }
 
@@ -407,18 +395,30 @@ fun SettingsScreen(
         }
     }
 
-    LaunchedEffect(pendingContentFocusRequestId) {
+    LaunchedEffect(pendingContentFocusRequestId, selectedCategory, integrationSection, allowDetailAutofocus) {
         val category = pendingContentFocusCategory ?: return@LaunchedEffect
+        if (category != selectedCategory || !allowDetailAutofocus) {
+            pendingContentFocusCategory = null
+            return@LaunchedEffect
+        }
         delay(SETTINGS_DETAIL_FOCUS_DELAY_MS)
         // Asked once per frame until the pane takes focus or the window closes, rather than
         // betting on one fixed delay. The pane is not always laid out when the delay expires,
         // and the fallback below moves by direction, which lands wherever is nearest the rail
         // row the user came from, usually the middle of the options.
+        val requester = if (category == SettingsCategory.INTEGRATION) {
+            when (integrationSection) {
+                IntegrationSettingsSection.Hub -> contentFocusRequesters[category]
+                IntegrationSettingsSection.Debrid -> integrationDebridFocusRequester
+                IntegrationSettingsSection.Tmdb -> integrationTmdbFocusRequester
+                IntegrationSettingsSection.MdbList -> integrationMdbListFocusRequester
+                IntegrationSettingsSection.AnimeSkip -> integrationAnimeSkipFocusRequester
+            }
+        } else contentFocusRequesters[category]
         var requested = false
         val deadline = System.nanoTime() + SETTINGS_DETAIL_FOCUS_RETRY_WINDOW_MS * 1_000_000L
         while (!requested && System.nanoTime() < deadline) {
-            requested = contentFocusRequesters[category]
-                ?.let { runCatching { it.requestFocus() }.getOrDefault(false) } ?: false
+            requested = requester?.let { runCatching { it.requestFocus() }.getOrDefault(false) } ?: false
             if (!requested) withFrameNanos { }
         }
         if (!requested) {
@@ -626,41 +626,26 @@ fun SettingsScreen(
                                 }
                             }
                     ) {
-                        AnimatedContent(
-                            targetState = selectedCategory,
+                        SettingsPaneTransition(
+                            targetState = SettingsPane(selectedCategory, integrationSection),
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .fillMaxHeight()
                                 .widthIn(max = 880.dp)
-                                .fillMaxWidth(),
-                            transitionSpec = {
-                                val order = visibleSections.map { it.category }
-                                val forward = order.indexOf(settingsRailCategory(targetState)) >= order.indexOf(settingsRailCategory(initialState))
-                                val toStart = forward != isRtl
-                                (slideInHorizontally(
-                                    animationSpec = tween(SETTINGS_DETAIL_ANIM_IN_DURATION_MS, easing = FastOutSlowInEasing)
-                                ) { fullWidth -> if (toStart) fullWidth / 4 else -fullWidth / 4 } +
-                                    fadeIn(tween(SETTINGS_DETAIL_ANIM_IN_DURATION_MS)))
-                                    .togetherWith(
-                                        slideOutHorizontally(
-                                            animationSpec = tween(SETTINGS_DETAIL_ANIM_OUT_DURATION_MS, easing = FastOutSlowInEasing)
-                                        ) { fullWidth -> if (toStart) -fullWidth / 4 else fullWidth / 4 } +
-                                            fadeOut(tween(SETTINGS_DETAIL_ANIM_OUT_DURATION_MS))
-                                    )
-                            },
-                            label = "settingsDetailTransition"
-                        ) { animatedCategory ->
+                                .fillMaxWidth()
+                        ) { animatedPane, active ->
                             SettingsDetailPane(
-                                selectedCategory = animatedCategory,
+                                selectedCategory = animatedPane.category,
+                                activePane = active,
                                 onOpenSettingsCategory = openSettingsCategory,
                                 isPrimaryProfile = isPrimaryProfileActive,
                                 isWatchPartyAvailable = isWatchPartyAvailable,
                                 menuReturnCategory = menuReturnCategory,
                                 isEssentialMode = isEssentialMode,
-                                allowDetailAutofocus = allowDetailAutofocus,
+                                allowDetailAutofocus = allowDetailAutofocus && active,
                                 contentFocusRequesters = contentFocusRequesters,
                                 experienceModeViewModel = experienceModeViewModel,
-                                integrationSection = integrationSection,
+                                integrationSection = animatedPane.integrationSection,
                                 onSelectIntegrationSection = { integrationSection = it },
                                 integrationHubFocusRequester = integrationHubFocusRequester,
                                 integrationDebridFocusRequester = integrationDebridFocusRequester,
@@ -808,31 +793,37 @@ fun SettingsScreen(
                             }
                         }
                 ) {
-                    SettingsDetailPane(
-                        selectedCategory = selectedCategory,
-                        onOpenSettingsCategory = openSettingsCategory,
-                        isPrimaryProfile = isPrimaryProfileActive,
-                        isWatchPartyAvailable = isWatchPartyAvailable,
-                        menuReturnCategory = menuReturnCategory,
-                        isEssentialMode = isEssentialMode,
-                        allowDetailAutofocus = allowDetailAutofocus,
-                        contentFocusRequesters = contentFocusRequesters,
-                        experienceModeViewModel = experienceModeViewModel,
-                        integrationSection = integrationSection,
-                        onSelectIntegrationSection = { integrationSection = it },
-                        integrationHubFocusRequester = integrationHubFocusRequester,
-                        integrationDebridFocusRequester = integrationDebridFocusRequester,
-                        integrationTmdbFocusRequester = integrationTmdbFocusRequester,
-                        integrationMdbListFocusRequester = integrationMdbListFocusRequester,
-                        integrationAnimeSkipFocusRequester = integrationAnimeSkipFocusRequester,
-                        onNavigateToManageProfiles = onNavigateToManageProfiles,
-                        onNavigateToAddons = onNavigateToAddons,
-                        onNavigateToPlugins = onNavigateToPlugins,
-                        onNavigateToAuthQrSignIn = onNavigateToAuthQrSignIn,
-                        onNavigateToSupportersContributors = onNavigateToSupportersContributors,
-                        onNavigateToLicensesAttributions = onNavigateToLicensesAttributions,
-                        onNavigateToWatchParty = onNavigateToWatchParty
-                    )
+                    SettingsPaneTransition(
+                        targetState = SettingsPane(selectedCategory, integrationSection),
+                        modifier = Modifier.fillMaxSize()
+                    ) { animatedPane, active ->
+                        SettingsDetailPane(
+                            selectedCategory = animatedPane.category,
+                            activePane = active,
+                            onOpenSettingsCategory = openSettingsCategory,
+                            isPrimaryProfile = isPrimaryProfileActive,
+                            isWatchPartyAvailable = isWatchPartyAvailable,
+                            menuReturnCategory = menuReturnCategory,
+                            isEssentialMode = isEssentialMode,
+                            allowDetailAutofocus = allowDetailAutofocus && active,
+                            contentFocusRequesters = contentFocusRequesters,
+                            experienceModeViewModel = experienceModeViewModel,
+                            integrationSection = animatedPane.integrationSection,
+                            onSelectIntegrationSection = { integrationSection = it },
+                            integrationHubFocusRequester = integrationHubFocusRequester,
+                            integrationDebridFocusRequester = integrationDebridFocusRequester,
+                            integrationTmdbFocusRequester = integrationTmdbFocusRequester,
+                            integrationMdbListFocusRequester = integrationMdbListFocusRequester,
+                            integrationAnimeSkipFocusRequester = integrationAnimeSkipFocusRequester,
+                            onNavigateToManageProfiles = onNavigateToManageProfiles,
+                            onNavigateToAddons = onNavigateToAddons,
+                            onNavigateToPlugins = onNavigateToPlugins,
+                            onNavigateToAuthQrSignIn = onNavigateToAuthQrSignIn,
+                            onNavigateToSupportersContributors = onNavigateToSupportersContributors,
+                            onNavigateToLicensesAttributions = onNavigateToLicensesAttributions,
+                            onNavigateToWatchParty = onNavigateToWatchParty
+                        )
+                    }
                 }
             }
             }
@@ -843,6 +834,7 @@ fun SettingsScreen(
 @Composable
 private fun SettingsDetailPane(
     selectedCategory: SettingsCategory,
+    activePane: Boolean,
     onOpenSettingsCategory: (SettingsCategory) -> Unit,
     isPrimaryProfile: Boolean,
     isWatchPartyAvailable: Boolean,
@@ -926,6 +918,7 @@ private fun SettingsDetailPane(
         )
         SettingsCategory.INTEGRATION -> IntegrationSettingsContent(
             selectedSection = integrationSection,
+            activePane = activePane,
             onSelectSection = onSelectIntegrationSection,
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.INTEGRATION]
@@ -950,6 +943,7 @@ private fun SettingsDetailPane(
             }
         )
         SettingsCategory.CONTENT_DISCOVERY -> ContentDiscoverySettingsContent(
+            activePane = activePane,
             onNavigateToAddons = onNavigateToAddons,
             onNavigateToPlugins = onNavigateToPlugins,
             showPlugins = false,
@@ -1025,6 +1019,7 @@ private fun AccountSettingsInline(
 @Composable
 private fun IntegrationSettingsContent(
     selectedSection: IntegrationSettingsSection,
+    activePane: Boolean,
     onSelectSection: (IntegrationSettingsSection) -> Unit,
     initialFocusRequester: FocusRequester?,
     hubFocusRequester: FocusRequester,
@@ -1034,7 +1029,7 @@ private fun IntegrationSettingsContent(
     animeSkipFocusRequester: FocusRequester,
     autoFocusEnabled: Boolean
 ) {
-    BackHandler(enabled = selectedSection != IntegrationSettingsSection.Hub) {
+    BackHandler(enabled = activePane && selectedSection != IntegrationSettingsSection.Hub) {
         onSelectSection(IntegrationSettingsSection.Hub)
     }
     val hubEntryFocusRequester = initialFocusRequester ?: hubFocusRequester
@@ -1115,25 +1110,25 @@ private fun IntegrationSettingsContent(
 
         IntegrationSettingsSection.Debrid -> {
             DebridSettingsContent(
-                initialFocusRequester = debridFocusRequester
+                initialFocusRequester = debridFocusRequester.takeIf { autoFocusEnabled }
             )
         }
 
         IntegrationSettingsSection.Tmdb -> {
             TmdbSettingsContent(
-                initialFocusRequester = tmdbFocusRequester
+                initialFocusRequester = tmdbFocusRequester.takeIf { autoFocusEnabled }
             )
         }
 
         IntegrationSettingsSection.MdbList -> {
             MDBListSettingsContent(
-                initialFocusRequester = mdbListFocusRequester
+                initialFocusRequester = mdbListFocusRequester.takeIf { autoFocusEnabled }
             )
         }
 
         IntegrationSettingsSection.AnimeSkip -> {
             AnimeSkipSettingsContent(
-                initialFocusRequester = animeSkipFocusRequester
+                initialFocusRequester = animeSkipFocusRequester.takeIf { autoFocusEnabled }
             )
         }
     }
