@@ -7,9 +7,17 @@ import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.core.plugin.absoluteAnimeEpisodeNumber
 import com.nuvio.tv.data.mal.MalMetadataService
 import java.net.URLEncoder
+import java.text.Normalizer
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 data class ExpressMediaRequest(val type: String, val videoId: String, val season: Int? = null, val episode: Int? = null)
 data class ExpressMedia(
@@ -25,7 +33,9 @@ data class ExpressMedia(
     /** Minted only from trusted native MAL metadata/mapping, never from an addon row. */
     val nativeAnimeIdentity: com.nuvio.tv.core.anime.NativeAnimeTitleIdentity? = null,
     /** Keeps catalog-relative, mapped TVDB and optional release-absolute coordinates distinct. */
-    val nativeAnimeEpisode: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof? = null
+    val nativeAnimeEpisode: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof? = null,
+    /** Optional original spelling resolved against this record's IMDb identity. */
+    val originalTitle: String? = null
 ) {
     val hasMappedEpisodeCoordinates: Boolean get() = nativeAnimeEpisode != null
     val catalogSeason: Int? get() = if (nativeAnimeEpisode != null) 1 else season
@@ -34,7 +44,12 @@ data class ExpressMedia(
     val tvdbEpisode: Int? get() = nativeAnimeEpisode?.tvdbEpisode
 
     fun queryTitles(): List<String> {
-        if (!anime) return listOf(title)
+        if (!anime) {
+            val canonical = expressQueryTitle(title)
+            val original = originalTitle?.let(::expressQueryTitle)
+            return listOfNotNull(canonical, original, (original ?: canonical)?.let(::foldExpressTitle))
+                .distinct().take(3)
+        }
         // The proof-bound mapping snapshot must also recognize every searched alias. Reading
         // a separate mutable metadata alias list here can find a file the resolver must reject.
         nativeAnimeEpisode?.let { return it.queryTitles() }
@@ -69,7 +84,8 @@ class ExpressMetadataResolver @Inject constructor(
     private val mal: MalMetadataService,
     private val animeMappings: com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings? = null
 ) : ExpressMetadataSource {
-    private val cache = ConcurrentHashMap<String, JsonObject>()
+    private data class Metadata(val title: String, val year: Int?, val originalTitle: String?)
+    private val cache = ConcurrentHashMap<String, Metadata>()
 
     override suspend fun resolve(request: ExpressMediaRequest): ExpressMedia {
         if (request.videoId.startsWith("mal:")) {
@@ -130,16 +146,77 @@ class ExpressMetadataResolver @Inject constructor(
             val value = root.getAsJsonObject("meta") ?: throw ExpressException("Catalog metadata is unavailable.")
             val returnedId = value.string("imdb_id") ?: value.string("id")
             if (returnedId != imdbId) throw ExpressException("Catalog metadata did not match the requested IMDb ID.")
+            val title = value.string("name")?.takeIf { it.isNotBlank() }
+                ?: throw ExpressException("Catalog did not provide a title.")
+            val year = listOfNotNull(value.string("year"), value.string("releaseInfo"))
+                .firstNotNullOfOrNull { Regex("^(\\d{4})(?:\\D|$)").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+            val original = withContext(Dispatchers.IO) {
+                withTimeoutOrNull(2_500L) {
+                    tmdb.findOriginalTitle(imdbId, type, year)
+                        ?: if (type == "series" && year != null) tvmazeOriginalTitle(imdbId, year) else null
+                }
+            }
+            val metadata = Metadata(title, year, original)
             if (cache.size >= 100) cache.clear()
-            cache[key] = value
-            value
+            cache[key] = metadata
+            metadata
         }
-        val title = meta.string("name")?.takeIf { it.isNotBlank() }
-            ?: throw ExpressException("Catalog did not provide a title.")
-        val year = listOfNotNull(meta.string("year"), meta.string("releaseInfo"))
-            .firstNotNullOfOrNull { Regex("^(\\d{4})(?:\\D|$)").find(it)?.groupValues?.get(1)?.toIntOrNull() }
-        return ExpressMedia(type, title, imdbId, year, season, episode,
-            absoluteNumber = null, anime = request.type == "anime")
+        return ExpressMedia(type, meta.title, imdbId, meta.year, season, episode,
+            absoluteNumber = null, anime = request.type == "anime", originalTitle = meta.originalTitle)
+    }
+
+    private suspend fun tvmazeOriginalTitle(imdbId: String, year: Int): String? = try {
+        var showId: Int? = null
+        fun validate(url: HttpUrl) {
+            if (url.scheme != "https" || url.host != "api.tvmaze.com" || url.port != 443)
+                throw ExpressException("TVmaze metadata changed origin.")
+            val id = Regex("^/shows/([1-9][0-9]*)$").matchEntire(url.encodedPath)
+                ?.groupValues?.get(1)?.toIntOrNull()
+            if (id != null && url.query == null && (showId == null || showId == id)) showId = id
+            else if (showId != null || url.encodedPath != "/lookup/shows" || url.query != "imdb=$imdbId")
+                throw ExpressException("TVmaze metadata changed identity.")
+        }
+        val document = http.get("https://api.tvmaze.com/lookup/shows?imdb=$imdbId", 512 * 1024,
+            beforeRedirect = ::validate)
+        validate(document.url.toHttpUrl())
+        val value = parseExpressObject(document.text)
+        val id = value.string("id")?.toIntOrNull()?.takeIf { it > 0 }
+        val external = value.get("externals")?.takeIf { it.isJsonObject }?.asJsonObject?.string("imdb")
+        if (id == null || (showId != null && showId != id) || external != imdbId ||
+            value.string("premiered")?.take(4)?.toIntOrNull() != year) null
+        else value.string("name")?.let(::expressQueryTitle)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun expressQueryTitle(value: String): String? = Normalizer.normalize(value, Normalizer.Form.NFKC)
+    .trim().takeIf { it.isNotEmpty() && it.length <= 256 && it.none(Char::isISOControl) }
+
+private fun foldExpressTitle(value: String): String = Normalizer.normalize(
+    Normalizer.normalize(value, Normalizer.Form.NFD).replace(Regex("(?<=\\p{IsLatin})\\p{M}+"), "")
+        .replace('ı', 'i'), Normalizer.Form.NFC)
+
+/** Only an explicit year immediately after a known title is evidence of another edition. */
+internal fun ExpressMedia.acceptsInternationalYearHints(row: ExpressRow): Boolean {
+    val premiere = year ?: return true
+    val original = originalTitle?.let(::expressQueryTitle) ?: return true
+    if (anime || original == expressQueryTitle(title)) return true
+    fun normalized(value: String) = foldExpressTitle(value).lowercase(Locale.ROOT)
+        .replace(Regex("[\\s._:–—-]+"), " ").trim()
+    val titles = queryTitles().map(::normalized).distinct()
+    return listOfNotNull(row.title, row.filename).all { name ->
+        val text = normalized(name.replace('\\', '/').substringAfterLast('/'))
+        titles.all { known ->
+            if (!text.startsWith("$known ") && !text.startsWith("$known(") && !text.startsWith("$known[")) true
+            else {
+                val hint = Regex("^(?:\\(|\\[)?((?:18|19|20|21)\\d{2})(?:\\)|\\])?(?= |$)")
+                    .find(text.removePrefix(known).trimStart())?.groupValues?.get(1)?.toIntOrNull()
+                hint == null || if (type == "movie") kotlin.math.abs(hint - premiere) <= 1 else hint >= premiere
+            }
+        }
     }
 }
 

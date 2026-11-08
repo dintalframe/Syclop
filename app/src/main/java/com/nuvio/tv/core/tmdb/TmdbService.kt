@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,9 +22,39 @@ private val TMDB_API_KEY = BuildConfig.TMDB_API_KEY
  * Provides caching to avoid redundant API calls.
  */
 @Singleton
-class TmdbService @Inject constructor(
-    private val tmdbApi: TmdbApi
+class TmdbService internal constructor(
+    private val tmdbApi: TmdbApi,
+    private val originalTitleApiKey: String
 ) {
+    @Inject constructor(tmdbApi: TmdbApi) : this(tmdbApi, TMDB_API_KEY)
+
+    /** Optional original spelling for the same external identity, never a title-search guess. */
+    suspend fun findOriginalTitle(imdbId: String, mediaType: String, expectedYear: Int?): String? =
+        withContext(Dispatchers.IO) {
+            val type = normalizeMediaType(mediaType)
+            if (originalTitleApiKey.isBlank() || !imdbId.matches(Regex("tt[0-9]+")) ||
+                type !in setOf("movie", "tv")) return@withContext null
+            try {
+                withTimeoutOrNull(1_500L) {
+                    val response = tmdbApi.findByExternalId(imdbId, originalTitleApiKey, "imdb_id")
+                    if (!response.isSuccessful) return@withTimeoutOrNull null
+                    val body = response.body() ?: return@withTimeoutOrNull null
+                    val result = (if (type == "movie") body.movieResults else body.tvResults)
+                        ?.singleOrNull() ?: return@withTimeoutOrNull null
+                    if (result.id <= 0 || (result.mediaType != null && result.mediaType != type)) return@withTimeoutOrNull null
+                    val year = (if (type == "movie") result.releaseDate else result.firstAirDate)
+                        ?.take(4)?.toIntOrNull()
+                    if (expectedYear != null && year != null && expectedYear != year) return@withTimeoutOrNull null
+                    (if (type == "movie") result.originalTitle else result.originalName)
+                        ?.trim()?.takeIf { it.isNotEmpty() && it.length <= 256 && it.none(Char::isISOControl) }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+        }
+
     // Cache: IMDB ID -> TMDB ID (keyed by "$imdbId:$mediaType")
     private val imdbToTmdbCache = ConcurrentHashMap<String, Int>()
     

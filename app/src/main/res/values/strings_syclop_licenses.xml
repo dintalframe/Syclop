@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="syclop_licenses_tvmaze_title">TVmaze metadata</string>
+    <string name="syclop_licenses_tvmaze_body">Series title spellings and premiere dates are provided by TVmaze under CC BY-SA 4.0. Syclop normalizes title spellings for source searches.</string>
+    <string name="syclop_licenses_tvmaze_license_title">TVmaze data license · CC BY-SA 4.0</string>
+    <string name="syclop_licenses_tvmaze_license_body">Read the Creative Commons Attribution-ShareAlike 4.0 license for TVmaze metadata and adapted title spellings.</string>
     <string name="syclop_licenses_subtitle">Data providers, service credits, and Android playback licenses used by Syclop.</string>
     <string name="syclop_licenses_app_title">Syclop</string>
     <string name="syclop_licenses_app_body">Syclop is derived from NuvioTV and licensed under the GNU General Public License v3.0. Its corresponding source code and license are available in the Syclop repository. Upstream credits are retained below.</string>

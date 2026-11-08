@@ -219,6 +219,7 @@ class ExpressAddonAdapter internal constructor(
                                     var admittedRows = 0
                                     for (row in rows) {
                                         if (!media.acceptsNativeAnimeRow(row)) { count(SourceSearchReason.TITLE_MISMATCH); continue }
+                                        if (!media.acceptsInternationalYearHints(row)) { count(SourceSearchReason.TITLE_MISMATCH); continue }
                                         if (episodeRequest && EpisodeSourcePolicy.hasReportedPackText(row.title, row.filename)) {
                                             count(SourceSearchReason.SEASON_PACK_HIDDEN); continue
                                         }

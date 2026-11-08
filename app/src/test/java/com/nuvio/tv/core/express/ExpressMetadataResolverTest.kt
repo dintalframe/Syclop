@@ -23,6 +23,7 @@ class ExpressMetadataResolverTest {
                 .setBody("""{"meta":{"id":"tt123","imdb_id":"tt123","name":"Verified & Title","releaseInfo":"2024–"}}"""))
             val tmdb = mockk<TmdbService>()
             coEvery { tmdb.tmdbToImdb(999, "series") } returns "tt123"
+            coEvery { tmdb.findOriginalTitle("tt123", "series", 2024) } returns "Verified & Title"
             val client = OkHttpClient.Builder().addInterceptor { chain ->
                 chain.proceed(chain.request().newBuilder().url(server.url(chain.request().url.encodedPath)).build())
             }.build()

@@ -414,6 +414,16 @@ private fun dataAttributionItems() = listOf(
         logo = LicenseLogo.Drawable(R.drawable.rating_tmdb)
     ),
     LicenseAttributionItem(
+        title = stringResource(R.string.syclop_licenses_tvmaze_title),
+        body = stringResource(R.string.syclop_licenses_tvmaze_body),
+        url = "https://www.tvmaze.com"
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.syclop_licenses_tvmaze_license_title),
+        body = stringResource(R.string.syclop_licenses_tvmaze_license_body),
+        url = "https://creativecommons.org/licenses/by-sa/4.0/"
+    ),
+    LicenseAttributionItem(
         title = stringResource(R.string.licenses_attributions_trakt_title),
         body = stringResource(R.string.licenses_attributions_trakt_body),
         url = TraktUrl,
