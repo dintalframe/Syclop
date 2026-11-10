@@ -4,48 +4,54 @@ import com.nuvio.tv.core.debrid.DirectDebridFailure
 import com.nuvio.tv.core.debrid.DirectDebridFailureReason
 import com.nuvio.tv.core.debrid.DirectDebridResolveResult
 import com.nuvio.tv.core.debrid.canonicalAvailabilityHash
-import com.nuvio.tv.data.local.StreamAutoPlayMode
 import com.nuvio.tv.domain.model.Stream
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 import kotlin.coroutines.coroutineContext
 
 internal data class AutomaticStreamAttempt<T>(val playback: T? = null,
     val failure: DirectDebridResolveResult? = null)
 
-internal const val AUTOMATIC_STREAM_BUDGET_MS = 30_000L
+internal const val SOURCE_RESOLUTION_TIMEOUT_MS = 30_000L
 
 /** One bounded selection: each source hash is attempted once, including aliases from other addons. */
 internal suspend fun <T> resolveAutomaticStreamFallback(
     initial: Stream,
     ranked: List<Stream>,
-    mode: StreamAutoPlayMode,
     eligible: (Stream) -> Boolean,
     selectNext: (List<Stream>) -> Stream?,
     isCurrent: () -> Boolean,
-    budgetMillis: Long = AUTOMATIC_STREAM_BUDGET_MS,
+    budgetMillis: Long = SOURCE_RESOLUTION_TIMEOUT_MS,
+    onAttempt: (Int, Int) -> Unit = { _, _ -> },
     resolve: suspend (Stream) -> AutomaticStreamAttempt<T>
-): AutomaticStreamAttempt<T> = withTimeoutOrNull(budgetMillis.coerceAtLeast(1L)) {
+): AutomaticStreamAttempt<T> {
     var remaining = ranked.filter(eligible)
     var candidate: Stream? = initial.takeIf(eligible)
-    var last = AutomaticStreamAttempt<T>()
-    val attempted = mutableSetOf<String>()
-    repeat(if (mode == StreamAutoPlayMode.MANUAL) 1 else 3) {
-        coroutineContext.ensureActive()
-        if (!isCurrent()) return@withTimeoutOrNull AutomaticStreamAttempt<T>()
-        val selected = candidate ?: return@withTimeoutOrNull last
+    val candidates = mutableListOf<Stream>()
+    while (candidate != null) {
+        yield()
+        if (!isCurrent()) return AutomaticStreamAttempt()
+        val selected = candidate
+        candidates += selected
         val identity = selected.automaticSourceIdentity()
-        if (!attempted.add(identity)) return@withTimeoutOrNull last
         remaining = remaining.filterNot { it.automaticSourceIdentity() == identity }
-        last = resolve(selected)
-        coroutineContext.ensureActive()
-        if (!isCurrent()) return@withTimeoutOrNull AutomaticStreamAttempt<T>()
-        if (last.playback != null || !last.failure.canAdvanceAutomaticSource()) return@withTimeoutOrNull last
-        candidate = selectNext(remaining)
+        candidate = selectNext(remaining)?.takeIf { it in remaining }
     }
-    last
-} ?: AutomaticStreamAttempt(failure = DirectDebridResolveResult.Failure(
-    DirectDebridFailure(DirectDebridFailureReason.TIMED_OUT)))
+    var last = AutomaticStreamAttempt<T>()
+    for ((index, selected) in candidates.withIndex()) {
+        coroutineContext.ensureActive()
+        if (!isCurrent()) return AutomaticStreamAttempt()
+        onAttempt(index + 1, candidates.size)
+        last = withTimeoutOrNull(budgetMillis.coerceAtLeast(1L)) { resolve(selected) }
+            ?: AutomaticStreamAttempt(failure = DirectDebridResolveResult.Failure(
+                DirectDebridFailure(DirectDebridFailureReason.TIMED_OUT)))
+        coroutineContext.ensureActive()
+        if (!isCurrent()) return AutomaticStreamAttempt()
+        if (last.playback != null || !last.failure.canAdvanceAutomaticSource()) return last
+    }
+    return last
+}
 
 private fun Stream.automaticSourceIdentity(): String =
     canonicalAvailabilityHash(getEffectiveInfoHash())?.let { "hash:$it" }

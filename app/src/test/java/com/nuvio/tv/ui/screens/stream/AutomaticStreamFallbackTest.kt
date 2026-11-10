@@ -24,29 +24,31 @@ class AutomaticStreamFallbackTest {
         val second = stream('2')
         val third = stream('3')
         val calls = mutableListOf<Stream>()
+        val progress = mutableListOf<Pair<Int, Int>>()
         val result = resolveAutomaticStreamFallback(initial = first,
-            ranked = listOf(first, duplicate, second, third), mode = StreamAutoPlayMode.FIRST_STREAM,
-            eligible = { true }, selectNext = { it.firstOrNull() }, isCurrent = { true }) {
+            ranked = listOf(first, duplicate, second, third), eligible = { true }, selectNext = { it.firstOrNull() },
+            isCurrent = { true }, onAttempt = { attempt, total -> progress += attempt to total }) {
             calls += it
             if (it == second) AutomaticStreamAttempt(playback = "verified playback")
             else failure(DirectDebridFailureReason.SOURCE_REJECTED)
         }
         assertEquals(listOf(first, second), calls)
+        assertEquals(listOf(1 to 3, 2 to 3), progress)
         assertEquals("verified playback", result.playback)
     }
 
-    @Test fun `automatic skips source failures once each and never attempts a fourth source`() = runTest {
+    @Test fun `automatic exhausts every distinct source for source local failures`() = runTest {
         for (reason in listOf(DirectDebridFailureReason.PROCESSING, DirectDebridFailureReason.UNAVAILABLE,
             DirectDebridFailureReason.SOURCE_REJECTED, DirectDebridFailureReason.WRONG_EPISODE)) {
             val streams = listOf(stream('1'), stream('2'), stream('3'), stream('4'))
             val calls = mutableListOf<Stream>()
             val result = resolveAutomaticStreamFallback(initial = streams.first(), ranked = streams,
-                mode = StreamAutoPlayMode.FIRST_STREAM, eligible = { true },
+                eligible = { true },
                 selectNext = { it.firstOrNull() }, isCurrent = { true }) {
                 calls += it
                 failure<String>(reason)
             }
-            assertEquals(reason.name, streams.take(3), calls)
+            assertEquals(reason.name, streams, calls)
             assertEquals(reason, (result.failure as DirectDebridResolveResult.Failure).detail.reason)
         }
     }
@@ -61,7 +63,7 @@ class AutomaticStreamFallbackTest {
             val first = stream('1')
             val calls = mutableListOf<Stream>()
             val result = resolveAutomaticStreamFallback(initial = first, ranked = listOf(first, stream('2')),
-                mode = StreamAutoPlayMode.FIRST_STREAM, eligible = { true },
+                eligible = { true },
                 selectNext = { it.firstOrNull() }, isCurrent = { true }) {
                 calls += it
                 AutomaticStreamAttempt<String>(failure = failure)
@@ -76,7 +78,7 @@ class AutomaticStreamFallbackTest {
         val second = stream('2')
         val calls = mutableListOf<Stream>()
         val result = resolveAutomaticStreamFallback(initial = first, ranked = listOf(first, second),
-            mode = StreamAutoPlayMode.FIRST_STREAM, eligible = { true },
+            eligible = { true },
             selectNext = { it.firstOrNull() }, isCurrent = { true }) {
             calls += it
             if (it == first) AutomaticStreamAttempt(failure = DirectDebridResolveResult.NotCached)
@@ -86,16 +88,33 @@ class AutomaticStreamFallbackTest {
         assertEquals("playable second source", result.playback)
     }
 
-    @Test fun `manual mode attempts only the requested source even when another would work`() = runTest {
+    @Test fun `manual selection recovers from refusal to a later playable source`() = runTest {
         val first = stream('1')
+        val second = stream('2')
         val calls = mutableListOf<Stream>()
-        resolveAutomaticStreamFallback(initial = first, ranked = listOf(first, stream('2')),
-            mode = StreamAutoPlayMode.MANUAL, eligible = { true },
+        val result = resolveAutomaticStreamFallback(initial = first, ranked = listOf(first, second),
+            eligible = { true },
             selectNext = { it.firstOrNull() }, isCurrent = { true }) {
             calls += it
-            failure<String>(DirectDebridFailureReason.SOURCE_REJECTED)
+            if (it == first) failure(DirectDebridFailureReason.SOURCE_REJECTED)
+            else AutomaticStreamAttempt(playback = "manual recovery")
         }
-        assertEquals(listOf(first), calls)
+        assertEquals(listOf(first, second), calls)
+        assertEquals("manual recovery", result.playback)
+    }
+
+    @Test fun `success after five refused sources is not limited by an attempt cap`() = runTest {
+        val streams = ('1'..'6').map(::stream)
+        val calls = mutableListOf<Stream>()
+        val result = resolveAutomaticStreamFallback(initial = streams.first(), ranked = streams,
+            eligible = { true },
+            selectNext = { it.firstOrNull() }, isCurrent = { true }) {
+            calls += it
+            if (it == streams.last()) AutomaticStreamAttempt(playback = "sixth source")
+            else failure(DirectDebridFailureReason.SOURCE_REJECTED)
+        }
+        assertEquals(streams, calls)
+        assertEquals("sixth source", result.playback)
     }
 
     @Test fun `fallback retains native eligibility source and regex restrictions`() = runTest {
@@ -107,7 +126,7 @@ class AutomaticStreamFallbackTest {
         val calls = mutableListOf<Stream>()
         resolveAutomaticStreamFallback(initial = first,
             ranked = listOf(first, ineligible, excludedAddon, excludedRegex, allowed),
-            mode = StreamAutoPlayMode.REGEX_MATCH, eligible = { it != ineligible },
+            eligible = { it != ineligible },
             selectNext = { StreamAutoPlaySelector.selectAutoPlayStream(it, StreamAutoPlayMode.REGEX_MATCH,
                 "1080p", StreamAutoPlaySource.INSTALLED_ADDONS_ONLY, setOf("Addon"), setOf("Addon"), emptySet()) },
             isCurrent = { true }) {
@@ -123,7 +142,7 @@ class AutomaticStreamFallbackTest {
         val next = stream('2')
         val calls = mutableListOf<Stream>()
         resolveAutomaticStreamFallback(initial = first, ranked = listOf(alias, next),
-            mode = StreamAutoPlayMode.FIRST_STREAM, eligible = { true },
+            eligible = { true },
             selectNext = { it.firstOrNull() }, isCurrent = { true }) {
             calls += it
             failure<String>(DirectDebridFailureReason.SOURCE_REJECTED)
@@ -131,20 +150,50 @@ class AutomaticStreamFallbackTest {
         assertEquals(listOf(first, next), calls)
     }
 
-    @Test fun `one deadline bounds all source attempts without resetting for fallback`() = runTest {
+    @Test fun `each source has its own deadline without a whole queue budget`() = runTest {
         val streams = listOf(stream('1'), stream('2'), stream('3'))
         val calls = mutableListOf<Stream>()
         val result = resolveAutomaticStreamFallback(initial = streams.first(), ranked = streams,
-            mode = StreamAutoPlayMode.FIRST_STREAM, eligible = { true },
+            eligible = { true },
             selectNext = { it.firstOrNull() }, isCurrent = { true }, budgetMillis = 1_000) {
             calls += it
             delay(600)
             failure<String>(DirectDebridFailureReason.PROCESSING)
         }
-        assertEquals(streams.take(2), calls)
+        assertEquals(streams, calls)
+        assertEquals(1_800L, testScheduler.currentTime)
+        assertEquals(DirectDebridFailureReason.PROCESSING,
+            (result.failure as DirectDebridResolveResult.Failure).detail.reason)
+    }
+
+    @Test fun `one source reaching its deadline terminates the queue`() = runTest {
+        val first = stream('1')
+        val calls = mutableListOf<Stream>()
+        val result = resolveAutomaticStreamFallback<String>(initial = first, ranked = listOf(first, stream('2')),
+            eligible = { true },
+            selectNext = { it.firstOrNull() }, isCurrent = { true }, budgetMillis = 1_000) {
+            calls += it
+            awaitCancellation()
+        }
+        assertEquals(listOf(first), calls)
         assertEquals(1_000L, testScheduler.currentTime)
         assertEquals(DirectDebridFailureReason.TIMED_OUT,
             (result.failure as DirectDebridResolveResult.Failure).detail.reason)
+    }
+
+    @Test fun `sources arriving during recovery are excluded from the finite snapshot`() = runTest {
+        val first = stream('1')
+        val second = stream('2')
+        val ranked = mutableListOf(first, second)
+        val calls = mutableListOf<Stream>()
+        resolveAutomaticStreamFallback(initial = first, ranked = ranked,
+            eligible = { true },
+            selectNext = { it.firstOrNull() }, isCurrent = { true }) {
+            calls += it
+            ranked += stream('3')
+            failure<String>(DirectDebridFailureReason.UNAVAILABLE)
+        }
+        assertEquals(listOf(first, second), calls)
     }
 
     @Test fun `profile or selection change drops late success and cannot advance`() = runTest {
@@ -152,7 +201,7 @@ class AutomaticStreamFallbackTest {
         var calls = 0
         val first = stream('1')
         val result = resolveAutomaticStreamFallback(initial = first, ranked = listOf(first, stream('2')),
-            mode = StreamAutoPlayMode.FIRST_STREAM, eligible = { true },
+            eligible = { true },
             selectNext = { it.firstOrNull() }, isCurrent = { current }) {
             calls++
             current = false
@@ -169,7 +218,7 @@ class AutomaticStreamFallbackTest {
         var cancelled = false
         val job = async {
             resolveAutomaticStreamFallback<String>(initial = first, ranked = listOf(first, stream('2')),
-                mode = StreamAutoPlayMode.FIRST_STREAM, eligible = { true },
+                eligible = { true },
                 selectNext = { it.firstOrNull() }, isCurrent = { true }) {
                 calls++
                 try { awaitCancellation() } finally { cancelled = true }

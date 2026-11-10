@@ -5,6 +5,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.nuvio.tv.core.profile.ProfileManager
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Job
+import kotlin.coroutines.coroutineContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -56,8 +58,12 @@ class StreamLinkCacheDataStore @Inject constructor(
         contentLanguage: String? = null,
         year: String? = null,
         audioDelayMs: Int? = null,
-        audioDelayLanguage: String? = null
+        audioDelayLanguage: String? = null,
+        profileId: Int = profileManager.activeProfileId.value,
+        isCurrent: () -> Boolean = { true }
     ) {
+        val requestJob = coroutineContext[Job]
+        val selection = profileManager.activeProfileSelectionRevision
         val payload = JSONObject().apply {
             put("url", url)
             put("streamName", streamName)
@@ -76,7 +82,9 @@ class StreamLinkCacheDataStore @Inject constructor(
             audioDelayLanguage?.let { put("audioDelayLanguage", it) }
         }.toString()
 
-        store().edit { prefs ->
+        store(profileId).edit { prefs ->
+            if (requestJob?.isActive == false || profileManager.activeProfileId.value != profileId ||
+                profileManager.activeProfileSelectionRevision != selection || !isCurrent()) return@edit
             prefs[cachePrefKey(contentKey)] = payload
         }
     }

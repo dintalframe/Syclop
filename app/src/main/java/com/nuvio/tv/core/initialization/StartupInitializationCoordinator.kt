@@ -73,7 +73,13 @@ class StartupInitializationCoordinator @Inject constructor(
         work = null
     }
 
-    @Synchronized fun retry() { if (homeEligible) beginLocked(force = true) }
+    @Synchronized fun retry() {
+        if (!homeEligible) return
+        runId++
+        work?.cancel()
+        work = null
+        beginLocked(force = true)
+    }
 
     /** Invalidate only this process's work; durable imports and account data remain untouched. */
     @Synchronized fun prepareForAppRestart() {

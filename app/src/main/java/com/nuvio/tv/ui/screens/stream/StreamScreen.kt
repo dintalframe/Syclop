@@ -118,6 +118,33 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 
 
+@Composable
+internal fun StreamLoadingOverlay(uiState: StreamScreenUiState, onCancel: () -> Unit) {
+    val cancelFocus = remember { FocusRequester() }
+    val recovering = uiState.sourceRecoveryAttempt > 0
+    BackHandler(enabled = recovering, onBack = onCancel)
+    Box(Modifier.fillMaxSize()) {
+        LoadingOverlay(visible = true, backdropUrl = uiState.backdrop ?: uiState.poster,
+            logoUrl = uiState.logo, title = uiState.title, message = uiState.directAutoPlayMessage,
+            progress = uiState.directAutoPlayProgress, modifier = Modifier.fillMaxSize())
+        if (recovering) {
+            Text(stringResource(R.string.source_recovery_attempt, uiState.sourceRecoveryAttempt,
+                uiState.sourceRecoveryTotal), color = Color.White,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 40.dp))
+            androidx.tv.material3.Button(onClick = onCancel,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp).focusRequester(cancelFocus)) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    }
+    LaunchedEffect(recovering) {
+        if (recovering) {
+            withFrameNanos { }
+            cancelFocus.requestFocus()
+        }
+    }
+}
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun StreamScreen(
@@ -289,7 +316,7 @@ fun StreamScreen(
     }
 
     BackHandler {
-        onBackPress()
+        if (!viewModel.cancelSourceRecovery()) onBackPress()
     }
 
     LaunchedEffect(uiState.autoPlayStream) {
@@ -308,7 +335,6 @@ fun StreamScreen(
         // Torrent streams have url == null but carry an infoHash; navigation
         // builds a torrent:// sentinel URL downstream.
         if (playbackInfo.url != null || (playbackInfo.isTorrent && playbackInfo.infoHash != null)) {
-            viewModel.awaitStreamLinkCacheSave()
             routeAutoPlay(playbackInfo)
         }
     }
@@ -422,19 +448,7 @@ fun StreamScreen(
             // Don't render overlay or stream list until ViewModel decides
             // whether direct autoplay is active — prevents single-frame flash.
         } else if (showOverlay) {
-            LoadingOverlay(
-                visible = true,
-                backdropUrl = uiState.backdrop ?: uiState.poster,
-                logoUrl = uiState.logo,
-                title = uiState.title,
-                message = if (uiState.directAutoPlayMessage != null) {
-                    uiState.directAutoPlayMessage
-                } else {
-                    null
-                },
-                progress = uiState.directAutoPlayProgress,
-                modifier = Modifier.fillMaxSize()
-            )
+            StreamLoadingOverlay(uiState, onCancel = { viewModel.cancelSourceRecovery() })
         } else {
             // Content overlay
             Row(
@@ -501,9 +515,8 @@ fun StreamScreen(
                             focusedStreamIndex = currentIndex
                         }
                         scope.coroutineLaunch {
-                            val playbackInfo = viewModel.resolveStreamForPlayback(stream)
+                            val playbackInfo = viewModel.resolveAutomaticStreamForPlayback(stream)
                             if (playbackInfo != null) {
-                                viewModel.persistBingeGroupForStream(stream)
                                 pendingRestoreOnResume = true
                                 routePlayback(playbackInfo)
                                 viewModel.onEvent(StreamScreenEvent.OnAutoPlayConsumed)

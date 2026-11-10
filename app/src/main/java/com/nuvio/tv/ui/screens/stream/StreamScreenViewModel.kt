@@ -57,8 +57,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -119,7 +121,6 @@ class StreamScreenViewModel @Inject constructor(
     private var streamLoadScope: kotlinx.coroutines.CoroutineScope? = null
     private var streamLoadCompleted = false
     private var sourceChipErrorDismissJob: Job? = null
-    private var pendingCacheSaveJob: Job? = null
     private var streamBadgePresentationJob: Job? = null
     private var streamFilterExpandJob: Job? = null
     private var streamFilterFullList: List<Stream> = emptyList()
@@ -132,8 +133,15 @@ class StreamScreenViewModel @Inject constructor(
     private var bitrateRequestKey: String? = null
     private var lastSelectedBitrateStream: Stream? = null
     private val selectedSourceSelection = MutableStateFlow(0L)
-    private fun newSelectedSourceTicket(): Long = synchronized(selectedSourceSelection) {
-        (selectedSourceSelection.value + 1L).also { selectedSourceSelection.value = it }
+    private var sourceResolutionJob: Job? = null
+    private var sourceResolutionIsCurrent: (() -> Boolean)? = null
+    private fun newSelectedSourceTicket(): Long {
+        sourceResolutionJob?.cancel()
+        sourceResolutionJob = null
+        sourceResolutionIsCurrent = null
+        return synchronized(selectedSourceSelection) {
+            (selectedSourceSelection.value + 1L).also { selectedSourceSelection.value = it }
+        }
     }
     @Volatile private var bitrateMetadataSelectionRevision = Long.MIN_VALUE
     @Volatile private var bitrateMetadataCredentialRevision = Long.MIN_VALUE
@@ -319,6 +327,7 @@ class StreamScreenViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             bitrateSettingsStore.settings.collectLatest { settings ->
+                if (sourceResolutionIsCurrent?.invoke() == false) cancelSourceRecovery()
                 if (bitrateSettingsStore.activeProfileId.value != playbackProfileId) {
                     syncBitrateMetadataScope(); return@collectLatest
                 }
@@ -1422,49 +1431,105 @@ class StreamScreenViewModel @Inject constructor(
         return allowed
     }
 
-    /** Explicit automatic entry point; manual card selections remain a single source attempt. */
-    suspend fun resolveAutomaticStreamForPlayback(stream: Stream): StreamPlaybackInfo? {
-        val settings = playerSettingsDataStore.playerSettings.first()
-        if (manualSelection || settings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL) {
-            return resolveStreamForPlayback(stream)
+    /** Manual and automatic choices share the same finite recovery queue. */
+    suspend fun resolveAutomaticStreamForPlayback(stream: Stream): StreamPlaybackInfo? =
+        resolveSelectedStreamForPlayback(stream, recoverSources = true, saveLastLink = true)
+
+    /** Shared/party sources retain their explicit identity. */
+    suspend fun resolveStreamForPlayback(stream: Stream, saveLastLink: Boolean = true): StreamPlaybackInfo? =
+        resolveSelectedStreamForPlayback(stream, recoverSources = false, saveLastLink = saveLastLink)
+
+    fun cancelSourceRecovery(): Boolean {
+        if (sourceResolutionJob == null) return false
+        newSelectedSourceTicket()
+        autoPlayHandledForSession = true
+        directAutoPlayFlowEnabledForSession = false
+        updateUiStateIfChanged {
+            it.copy(isDirectAutoPlayFlow = false, showDirectAutoPlayOverlay = false,
+                externalPlayerOverlayVisible = false, directAutoPlayMessage = null,
+                directAutoPlayProgress = null, sourceRecoveryAttempt = 0, sourceRecoveryTotal = 0,
+                autoPlayStream = null, autoPlayPlaybackInfo = null, playbackErrorMessage = null)
         }
+        externalPlaybackTracker.releaseAutoNextOverlay(forceRelease = true)
+        return true
+    }
+
+    private suspend fun resolveSelectedStreamForPlayback(stream: Stream, recoverSources: Boolean,
+        saveLastLink: Boolean): StreamPlaybackInfo? = coroutineScope {
         val ticket = newSelectedSourceTicket()
+        val requestJob = coroutineContext.job
+        sourceResolutionJob = requestJob
         val selection = bitrateSettingsStore.activeProfileSelectionRevision
         val credentials = bitrateSettingsStore.activeCredentialRevision
         val isCurrent = {
-            selectedSourceSelection.value == ticket &&
+            requestJob.isActive && credentials >= 0L && selectedSourceSelection.value == ticket &&
                 bitrateSettingsStore.activeProfileId.value == playbackProfileId &&
                 bitrateSettingsStore.activeProfileSelectionRevision == selection &&
                 bitrateSettingsStore.activeCredentialRevision == credentials
         }
-        val outcome = withTimeoutOrNull(AUTOMATIC_STREAM_BUDGET_MS) {
+        sourceResolutionIsCurrent = isCurrent
+        val ranked = _uiState.value.allStreams.toList()
+        cancelStreamsLoad()
+        updateUiStateIfChanged {
+            it.copy(showDirectAutoPlayOverlay = true, playbackErrorMessage = null,
+                directAutoPlayProgress = null, sourceRecoveryAttempt = 1, sourceRecoveryTotal = 1)
+        }
+        val invalidations = launch {
+            com.nuvio.tv.core.streams.ConnectedServicePlaybackGrants.registry.invalidations.collectLatest {
+                if (!isCurrent() && selectedSourceSelection.value == ticket) cancelSourceRecovery()
+            }
+        }
+        try {
+            val settings = playerSettingsDataStore.playerSettings.first()
             val installed = addonRepository.getInstalledAddons().first().enabledAddons().map { it.displayName }.toSet()
-            resolveAutomaticStreamFallback(
-                initial = stream, ranked = _uiState.value.allStreams,
-                mode = settings.streamAutoPlayMode, eligible = ::isNativeSourceDisplayEligible,
+            val outcome = resolveAutomaticStreamFallback(
+                initial = stream, ranked = if (recoverSources) ranked else emptyList(),
+                eligible = ::isNativeSourceDisplayEligible,
                 selectNext = { remaining -> StreamAutoPlaySelector.selectAutoPlayStream(
-                    streams = remaining, mode = settings.streamAutoPlayMode,
+                    streams = remaining, mode = settings.streamAutoPlayMode.takeUnless { it == StreamAutoPlayMode.MANUAL }
+                        ?: StreamAutoPlayMode.FIRST_STREAM,
                     regexPattern = settings.streamAutoPlayRegex, source = settings.streamAutoPlaySource,
                     installedAddonNames = installed, selectedAddons = settings.streamAutoPlaySelectedAddons,
                     selectedPlugins = settings.streamAutoPlaySelectedPlugins)
-                }, isCurrent = isCurrent
+                }, isCurrent = isCurrent,
+                onAttempt = { attempt, total ->
+                    if (isCurrent()) updateUiStateIfChanged {
+                        it.copy(sourceRecoveryAttempt = attempt, sourceRecoveryTotal = total,
+                            directAutoPlayMessage = context.getString(R.string.debrid_resolving_stream))
+                    }
+                }
             ) { candidate ->
                 var failure: DirectDebridResolveResult? = null
-                val playback = resolveStreamForPlaybackAttempt(candidate, true, ticket) { failure = it }
+                val playback = resolveStreamForPlaybackAttempt(candidate, ticket, isCurrent) { failure = it }
                 AutomaticStreamAttempt(playback, failure)
             }
-        } ?: AutomaticStreamAttempt(failure = DirectDebridResolveResult.Failure(
-            com.nuvio.tv.core.debrid.DirectDebridFailure(com.nuvio.tv.core.debrid.DirectDebridFailureReason.TIMED_OUT)))
-        if (!isCurrent()) return null
-        outcome.failure?.let(::showDirectDebridResolutionFailure)
-        return outcome.playback
+            coroutineContext.ensureActive()
+            if (!isCurrent()) return@coroutineScope null
+            outcome.failure?.let(::showDirectDebridResolutionFailure)
+            val playback = outcome.playback ?: return@coroutineScope null
+            // Publish only the verified winning source, within this request's cancellation scope.
+            if (saveLastLink) {
+                saveSelectedPlayback(playback, isCurrent)
+                if (!isCurrent()) return@coroutineScope null
+                persistBingeGroupForPlayback(playback, isCurrent)
+            }
+            coroutineContext.ensureActive()
+            if (isCurrent()) playback else null
+        } finally {
+            invalidations.cancel()
+            if (selectedSourceSelection.value == ticket) {
+                sourceResolutionJob = null
+                sourceResolutionIsCurrent = null
+                updateUiStateIfChanged {
+                    it.copy(sourceRecoveryAttempt = 0, sourceRecoveryTotal = 0,
+                        showDirectAutoPlayOverlay = false, directAutoPlayMessage = null)
+                }
+            }
+        }
     }
 
-    suspend fun resolveStreamForPlayback(stream: Stream, saveLastLink: Boolean = true): StreamPlaybackInfo? =
-        resolveStreamForPlaybackAttempt(stream, saveLastLink, newSelectedSourceTicket(), ::showDirectDebridResolutionFailure)
-
-    private suspend fun resolveStreamForPlaybackAttempt(stream: Stream, saveLastLink: Boolean,
-        selectedTicket: Long, onResolutionFailure: (DirectDebridResolveResult) -> Unit): StreamPlaybackInfo? {
+    private suspend fun resolveStreamForPlaybackAttempt(stream: Stream, selectedTicket: Long,
+        isCurrent: () -> Boolean, onResolutionFailure: (DirectDebridResolveResult) -> Unit): StreamPlaybackInfo? {
         if (stream.serverTarget != null || stream.youTubeIdToResolve() != null) {
             showDirectDebridPlaybackError(com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE, false)
             return null
@@ -1477,13 +1542,14 @@ class StreamScreenViewModel @Inject constructor(
             Log.d(TAG, "resolveStreamForPlayback: no debrid resolve needed, using direct URL")
             val direct = stream.getStreamUrl()
             if (direct == null || !authorizePlaybackUrl(direct)) return null
-            return inspectSelectedSource(stream, getStreamForPlayback(stream, saveLastLink), selectedTicket)
+            return inspectSelectedSource(stream, getStreamForPlayback(stream), selectedTicket)
         }
 
         Log.d(TAG, "resolveStreamForPlayback: starting debrid resolve for stream=${stream.name} addon=${stream.addonName}")
         val resolveStartMs = System.currentTimeMillis()
 
-        val showLoadingStatus = playerSettingsDataStore.playerSettings.first().showPlayerLoadingStatus
+        val showLoadingStatus = _uiState.value.sourceRecoveryAttempt > 0 ||
+            playerSettingsDataStore.playerSettings.first().showPlayerLoadingStatus
         updateUiStateIfChanged {
             it.copy(
                 showDirectAutoPlayOverlay = true,
@@ -1499,7 +1565,7 @@ class StreamScreenViewModel @Inject constructor(
         val basePlaybackInfo = getStreamForPlayback(stream)
         val result = directDebridResolver.resolve(stream, season, episode, nativeVideoId = videoId,
             nativeMediaType = contentType, onProviderAttempt = { providerId ->
-            if (selectedSourceSelection.value == selectedTicket) updateUiStateIfChanged {
+            if (isCurrent()) updateUiStateIfChanged {
                 it.copy(directAutoPlayMessage = if (showLoadingStatus)
                     context.getString(R.string.syclop_debrid_trying_service, com.nuvio.tv.core.debrid.DebridProviders.displayName(providerId)) else null)
             }
@@ -1507,22 +1573,10 @@ class StreamScreenViewModel @Inject constructor(
         val resolveMs = System.currentTimeMillis() - resolveStartMs
         Log.d(TAG, "resolveStreamForPlayback: debrid resolve completed in ${resolveMs}ms result=${result::class.simpleName}")
         kotlin.coroutines.coroutineContext.ensureActive()
-        if (selectedSourceSelection.value != selectedTicket) return null
+        if (!isCurrent()) return null
 
         return when (result) {
             is DirectDebridResolveResult.Success -> {
-                if (!_uiState.value.isDirectAutoPlayFlow) {
-                    updateUiStateIfChanged {
-                        it.copy(
-                            showDirectAutoPlayOverlay = false,
-                            directAutoPlayMessage = null
-                        )
-                    }
-                } else {
-                    updateUiStateIfChanged {
-                        it.copy(directAutoPlayMessage = null)
-                    }
-                }
                 cancelStreamsLoad()
                 val resolved = basePlaybackInfo.copy(
                     url = result.url,
@@ -1535,23 +1589,6 @@ class StreamScreenViewModel @Inject constructor(
                 val resolvedSource = stream.copy(nativeResolvedProviderId = result.providerId)
                 val checked = inspectSelectedSource(resolvedSource, resolved, selectedTicket, freshNativeFile = true) ?: return null
                 StreamSidecarSubtitles.set(result.url, stream.subtitles)
-                // Save resolved URL to cache for reuse last link
-                if (!result.url.isNullOrBlank()) {
-                    pendingCacheSaveJob = viewModelScope.launch {
-                        streamLinkCacheDataStore.save(
-                            contentKey = streamCacheKey,
-                            url = result.url,
-                            streamName = resolved.streamName,
-                            headers = null,
-                            filename = resolved.filename,
-                            videoHash = resolved.videoHash,
-                            videoSize = resolved.videoSize,
-                            bingeGroup = resolved.bingeGroup,
-                            contentLanguage = contentLanguage,
-                            year = year
-                        )
-                    }
-                }
                 checked
             }
             else -> {
@@ -1679,7 +1716,7 @@ class StreamScreenViewModel @Inject constructor(
             }
         }
         // The resolved URL stops working after a few hours, so it isn't kept for reusing the last link.
-        return getStreamForPlayback(resolved, saveLastLink = false)
+        return getStreamForPlayback(resolved)
     }
 
     fun onPlaybackErrorShown() {
@@ -1782,7 +1819,7 @@ class StreamScreenViewModel @Inject constructor(
     /**
      * Gets the selected stream for playback
      */
-    fun getStreamForPlayback(stream: Stream, saveLastLink: Boolean = true): StreamPlaybackInfo {
+    private fun getStreamForPlayback(stream: Stream): StreamPlaybackInfo {
         cancelStreamsLoad()
         val playbackInfo = StreamPlaybackInfo(
             url = stream.getStreamUrl(),
@@ -1820,45 +1857,24 @@ class StreamScreenViewModel @Inject constructor(
         )
         StreamSidecarSubtitles.set(playbackUrlFor(playbackInfo), stream.subtitles)
 
-        val url = playbackInfo.url
-        if (saveLastLink && !url.isNullOrBlank() && !playbackInfo.isExternal) {
-            pendingCacheSaveJob = viewModelScope.launch {
-                streamLinkCacheDataStore.save(
-                    contentKey = streamCacheKey,
-                    url = url,
-                    streamName = playbackInfo.streamName,
-                    headers = playbackInfo.headers,
-                    filename = playbackInfo.filename,
-                    videoHash = playbackInfo.videoHash,
-                    videoSize = playbackInfo.videoSize,
-                    bingeGroup = playbackInfo.bingeGroup,
-                    contentLanguage = contentLanguage,
-                    year = year,
-                    audioDelayMs = playbackInfo.audioDelayMs,
-                    audioDelayLanguage = playbackInfo.audioDelayLanguage
-                )
-            }
-        }
         return playbackInfo
     }
 
-    suspend fun awaitStreamLinkCacheSave() {
-        pendingCacheSaveJob?.join()
+    private suspend fun saveSelectedPlayback(playback: StreamPlaybackInfo, isCurrent: () -> Boolean) {
+        val url = playback.url?.takeIf { it.isNotBlank() && !playback.isExternal } ?: return
+        if (!isCurrent()) return
+        streamLinkCacheDataStore.save(contentKey = streamCacheKey, url = url,
+            streamName = playback.streamName, headers = playback.headers, filename = playback.filename,
+            videoHash = playback.videoHash, videoSize = playback.videoSize, infoHash = playback.infoHash,
+            fileIdx = playback.fileIdx, sources = playback.sources, bingeGroup = playback.bingeGroup,
+            contentLanguage = contentLanguage, year = year, audioDelayMs = playback.audioDelayMs,
+            audioDelayLanguage = playback.audioDelayLanguage, profileId = playback.profileId, isCurrent = isCurrent)
     }
 
-    private suspend fun persistBingeGroupForPlayback(playbackInfo: StreamPlaybackInfo) {
+    private suspend fun persistBingeGroupForPlayback(playbackInfo: StreamPlaybackInfo, isCurrent: () -> Boolean = { true }) {
         val cid = playbackInfo.contentId?.takeIf { it.isNotBlank() } ?: return
-        bingeGroupCacheDataStore.replace(cid, playbackInfo.bingeGroup, playbackInfo.filename, playbackInfo.infoHash)
-    }
-
-    fun persistBingeGroupForStream(stream: Stream) {
-        val cid = contentId?.takeIf { it.isNotBlank() } ?: return
-        val bg = stream.behaviorHints?.bingeGroup
-        val fn = stream.behaviorHints?.filename
-        val ih = stream.infoHash
-        viewModelScope.launch {
-            bingeGroupCacheDataStore.replace(cid, bg, fn, ih)
-        }
+        bingeGroupCacheDataStore.replace(cid, playbackInfo.bingeGroup, playbackInfo.filename, playbackInfo.infoHash,
+            profileId = playbackInfo.profileId, isCurrent = isCurrent)
     }
 
     override fun onCleared() {

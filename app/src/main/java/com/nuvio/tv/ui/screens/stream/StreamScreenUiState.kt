@@ -13,6 +13,8 @@ data class StreamScreenUiState(
     val externalPlayerOverlayVisible: Boolean = false,
     val directAutoPlayMessage: String? = null,
     val directAutoPlayProgress: Float? = null,
+    val sourceRecoveryAttempt: Int = 0,
+    val sourceRecoveryTotal: Int = 0,
     val videoId: String = "",
     val contentType: String = "",
     val title: String = "",

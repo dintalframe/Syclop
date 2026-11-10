@@ -4,6 +4,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.nuvio.tv.core.profile.ProfileManager
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Job
+import kotlin.coroutines.coroutineContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,8 +39,13 @@ class BingeGroupCacheDataStore @Inject constructor(
         }
     }
 
-    suspend fun replace(contentId: String, bingeGroup: String?, filename: String? = null, infoHash: String? = null) {
-        store().edit { prefs ->
+    suspend fun replace(contentId: String, bingeGroup: String?, filename: String? = null, infoHash: String? = null,
+        profileId: Int = profileManager.activeProfileId.value, isCurrent: () -> Boolean = { true }) {
+        val requestJob = coroutineContext[Job]
+        val selection = profileManager.activeProfileSelectionRevision
+        store(profileId).edit { prefs ->
+            if (requestJob?.isActive == false || profileManager.activeProfileId.value != profileId ||
+                profileManager.activeProfileSelectionRevision != selection || !isCurrent()) return@edit
             val value = bingeGroup?.takeIf { it.isNotBlank() }
             if (value == null) {
                 prefs.remove(prefKey(contentId))
