@@ -20,8 +20,16 @@ class TorboxFileSelector @Inject constructor() {
         season = season,
         episode = episode,
         path = { file ->
-            listOfNotNull(file.name, file.absolutePath, file.shortName)
-                .firstOrNull { it.isNotBlank() }.orEmpty()
+            val name = file.name?.takeIf { it.isNotBlank() }
+            listOfNotNull(
+                name?.takeIf { '/' in it || '\\' in it },
+                file.absolutePath?.takeIf {
+                    name == null || it.trim().replace('\\', '/').substringAfterLast('/')
+                        .equals(name.trim())
+                },
+                name,
+                file.shortName,
+            ).firstOrNull { it.isNotBlank() }.orEmpty()
         },
         isPlayable = {
             it.mimeType.orEmpty().startsWith("video/", ignoreCase = true) || it.displayName().hasDebridVideoExtension()

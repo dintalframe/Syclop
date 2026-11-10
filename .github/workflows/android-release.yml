@@ -171,6 +171,11 @@ jobs:
         with:
           name: syclop-${{ needs.review.outputs.version }}-${{ inputs.mode }}-release-notes
 
+      - name: Bind reviewed notes to release version
+        env:
+          RELEASE_VERSION: ${{ needs.review.outputs.version }}
+        run: printf '%s\n' "${RELEASE_VERSION}" > release-notes.version
+
       - name: Set up Java
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
@@ -241,6 +246,16 @@ jobs:
           cp app/build/outputs/apk/full/release/app-full-arm64-v8a-release.apk release/syclop-arm64-release.apk
           (cd release && sha256sum syclop-release.apk syclop-arm64-release.apk) > release/SHA256SUMS
 
+      - name: Verify bundled release notes
+        env:
+          RELEASE_VERSION: ${{ needs.review.outputs.version }}
+        run: |
+          aapt_path="$(printf '%s\n' "${ANDROID_HOME}"/build-tools/*/aapt | sort -V | tail -n 1)"
+          test -x "${aapt_path}"
+          python3 scripts/verify_bundled_release_notes.py \
+            --aapt "${aapt_path}" --version "${RELEASE_VERSION}" --notes release-notes.md \
+            release/syclop-release.apk release/syclop-arm64-release.apk
+
       - name: Clean release signing files
         if: always()
         run: rm -f -- local.properties local.dev.properties "${RUNNER_TEMP}/syclop-release.jks"
@@ -252,6 +267,8 @@ jobs:
           path: |
             release/*.apk
             release/SHA256SUMS
+            release-notes.md
+            release-notes.version
           if-no-files-found: error
 
       - name: Create GitHub release
@@ -263,7 +280,7 @@ jobs:
           RELEASE_TARGET: ${{ github.sha }}
           RELEASE_PRERELEASE: ${{ needs.review.outputs.prerelease }}
         run: |
-          release_apks=(release/syclop-release.apk release/syclop-arm64-release.apk release/SHA256SUMS)
+          release_apks=(release/syclop-release.apk release/syclop-arm64-release.apk release/SHA256SUMS release-notes.md release-notes.version)
           for asset in "${release_apks[@]}"; do
             if [[ ! -s "$asset" ]]; then
               echo "Missing release asset: $asset" >&2

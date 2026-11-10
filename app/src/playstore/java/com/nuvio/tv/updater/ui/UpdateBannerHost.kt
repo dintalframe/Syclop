@@ -1,6 +1,7 @@
 package com.nuvio.tv.updater.ui
 
 import androidx.compose.runtime.Composable
+import com.nuvio.tv.updater.InstalledUpdateNotes
 import com.nuvio.tv.updater.UpdateUiState
 
 @Composable
@@ -13,7 +14,10 @@ fun UpdateBannerHost(
     onFeedbackShown: () -> Unit,
     automaticCheckReady: Boolean = false,
     onAutomaticCheck: suspend () -> Unit = {},
+    installedNotes: InstalledUpdateNotes? = null,
+    onDismissInstalledNotes: () -> Unit = {},
     content: @Composable () -> Unit
 ) {
     content()
+    installedNotes?.let { InstalledUpdateNotesDialog(it, onDismissInstalledNotes) }
 }

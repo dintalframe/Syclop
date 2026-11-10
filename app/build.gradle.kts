@@ -42,6 +42,38 @@ abstract class EmbedUpdateDexMetadataTask : DefaultTask() {
     }
 }
 
+abstract class EmbedReleaseNotesTask : DefaultTask() {
+    @get:InputFile
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val notesFile: RegularFileProperty
+
+    @get:InputFile
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val notesVersionFile: RegularFileProperty
+
+    @get:Input
+    abstract val installedVersion: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun embed() {
+        val target = outputDirectory.get().asFile
+        target.deleteRecursively()
+        target.mkdirs()
+        if (!notesFile.isPresent && !notesVersionFile.isPresent) return
+        val notes = notesFile.get().asFile
+        val version = notesVersionFile.get().asFile.readText().trim()
+        require(version == installedVersion.get()) { "Release notes version must match versionName" }
+        require(notes.readText().isNotBlank()) { "Release notes must not be blank" }
+        notes.copyTo(target.resolve("release-notes.md"))
+        target.resolve("release-notes.version").writeText("$version\n")
+    }
+}
+
 fun parseBooleanProperty(value: String?): Boolean {
     val normalized = value?.trim()?.lowercase() ?: return false
     return normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
@@ -376,6 +408,20 @@ android {
 }
 
 androidComponents {
+    onVariants(selector().all()) { variant ->
+        val variantName = variant.name.replaceFirstChar { it.uppercase() }
+        val embedTask = tasks.register<EmbedReleaseNotesTask>("embed${variantName}ReleaseNotes") {
+            val notes = rootProject.file("release-notes.md")
+            val version = rootProject.file("release-notes.version")
+            if (notes.exists() || version.exists()) {
+                notesFile.set(notes)
+                notesVersionFile.set(version)
+            }
+            installedVersion.set(android.defaultConfig.versionName!!)
+            outputDirectory.set(layout.buildDirectory.dir("generated/releaseNotes/${variant.name}"))
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(embedTask, EmbedReleaseNotesTask::outputDirectory)
+    }
     onVariants(selector().withBuildType("debug")) { variant ->
         variant.applicationId.set("com.dintal.syclop")
     }

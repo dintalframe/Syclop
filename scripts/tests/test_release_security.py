@@ -50,6 +50,15 @@ class ReleaseSecurityTests(unittest.TestCase):
         self.assertIn("release/SHA256SUMS", release)
         self.assertNotIn("find app/build/outputs/apk/full/release", release)
 
+    def test_same_reviewed_notes_are_bound_before_build_and_verified_before_publication(self) -> None:
+        release = self.job("release")
+        self.assertLess(release.index("Download reviewed release notes"), release.index("Bind reviewed notes to release version"))
+        self.assertLess(release.index("Bind reviewed notes to release version"), release.index("Test updater and build full release APKs"))
+        self.assertLess(release.index("Verify bundled release notes"), release.index("Create GitHub release"))
+        self.assertIn("--notes release-notes.md", release)
+        self.assertIn("--notes-file release-notes.md", release)
+        self.assertIn('> release-notes.version', release)
+
 
 if __name__ == "__main__":
     unittest.main()

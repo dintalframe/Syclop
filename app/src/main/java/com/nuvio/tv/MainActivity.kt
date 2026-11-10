@@ -208,6 +208,8 @@ import com.nuvio.tv.ui.util.LocalFastHorizontalNavigationEnabled
 import com.nuvio.tv.ui.util.LocalRecompositionHighlighterEnabled
 import com.nuvio.tv.ui.util.rememberDrawerItemFocusRequesters
 import com.nuvio.tv.ui.util.rememberRawSvgPainter
+import com.nuvio.tv.updater.rememberInstalledUpdateNotes
+import com.nuvio.tv.updater.InstalledUpdateNotesPolicy
 import com.nuvio.tv.updater.UpdateViewModel
 import com.nuvio.tv.updater.ui.UpdateBannerHost
 import dagger.hilt.android.AndroidEntryPoint
@@ -1122,15 +1124,27 @@ open class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    val installedNotesState by rememberInstalledUpdateNotes(appOnboardingDataStore)
+                    var installedNotesDismissed by remember { mutableStateOf(false) }
                     val updateViewModel: UpdateViewModel = hiltViewModel(this@MainActivity)
                     val updateState by updateViewModel.uiState.collectAsState()
                     val initializationBlocksContent = startupInitializationBlocksHome(initializationHomeEntry,
                         activeProfileId, profileManager.activeProfileSelectionRevision, initializationState)
-                    val automaticUpdateCheckReady = !initializationBlocksContent &&
+                    val automaticUpdateCheckReady = installedNotesState.isLoaded &&
+                        !initializationBlocksContent &&
                         (startupDestination == StartupDestination.Home || startupDestination == StartupDestination.Content) &&
                         currentRoute?.startsWith("player/") != true
-                    val showUpdatePrompt = !initializationBlocksContent && startupLoadingState.complete &&
+                    val showUpdatePrompt = installedNotesState.isLoaded && !initializationBlocksContent && startupLoadingState.complete &&
                         (currentRoute == Screen.Home.route || (updateState.manualPrompt && currentRoute == Screen.Settings.route))
+                    val showInstalledNotes = InstalledUpdateNotesPolicy.canPresent(
+                        homeReady = !installedNotesDismissed && !initializationBlocksContent &&
+                            startupLoadingState.complete && startupDestination == StartupDestination.Home &&
+                            currentRoute == Screen.Home.route,
+                        hasPendingDeepLink = pendingDeepLink != null,
+                        hasPendingLaunch = pendingLaunch != null,
+                        hasAddonConfirmation = addonLinkConfirmation != null,
+                        isInstallingAddon = confirmedAddonLink != null
+                    )
                     StartupInitializationContent(blocked = initializationBlocksContent) {
                     UpdateBannerHost(
                         state = updateState.copy(showBanner = updateState.showBanner && showUpdatePrompt),
@@ -1146,7 +1160,15 @@ open class MainActivity : ComponentActivity() {
                         onOpenUnknownSources = updateViewModel::openUnknownSourcesSettings,
                         onFeedbackShown = updateViewModel::consumeFeedbackMessage,
                         automaticCheckReady = automaticUpdateCheckReady,
-                        onAutomaticCheck = updateViewModel::checkForUpdatesAutomatically
+                        onAutomaticCheck = updateViewModel::checkForUpdatesAutomatically,
+                        installedNotes = installedNotesState.notes.takeIf { showInstalledNotes },
+                        onDismissInstalledNotes = {
+                            installedNotesDismissed = true
+                            lifecycleScope.launch {
+                                try { appOnboardingDataStore.acknowledgeUpdateVersionCode(BuildConfig.VERSION_CODE) }
+                                catch (_: java.io.IOException) { /* Keep this session usable if saving fails. */ }
+                            }
+                        }
                     ) {
                         val handleSwitchProfile = {
                             startupSession++

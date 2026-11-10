@@ -84,6 +84,79 @@ class TorboxFileSelectorTest {
     }
 
     @Test
+    fun `absolute path disambiguates basename names without selecting larger extras`() {
+        val files = listOf(
+            file(1, "film.mkv", 200).copy(absolutePath = "/Movie/Full/film.mkv"),
+            file(2, "film.mkv", 900).copy(absolutePath = "/Movie/Extras/film.mkv"),
+            file(3, "sample.mkv", 1000).copy(absolutePath = "/Movie/Samples/sample.mkv"),
+        )
+
+        for (ordered in listOf(files, files.reversed())) {
+            for (filename in listOf("Full/film.mkv", "Full\\film.mkv")) {
+                assertEquals(1, selector.selectFile(
+                    ordered, resolve(1, filename).copy(mediaType = "movie"), null, null,
+                )?.id)
+            }
+        }
+    }
+
+    @Test
+    fun `full name paths keep priority over different provider storage directories`() {
+        val files = listOf(
+            file(1, "Movie/Full/film.mkv", 200).copy(absolutePath = "/storage/1/film.mkv"),
+            file(2, "Movie/Extras/film.mkv", 900).copy(absolutePath = "/storage/2/film.mkv"),
+        )
+
+        for (ordered in listOf(files, files.reversed())) {
+            for (names in listOf(ordered, ordered.map { it.copy(name = it.name?.replace('/', '\\')) })) {
+                assertEquals(1, selector.selectFile(names, resolve(1, "Full/film.mkv"), null, null)?.id)
+            }
+        }
+    }
+
+    @Test
+    fun `absolute path casing cannot change the exact filename winner`() {
+        val files = listOf(
+            file(1, "Film.mkv", 200).copy(absolutePath = "/Movie/Full/film.mkv"),
+            file(2, "film.mkv", 900).copy(absolutePath = "/Movie/Extras/Film.mkv"),
+        )
+
+        for (ordered in listOf(files, files.reversed())) {
+            assertEquals(1, selector.selectFile(ordered, resolve(1, "Film.mkv"), null, null)?.id)
+        }
+    }
+
+    @Test
+    fun `basename and duplicate exact path ambiguity cannot be resolved by an index`() {
+        val files = listOf(
+            file(1, "film.mkv", 200).copy(absolutePath = "/Movie/Full/film.mkv"),
+            file(2, "film.mkv", 900).copy(absolutePath = "/Movie/Extras/film.mkv"),
+        )
+
+        for (ordered in listOf(files, files.reversed())) {
+            for (filename in listOf("film.mkv", "Missing/film.mkv")) {
+                assertNull(selector.selectFile(ordered, resolve(0, filename), null, null))
+            }
+            val duplicatePaths = ordered.map { it.copy(absolutePath = "/Movie/Full/film.mkv") }
+            assertNull(selector.selectFile(duplicatePaths, resolve(0, "Full/film.mkv"), null, null))
+        }
+    }
+
+    @Test
+    fun `absolute paths cannot replace conflicting episode leaf names or prove a parent folder episode`() {
+        val cases = listOf(
+            Triple("Show.S01E03.mkv", "/Show/Show.S01E02.mkv", 2),
+            Triple("Show.S01E02.mkv", "/Show/Show.S01E03.mkv", 3),
+            Triple("video.mkv", "/Show.S01E02/video.mkv", 2),
+        )
+
+        for ((name, path, episode) in cases) {
+            val files = listOf(file(1, name, 200).copy(absolutePath = path))
+            assertNull(selector.selectFile(files, resolve(0, path), 1, episode))
+        }
+    }
+
+    @Test
     fun `supports short name only and video mime without extension`() {
         val files = listOf(
             TorboxTorrentFileDto(id = 1, shortName = "Show.S01E01.mkv"),

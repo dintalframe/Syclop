@@ -29,6 +29,7 @@ import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
 import com.nuvio.tv.ui.components.NuvioDialog
 import com.nuvio.tv.ui.screens.detail.requestFocusAfterFrames
+import com.nuvio.tv.updater.InstalledUpdateNotes
 import com.nuvio.tv.updater.UpdateUiState
 import kotlin.math.roundToInt
 
@@ -43,6 +44,8 @@ fun UpdateBannerHost(
     onFeedbackShown: () -> Unit,
     automaticCheckReady: Boolean = false,
     onAutomaticCheck: suspend () -> Unit = {},
+    installedNotes: InstalledUpdateNotes? = null,
+    onDismissInstalledNotes: () -> Unit = {},
     content: @Composable () -> Unit
 ) {
     if (automaticCheckReady) {
@@ -65,6 +68,10 @@ fun UpdateBannerHost(
 
     content()
 
+    if (installedNotes != null) {
+        InstalledUpdateNotesDialog(installedNotes, onDismissInstalledNotes)
+        return
+    }
     if (!state.showBanner) return
     if (state.showUnknownSourcesDialog) {
         UpdateUnknownSourcesDialog(onOpenSettings = onOpenUnknownSources, onDismiss = onDismissUnknownSources)
@@ -76,7 +83,8 @@ fun UpdateBannerHost(
     var offerFocus by remember(update.tag) { mutableStateOf(laterFocus) }
     var showNotes by remember(update.tag) { mutableStateOf(false) }
     if (showNotes) {
-        UpdateReleaseNotesDialog(update = update, onDismiss = { showNotes = false })
+        UpdateReleaseNotesDialog(title = stringResource(R.string.update_release_notes),
+            subtitle = update.title, notes = update.notes, onDismiss = { showNotes = false })
         return
     }
     NuvioDialog(

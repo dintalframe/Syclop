@@ -51,7 +51,7 @@ internal class BadgeConfigDownloader(
                     next
                 } else {
                     check(response.isSuccessful) { "Badge source request failed" }
-                    val body = response.body
+                    val body = checkNotNull(response.body) { "Empty badge source response" }
                     check(body.contentLength() <= MAX_CONFIG_BODY_BYTES) { "Badge source exceeds the size limit" }
                     val source = body.source()
                     source.request(MAX_CONFIG_BODY_BYTES + 1L)

@@ -2391,6 +2391,8 @@
     <string name="update_downloading_ellipsis">Downloading…</string>
     <string name="update_downloading_progress">Downloading %1$d%%</string>
     <string name="update_preparing_download">Preparing download</string>
+    <string name="update_whats_new">What\'s new</string>
+    <string name="update_installed_version">Updated to Syclop %1$s</string>
     <string name="update_release_notes">Release notes</string>
     <string name="update_no_release_notes">No release notes were provided.</string>
     <string name="update_latest_version">You’re using the latest version.</string>

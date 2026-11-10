@@ -157,22 +157,24 @@ fun ThemeSettingsContent(
         }
     }
     val appliedSettingsUiStyle = NuvioTheme.settingsUiStyle
-    LaunchedEffect(Unit) {
-        if (viewModel.consumeStyleFocusRestore()) {
-            styleFocusRequesters[appliedSettingsUiStyle]?.requestFocusAfterFrames()
-        }
-    }
 
     val themeScrollState = rememberScrollState()
     val themeRowState = rememberLazyListState()
     var initialTheme by remember { mutableStateOf<AppTheme?>(null) }
-    LaunchedEffect(uiState.themesLoaded) {
-        if (!uiState.themesLoaded || initialTheme != null) return@LaunchedEffect
-        initialTheme = uiState.selectedTheme
-        val selectedIndex = uiState.availableThemes.indexOf(initialTheme)
-        if (selectedIndex < 0) return@LaunchedEffect
-        themeRowState.scrollToItem(selectedIndex)
-        initialFocusRequester?.requestFocusAfterFrames()
+    LaunchedEffect(uiState.themesLoaded, appliedSettingsUiStyle) {
+        if (!uiState.themesLoaded) return@LaunchedEffect
+        val restoreStyleFocus = viewModel.consumeStyleFocusRestore()
+        if (initialTheme == null) {
+            initialTheme = uiState.selectedTheme
+            val selectedIndex = uiState.availableThemes.indexOf(initialTheme)
+            if (selectedIndex >= 0) {
+                themeRowState.scrollToItem(selectedIndex)
+                if (!restoreStyleFocus) initialFocusRequester?.requestFocusAfterFrames()
+            }
+        }
+        if (restoreStyleFocus) {
+            styleFocusRequesters[appliedSettingsUiStyle]?.requestFocusAfterFrames()
+        }
     }
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -266,14 +268,12 @@ fun ThemeSettingsContent(
                 title = stringResource(R.string.appearance_settings_style),
                 subtitle = stringResource(R.string.appearance_settings_style_subtitle)
             ) {
-                val firstAvailableStyle = uiState.availableSettingsUiStyles.firstOrNull()
-                    ?: SettingsUiStyle.entries.first()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(IntrinsicSize.Min)
                         .padding(horizontal = NuvioTheme.spacing.xs, vertical = NuvioTheme.spacing.xs)
-                        .settingsOptionRow(styleFocusRequesters.getValue(firstAvailableStyle)),
+                        .settingsOptionRow(styleFocusRequesters.getValue(appliedSettingsUiStyle)),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     uiState.availableSettingsUiStyles.forEach { style ->

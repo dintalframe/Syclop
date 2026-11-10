@@ -4,6 +4,7 @@ import com.nuvio.tv.data.mediaserver.ServerException
 import com.nuvio.tv.data.mediaserver.ServerFailure
 import com.nuvio.tv.data.mediaserver.ServerTransportPolicy
 import java.io.IOException
+import java.net.InetAddress
 import java.net.Proxy
 import java.net.UnknownHostException
 import kotlin.coroutines.resume
@@ -14,6 +15,7 @@ import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.Json
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -42,13 +44,14 @@ internal class MediaBrowserClient(
     // Approved LAN names must still resolve locally when a connection is opened.
     private val localHttp = this.http.newBuilder()
         .proxy(Proxy.NO_PROXY)
-        .dns { host ->
-            this.http.dns.lookup(host).also { addresses ->
-                if (addresses.isEmpty() || addresses.any { !ServerTransportPolicy.isLocalAddress(it) }) {
-                    throw UnsafeServerAddressException()
+        .dns(object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> =
+                this@MediaBrowserClient.http.dns.lookup(hostname).also { addresses ->
+                    if (addresses.isEmpty() || addresses.any { !ServerTransportPolicy.isLocalAddress(it) }) {
+                        throw UnsafeServerAddressException()
+                    }
                 }
-            }
-        }
+        })
         .build()
 
     val json = Json {

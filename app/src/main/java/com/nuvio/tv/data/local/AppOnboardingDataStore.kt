@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -26,6 +27,17 @@ class AppOnboardingDataStore @Inject constructor(
 ) {
     private val dataStore = context.appOnboardingDataStore
     private val hasSeenAuthQrOnFirstLaunchKey = booleanPreferencesKey("has_seen_auth_qr_on_first_launch")
+    private val lastAcknowledgedUpdateVersionCodeKey = intPreferencesKey("last_acknowledged_update_version_code")
+
+    val lastAcknowledgedUpdateVersionCode: Flow<Int?> = dataStore.data.map { prefs ->
+        prefs[lastAcknowledgedUpdateVersionCodeKey]
+    }
+
+    suspend fun acknowledgeUpdateVersionCode(versionCode: Int) {
+        dataStore.edit { prefs ->
+            prefs[lastAcknowledgedUpdateVersionCodeKey] = maxOf(versionCode, prefs[lastAcknowledgedUpdateVersionCodeKey] ?: 0)
+        }
+    }
 
     val hasSeenAuthQrOnFirstLaunch: Flow<Boolean> = dataStore.data.map { prefs ->
         BuildConfig.LOCAL_ONLY_BUILD || (prefs[hasSeenAuthQrOnFirstLaunchKey] ?: false)
