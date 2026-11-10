@@ -232,6 +232,9 @@ private fun String.safeMpvTraceHost(): String {
 internal fun PlayerRuntimeController.pauseForLifecycle() {
     // Mark we're in background so onPlayerError can defer recovery to onResume.
     isInBackground = true
+    subtitleFetchJob?.cancel()
+    subtitleFetchJob = null
+    cancelAfrPreflight()
 
     if (nextEpisodeAutoPlayJob?.isActive == true) {
         nextEpisodeAutoPlayJob?.cancel()
@@ -271,7 +274,15 @@ internal fun PlayerRuntimeController.pauseForLifecycle() {
 }
 
 internal fun PlayerRuntimeController.resumeForLifecycle() {
+    // A navigation entry's first resume can arrive while its startup is already running.
+    val resumeInitialization = if (isInBackground) pendingInitializationResume else null
     isInBackground = false
+    // Episode preparation can still retain the stopped outgoing engine.
+    if (resumeInitialization != null) {
+        pendingInitializationResume = null
+        resumeInitialization()
+        return
+    }
 
     // If the codec crashed while in background, the player was released to free
     // resources. Rebuild it now with the saved position so the user comes back
@@ -303,6 +314,9 @@ internal fun PlayerRuntimeController.resumeForLifecycle() {
                 e.printStackTrace()
             }
         }
+    }
+    if (_uiState.value.isLoadingAddonSubtitles && subtitleFetchJob?.isActive != true) {
+        fetchAddonSubtitles()
     }
 }
 

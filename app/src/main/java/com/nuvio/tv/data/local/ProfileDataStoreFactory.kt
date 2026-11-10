@@ -11,11 +11,15 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.nuvio.tv.domain.model.DiscoverLocation
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -28,6 +32,13 @@ private class ScopedDataStore(
     val scope: CoroutineScope,
     val job: Job
 )
+
+private object DeletedProfileDataStore : DataStore<Preferences> {
+    override val data = flowOf(emptyPreferences())
+
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
+        throw CancellationException("Profile was removed")
+}
 
 internal val discoverLocationMigration = object : DataMigration<Preferences> {
     override suspend fun shouldMigrate(currentData: Preferences): Boolean =
@@ -79,6 +90,7 @@ class ProfileDataStoreFactory @Inject constructor(
     fun get(profileId: Int, featureName: String): DataStore<Preferences> {
         val fileName = if (profileId == 1) featureName else "${featureName}_p$profileId"
         synchronized(lock) {
+            if (profileId in deletedProfileIds) return DeletedProfileDataStore
             cache[fileName]?.let { return it.store }
             return createAndCache(fileName).store
         }
@@ -86,19 +98,19 @@ class ProfileDataStoreFactory @Inject constructor(
 
     suspend fun clearProfile(profileId: Int) {
         if (profileId == 1) return
-        deletedProfileIds.add(profileId)
         val suffix = "_p$profileId"
         val keysToRemove = synchronized(lock) {
+            deletedProfileIds.add(profileId)
             cache.keys.filter { it.endsWith(suffix) }
         }
         for (key in keysToRemove) {
-            val scoped = synchronized(lock) { cache.remove(key) } ?: continue
+            val scoped = synchronized(lock) { cache[key] } ?: continue
             runCatching { scoped.store.edit { it.clear() } }
-            // Cancel the scope so DataStore releases the file from its active-files
-            // registry. Wait for completion before any subsequent get() can create
-            // a fresh DataStore for the same path.
-            scoped.job.cancel()
-            scoped.job.join()
+            // Keep the entry until DataStore releases its file, even if the caller is cancelled.
+            withContext(NonCancellable) {
+                scoped.job.cancelAndJoin()
+                synchronized(lock) { cache.remove(key, scoped) }
+            }
         }
     }
 

@@ -1,5 +1,8 @@
 package com.nuvio.tv.ui.screens.player
 
+import androidx.media3.common.C
+import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.exoplayer.ExoPlayer
 import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.data.local.PersistedTrackPreference
 import com.nuvio.tv.data.local.TrackPreferenceDataStore
@@ -135,7 +138,13 @@ class RestoredTrackPreferencePersistenceTest {
         val saved = mutableListOf<PersistedTrackPreference>()
         init {
             val store = mockk<TrackPreferenceDataStore>(relaxed = true)
+            val player = mockk<ExoPlayer>(relaxed = true)
+            var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, initial.subtitle == disabled).build()
             every { controller._uiState } returns ui
+            every { controller._exoPlayer } returns player
+            every { player.trackSelectionParameters } answers { parameters }
+            every { player.trackSelectionParameters = any() } answers { parameters = firstArg() }
             every { controller.scope } returns scope
             every { controller.currentInternalPlayerEngine } returns InternalPlayerEngine.EXOPLAYER
             every { controller.pendingEngineSwitchTrackPreference } returns null

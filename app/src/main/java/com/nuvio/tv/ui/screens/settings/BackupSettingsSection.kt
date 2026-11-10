@@ -29,14 +29,14 @@ internal fun BackupSettingsSection(viewModel: BackupSettingsViewModel = hiltView
     var confirmUndo by remember { mutableStateOf(false) }
     val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(LocalBackupFileNames.MIME_TYPE)) { uri -> if (uri != null) viewModel.export(uri) }
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) viewModel.inspect(uri) }
-    SettingsActionRow("Local backup and restore", "Profiles, supported settings, Library, watched history and resume progress. Account credentials are excluded.",
+    SettingsActionRow("Local backup and restore", "All local profiles, supported settings, Library, watched history and resume progress. Account credentials are excluded.",
         value = "Manage", onClick = { visible = true; viewModel.open() })
     if (!visible) return
     NuvioDialog(onDismiss = { if (!state.busy) visible = false }, title = "Local backup and restore",
         subtitle = "Files stay on this TV or attached storage. No cloud backup service is used.", width = 820.dp, suppressFirstKeyUp = false) {
         LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 390.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item("scope") {
-                Text("Portable files include local profiles, supported appearance/player preferences, local Library, watched history and resume positions. Only Cinemeta, OpenSubtitles and Magnify Full public provider URLs are included. Accounts, private provider URLs, plug-ins, PINs, custom image URLs and playback diagnostics are excluded. Backup files contain viewing history; keep them private.",
+                Text("Backups include all local profiles; restore replaces all current local profiles. Backup and restore require every profile PIN lock to be off. Turn off locks in profile settings first. Portable files include supported appearance/player preferences, local Library, watched history and resume positions. Only Cinemeta, OpenSubtitles and Magnify Full public provider URLs are included. Accounts, private provider URLs, plug-ins, PINs, custom image URLs and playback diagnostics are excluded. Backup files contain viewing history; keep them private.",
                     style = NuvioTheme.textStyles.bodyCompact, color = NuvioTheme.colors.TextSecondary)
             }
             item("status") {
@@ -85,7 +85,7 @@ internal fun BackupSettingsSection(viewModel: BackupSettingsViewModel = hiltView
     if (backup != null) NuvioDialog(onDismiss = viewModel::dismissPreview, title = "Replace local data?", subtitle = "No changes have been made yet.", width = 760.dp, suppressFirstKeyUp = false) {
         LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 370.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             item { Text("Backup: ${backup.createdAt}\nProfiles: ${backup.profiles.joinToString { it.name }}\n${backup.stores.size} supported settings/data stores.", style = NuvioTheme.textStyles.bodyCompact) }
-            item { Text("This replaces current profiles, local settings, Library and progress. All service accounts are disconnected, and private providers and plug-ins must be added again. Public application registrations stay on this TV. A private Undo snapshot retains the previous state and encrypted account connections on this installation; it is never included in portable exports.",
+            item { Text("This replaces all current local profiles, local settings, Library and progress. All service accounts are disconnected, and private providers and plug-ins must be added again. Public application registrations stay on this TV. A private Undo snapshot retains the previous state and encrypted account connections on this installation; it is never included in portable exports.",
                 style = NuvioTheme.textStyles.bodyCompact, color = NuvioTheme.colors.TextSecondary) }
             item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SettingsDialogActionButton("Queue restore", viewModel::confirmRestore, primary = true, enabled = !state.busy)

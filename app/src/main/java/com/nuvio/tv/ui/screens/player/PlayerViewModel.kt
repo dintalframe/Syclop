@@ -336,6 +336,24 @@ class PlayerViewModel @Inject constructor(
         controller.stopAndRelease()
     }
 
+    internal fun currentPlaybackErrorSourceOwner(): PlayerProgressWriteOwner? =
+        controller.currentProgressWriteOwner().takeIf {
+            !controller.currentVideoId.isNullOrBlank() && sourcePanelScopeCurrent()
+        }
+
+    // Main-thread UI availability only; the event handler still owns lease/grant checks.
+    internal fun canChooseCurrentPlaybackErrorSource(): Boolean {
+        val owner = currentPlaybackErrorSourceOwner() ?: return false
+        return owner.contentId.isNotBlank() && owner.contentType.isNotBlank() &&
+            controller.uiState.value.title.isNotBlank() &&
+            (owner.contentType !in listOf("series", "tv") ||
+                (owner.season != null && owner.episode != null))
+    }
+
+    internal fun canRetryCurrentPlaybackError(): Boolean =
+        canChooseCurrentPlaybackErrorSource() && !controller.isInBackground &&
+            controller.uiState.value.error != null && controller.continuationRetryPlayer() != null
+
     fun playPostPlayTrailer() {
         postPlayRecommendationController.playTrailer()
     }

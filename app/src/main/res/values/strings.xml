@@ -1957,6 +1957,7 @@
     <string name="subtitle_dialog_title">Subtitles</string>
     <string name="subtitle_no_builtin">No built-in subtitles available</string>
     <string name="subtitle_loading_addon">Loading subtitles from addons\u2026</string>
+    <string name="subtitle_lookup_failed">Unable to complete the subtitle search. Try again.</string>
     <string name="subtitle_no_addon">No addon subtitles available</string>
     <string name="subtitle_text_color">Text Color</string>
     <string name="subtitle_outline_color">Outline Color</string>

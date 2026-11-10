@@ -64,6 +64,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
 import com.nuvio.tv.core.build.AppFeaturePolicy
 import com.nuvio.tv.data.local.Dv7HandlingMode
@@ -549,18 +550,20 @@ fun AdvancedSettingsContent(
                     checked = uiState.sentryEnabled,
                     onToggle = { showSentryDialog = true }
                 )
-                SettingsToggleRow(
-                    title = stringResource(R.string.advanced_playback_issue_reports),
-                    subtitle = stringResource(R.string.advanced_playback_issue_reports_subtitle),
-                    checked = uiState.playbackIssueReportsEnabled,
-                    onToggle = {
-                        viewModel.onEvent(
-                            AdvancedSettingsEvent.SetPlaybackIssueReportsEnabled(
-                                !uiState.playbackIssueReportsEnabled
+                if (BuildConfig.PLAYBACK_REPORTS_BASE_URL.isNotBlank()) {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.advanced_playback_issue_reports),
+                        subtitle = stringResource(R.string.advanced_playback_issue_reports_subtitle),
+                        checked = uiState.playbackIssueReportsEnabled,
+                        onToggle = {
+                            viewModel.onEvent(
+                                AdvancedSettingsEvent.SetPlaybackIssueReportsEnabled(
+                                    !uiState.playbackIssueReportsEnabled
+                                )
                             )
-                        )
-                    }
-                )
+                        }
+                    )
+                }
                 SettingsToggleRow(
                     title = stringResource(R.string.advanced_player_stats_hud),
                     subtitle = stringResource(R.string.advanced_player_stats_hud_subtitle),

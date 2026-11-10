@@ -248,13 +248,13 @@ def build_release_notes(
 
 
 def release_notes_path(version_name: str) -> Path:
-    RELEASE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = version_name.replace("/", "-")
     return RELEASE_OUTPUT_DIR / f"release-notes-{safe_name}.md"
 
 
 def write_release_notes(version_name: str, notes: str) -> Path:
     path = release_notes_path(version_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(notes, encoding="utf-8")
     return path
 
@@ -427,9 +427,9 @@ def create_github_release(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Preview, draft, or publish a beta GitHub release by either bumping the app "
-            "version or manually supplying the release tag/title, then building APKs and "
-            "generating release notes from recent commits."
+            "Preview legacy beta release notes with --dry-run. Builds, drafts, and "
+            "publication are disabled; use the maintained android-release workflow "
+            "and the verification procedure in SYCLOP_BUILD.md."
         )
     )
     parser.add_argument(
@@ -495,12 +495,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--publish",
         action="store_true",
-        help="Build all release APKs, commit the version bump, push tag/branch, and create the GitHub release.",
+        help="Disabled legacy publication mode; use the maintained android-release workflow.",
     )
     parser.add_argument(
         "--draft",
         action="store_true",
-        help="Build all release APKs, commit the version bump, push tag/branch, and create the GitHub release as a draft.",
+        help="Disabled legacy draft mode; use the maintained android-release workflow.",
     )
     return parser.parse_args()
 
@@ -513,6 +513,13 @@ def main() -> int:
         raise SystemExit("Use only one of --dry-run, --draft, or --publish.")
     if args.custom_notes and args.custom_notes_file:
         raise SystemExit("Use either --custom-notes or --custom-notes-file, not both.")
+    if not args.dry_run:
+        raise SystemExit(
+            "Legacy beta builds, drafts, and publication are disabled. Use "
+            ".github/workflows/android-release.yml or the local "
+            "verify_bundled_release_notes.py and verify_release_identity.py "
+            "procedure in SYCLOP_BUILD.md. Only --dry-run is supported here."
+        )
 
     original_contents = read_build_file()
     current_version_name, current_version_code = parse_versions(original_contents)
@@ -560,7 +567,7 @@ def main() -> int:
         extra_lines=args.extra_line,
         custom_notes=custom_notes,
     )
-    notes_path = write_release_notes(notes_key, notes)
+    notes_path = release_notes_path(notes_key)
 
     print(f"Current versionName: {current_version_name}")
     print(f"Current versionCode: {current_version_code}")
@@ -570,7 +577,7 @@ def main() -> int:
     print(f"Commit message: {commit_message}")
     print(f"Target versionCode: {next_version_code}")
     print(f"Previous tag: {previous_tag or 'none'}")
-    print(f"Release notes: {notes_path.relative_to(ROOT)}")
+    print("Release notes: read-only preview; no files written")
     print()
     print(notes.strip())
     print()
@@ -586,17 +593,6 @@ def main() -> int:
         print("Dry run expected assets:")
         for asset_name in EXPECTED_ASSET_NAMES:
             print(f"- {asset_name}")
-        append_job_summary(
-            mode=mode,
-            version_name=target_version_name,
-            release_tag=release_tag,
-            release_title=release_title,
-            commit_message=commit_message,
-            version_code=next_version_code,
-            previous_tag=previous_tag,
-            notes_path=notes_path,
-            assets=None,
-        )
         return 0
 
     if args.publish or args.draft:

@@ -695,9 +695,16 @@ class PlayerPlaybackActionControllerTest {
         every { controller._exoPlayer } returns player
         every { controller.currentInternalPlayerEngine } returns InternalPlayerEngine.EXOPLAYER
         every { controller.scope } returns backgroundScope
+        var currentStreamUrl = ""
+        var currentHeaders = emptyMap<String, String>()
+        every { controller.currentStreamUrl } answers { currentStreamUrl }
+        every { controller.currentStreamUrl = any() } answers { currentStreamUrl = firstArg() }
+        every { controller.currentHeaders } answers { currentHeaders }
+        every { controller.currentHeaders = any() } answers { currentHeaders = firstArg() }
         every { controller.debridStreamPresentation } returns null
         every { controller.debridSettingsDataStore } returns null
         every { controller.resumeRequestGate } returns PlayerResumeRequestGate()
+        every { controller.afrPreflightGate } returns AfrPreflightGate()
         val coordinator = PlayerProgressWriteCoordinator(authority)
         every { controller.progressWriteCoordinator } returns coordinator
         every { controller.watchProgressRepository } returns repository

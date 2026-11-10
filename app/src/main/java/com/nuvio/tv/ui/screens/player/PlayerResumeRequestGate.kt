@@ -4,6 +4,8 @@ package com.nuvio.tv.ui.screens.player
 internal class PlayerResumeRequestGate {
     private var generation = 0L
 
+    fun token(): Long = generation
+
     fun beginRequest(): Long = ++generation
 
     fun invalidate() {

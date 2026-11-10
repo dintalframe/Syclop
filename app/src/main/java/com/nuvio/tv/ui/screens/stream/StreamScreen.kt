@@ -90,6 +90,8 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.nuvio.tv.core.player.ExternalPlayerLauncher
+import com.nuvio.tv.core.debrid.DirectDebridFailure
+import com.nuvio.tv.core.debrid.DirectDebridFailureReason
 import com.nuvio.tv.core.streams.StreamBadgePlacement
 import com.nuvio.tv.core.streams.StreamBadgeSettings
 import com.nuvio.tv.data.local.PlayerPreference
@@ -153,6 +155,7 @@ fun StreamScreen(
     restoreSourceSelection: Boolean = false,
     onSourceSelectionRestoreHandled: () -> Unit = {},
     onBackPress: () -> Unit,
+    onOpenSettings: () -> Unit,
     onStreamSelected: (StreamPlaybackInfo) -> Unit,
     onAutoPlayResolved: (StreamPlaybackInfo) -> Unit
 ) {
@@ -339,7 +342,8 @@ fun StreamScreen(
         }
     }
 
-    LaunchedEffect(uiState.playbackErrorMessage) {
+    LaunchedEffect(uiState.playbackErrorMessage, uiState.sourceResolutionFailure) {
+        if (uiState.sourceResolutionFailure != null) return@LaunchedEffect
         val message = uiState.playbackErrorMessage ?: return@LaunchedEffect
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         viewModel.onPlaybackErrorShown()
@@ -475,6 +479,9 @@ fun StreamScreen(
                     isLoading = uiState.isLoading,
                     resumeText = resumeText,
                     error = uiState.error,
+                    sourceResolutionFailure = uiState.sourceResolutionFailure,
+                    onChooseAnotherSource = viewModel::dismissSourceResolutionFailure,
+                    onOpenSettings = onOpenSettings,
                     searchDiagnostics = uiState.addonStreams.filter {
                         uiState.selectedAddonFilter == null || it.addonName == uiState.selectedAddonFilter
                     }.mapNotNull { it.searchDiagnostics },
@@ -799,6 +806,9 @@ internal fun RightStreamSection(
     onExpandStreams: () -> Unit = {},
     hazeState: HazeState?,
     hiddenByPreferencesCount: Int = 0,
+    sourceResolutionFailure: DirectDebridFailure? = null,
+    onChooseAnotherSource: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
@@ -824,6 +834,7 @@ internal fun RightStreamSection(
         com.nuvio.tv.domain.model.SourceSearchDiagnostics.combine(searchDiagnostics)
     }
     val refreshFocusRequester = remember { FocusRequester() }
+    val repairFocusRequester = remember { FocusRequester() }
     val allFocusRequester = remember { FocusRequester() }
     val addonFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val chipFocusRequesters = remember(orderedAddonNames) {
@@ -860,8 +871,14 @@ internal fun RightStreamSection(
             userMovedFromFirstResult = true
         }
     }
-    LaunchedEffect(isLoading, firstStreamKey, userMovedFromFirstResult, firstResultFocusAssigned) {
-        if (!isLoading && firstStreamKey != null && !userMovedFromFirstResult && !firstResultFocusAssigned) {
+    LaunchedEffect(sourceResolutionFailure) {
+        if (sourceResolutionFailure != null) {
+            withFrameNanos { }
+            runCatching { repairFocusRequester.requestFocus() }
+        }
+    }
+    LaunchedEffect(isLoading, firstStreamKey, userMovedFromFirstResult, firstResultFocusAssigned, sourceResolutionFailure) {
+        if (sourceResolutionFailure == null && !isLoading && firstStreamKey != null && !userMovedFromFirstResult && !firstResultFocusAssigned) {
             firstResultFocusAssigned = true
             firstStreamFocusRequestId += 1
         }
@@ -932,6 +949,25 @@ internal fun RightStreamSection(
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                             color = NuvioTheme.colors.TextPrimary
                         )
+                    }
+                }
+
+                if (sourceResolutionFailure != null) {
+                    Column(Modifier.fillMaxWidth()
+                        .background(NuvioTheme.colors.BackgroundCard, RoundedCornerShape(NuvioTheme.radii.sm))
+                        .padding(NuvioTheme.spacing.sm), verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm)) {
+                        Text(stringResource(sourceResolutionFailure.messageRes), style = MaterialTheme.typography.bodyMedium,
+                            color = NuvioTheme.colors.TextPrimary)
+                        val needsSettings = sourceResolutionFailure.reason == DirectDebridFailureReason.AUTH_EXPIRED
+                        androidx.tv.material3.Button(modifier = Modifier.focusRequester(repairFocusRequester), onClick = {
+                            if (needsSettings) onOpenSettings() else {
+                                onChooseAnotherSource()
+                                firstResultFocusAssigned = true
+                                firstStreamFocusRequestId += 1
+                            }
+                        }) {
+                            Text(stringResource(if (needsSettings) R.string.update_open_settings else R.string.source_repair_choose_another))
+                        }
                     }
                 }
 

@@ -167,7 +167,8 @@ class ReleaseIdentityTests(unittest.TestCase):
                 self.assert_rejected()
 
     def test_missing_mismatched_ambiguous_or_unbounded_vcs_is_rejected(self):
-        for vcs in (None, VCS.replace(COMMIT, "f" * 40), VCS + VCS,
+        for vcs in (None, "generate_error_reason: NO_VALID_GIT_FOUND\n",
+                    VCS.replace(COMMIT, "f" * 40), VCS.replace(COMMIT, "NO_VALID_GIT_FOUND"), VCS + VCS,
                     VCS.replace("GIT", "SVN"), VCS.replace("$PROJECT_DIR", "nested"),
                     VCS.replace(COMMIT, COMMIT[:-1]), VCS.replace("revision:", "other:"),
                     VCS + "garbage", " " * 65537 + VCS):

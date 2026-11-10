@@ -170,12 +170,13 @@ android {
 
     defaultConfig {
         applicationId = "com.dintal.syclop"
+        manifestPlaceholders["leanbackRequired"] = "false"
         buildConfigField("boolean", "LOCAL_ONLY_BUILD", "true")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 24
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")
@@ -232,6 +233,7 @@ android {
         create("playstore") {
             dimension = "distribution"
             applicationId = "com.dintal.syclop"
+            manifestPlaceholders["leanbackRequired"] = "true"
             buildConfigField("boolean", "FEATURE_PLUGINS_ENABLED", "false")
             buildConfigField("boolean", "FEATURE_IN_APP_UPDATES_ENABLED", "false")
             buildConfigField("boolean", "FEATURE_IN_APP_TRAILERS_ENABLED", "false")

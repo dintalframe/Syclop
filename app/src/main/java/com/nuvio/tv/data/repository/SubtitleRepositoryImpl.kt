@@ -42,87 +42,71 @@ class SubtitleRepositoryImpl @Inject constructor(
         videoSize: Long?,
         filename: String?,
         onProgress: ((completed: Int, total: Int, addonName: String?) -> Unit)?,
-        onSubtitlesEmitted: ((List<Subtitle>) -> Unit)?
+        onSubtitlesEmitted: ((NetworkResult<List<Subtitle>>) -> Unit)?
     ): List<Subtitle> = withContext(Dispatchers.IO) {
-        if (ServerItemRef.isServerId(id) || ServerItemRef.isServerId(videoId)) return@withContext emptyList()
-        val requestType = canonicalSubtitleType(type)
-        val startedAtMs = System.currentTimeMillis()
-        Log.d(TAG, "Fetching subtitles for type=$requestType, id=$id, videoId=$videoId")
-        
-        // Get installed addons
-        val addons = try {
-            addonRepository.getInstalledAddons().first().enabledAddons()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get installed addons", e)
+        suspend fun emit(outcome: NetworkResult<List<Subtitle>>) {
+            if (onSubtitlesEmitted != null) withContext(Dispatchers.Main.immediate) {
+                onSubtitlesEmitted(outcome)
+            }
+        }
+        if (ServerItemRef.isServerId(id) || ServerItemRef.isServerId(videoId)) {
+            emit(NetworkResult.Success(emptyList()))
             return@withContext emptyList()
         }
-
-        // Filter addons that support subtitles resource
+        val requestType = canonicalSubtitleType(type)
+        val addons = try {
+            addonRepository.getInstalledAddons().first().enabledAddons()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get installed addons", e)
+            emit(NetworkResult.Error("Subtitle lookup incomplete"))
+            return@withContext emptyList()
+        }
         val subtitleAddons = addons.filter { addon ->
             addon.resources.any { resource ->
                 isSubtitleResource(resource.name) && supportsType(addon, resource, requestType, id)
             }
         }
-        
-        Log.d(TAG, "Found ${subtitleAddons.size} subtitle addons: ${subtitleAddons.map { it.name }}")
-
         if (subtitleAddons.isEmpty()) {
+            emit(NetworkResult.Success(emptyList()))
             return@withContext emptyList()
         }
 
-        val total = subtitleAddons.size
         val completedCount = AtomicInteger(0)
+        val failures = AtomicInteger(0)
+        val total = subtitleAddons.size
         onProgress?.invoke(0, total, null)
-
-        val accumulatedSubtitles = java.util.Collections.synchronizedList(mutableListOf<Subtitle>())
-
-        // Fetch subtitles from all addons in parallel and stream results immediately
+        val accumulated = java.util.Collections.synchronizedList(mutableListOf<Subtitle>())
         val result = supervisorScope {
             subtitleAddons.map { addon ->
                 async {
-                    val addonStartMs = System.currentTimeMillis()
-                    val subtitles = try {
-                        withTimeoutOrNull(PER_ADDON_TIMEOUT_MS) {
-                            fetchSubtitlesFromAddon(addon, type, id, videoId, videoHash, videoSize, filename)
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Exception fetching subtitles from ${addon.name}", e)
-                        emptyList()
-                    }
+                    val outcome = withTimeoutOrNull(PER_ADDON_TIMEOUT_MS) {
+                        fetchSubtitlesFromAddon(addon, type, id, videoId, videoHash, videoSize, filename)
+                    } ?: NetworkResult.Error("Subtitle lookup timed out")
                     onProgress?.invoke(completedCount.incrementAndGet(), total, addon.displayName)
-                    if (!subtitles.isNullOrEmpty()) {
-                        val snapshot = synchronized(accumulatedSubtitles) {
-                            accumulatedSubtitles.addAll(subtitles)
-                            accumulatedSubtitles.toList()
-                        }
-                        if (onSubtitlesEmitted != null) {
-                            withContext(Dispatchers.Main.immediate) {
-                                onSubtitlesEmitted.invoke(snapshot)
+                    when (outcome) {
+                        is NetworkResult.Success -> {
+                            if (outcome.data.isNotEmpty()) {
+                                synchronized(accumulated) { accumulated.addAll(outcome.data) }
+                                if (onSubtitlesEmitted != null) withContext(Dispatchers.Main.immediate) {
+                                    // Snapshot on delivery so concurrent addons cannot publish an older list last.
+                                    onSubtitlesEmitted(NetworkResult.Success(synchronized(accumulated) { accumulated.toList() }))
+                                }
                             }
+                            outcome.data
                         }
-                        Log.d(
-                            TAG,
-                            "Subtitle fetch done for addon=${addon.name} count=${subtitles.size} in ${System.currentTimeMillis() - addonStartMs}ms"
-                        )
-                        subtitles
-                    } else {
-                        if (subtitles == null) {
-                            Log.w(
-                                TAG,
-                                "Subtitle fetch timed out for addon=${addon.name} after ${PER_ADDON_TIMEOUT_MS}ms"
-                            )
+                        is NetworkResult.Error, NetworkResult.Loading -> {
+                            failures.incrementAndGet()
+                            emptyList()
                         }
-                        emptyList()
                     }
                 }
             }.awaitAll().flatten()
         }
-        Log.d(
-            TAG,
-            "Subtitle fetch completed total=${result.size} fromAddons=${subtitleAddons.size} in ${System.currentTimeMillis() - startedAtMs}ms"
-        )
+        // Aggregate failure is terminal, after every partial-success callback has completed.
+        emit(if (failures.get() > 0) NetworkResult.Error("Subtitle lookup incomplete")
+            else NetworkResult.Success(result))
         result
     }
 
@@ -163,7 +147,7 @@ class SubtitleRepositoryImpl @Inject constructor(
         videoHash: String?,
         videoSize: Long?,
         filename: String?
-    ): List<Subtitle> {
+    ): NetworkResult<List<Subtitle>> {
         val normalizedType = canonicalSubtitleType(type)
         val actualId: String = if (normalizedType == "series" && !videoId.isNullOrEmpty()) {
             videoId
@@ -206,17 +190,16 @@ class SubtitleRepositoryImpl @Inject constructor(
                     } ?: emptyList()
                     
                     Log.d(TAG, "Got ${subtitles.size} subtitles from ${addon.name}")
-                    subtitles
+                    NetworkResult.Success(subtitles)
                 }
-                is NetworkResult.Error -> {
-                    Log.e(TAG, "Failed to fetch subtitles from ${addon.name}: code=${result.code} message=${result.message}")
-                    emptyList()
-                }
-                NetworkResult.Loading -> emptyList()
+                is NetworkResult.Error -> NetworkResult.Error("Subtitle lookup incomplete", result.code)
+                NetworkResult.Loading -> NetworkResult.Error("Subtitle lookup incomplete")
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Log.e(TAG, "Exception fetching subtitles from ${addon.name}", e)
-            emptyList()
+            NetworkResult.Error("Subtitle lookup incomplete")
         }
     }
     

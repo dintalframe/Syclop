@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="source_repair_choose_another">Choose another source</string>
     <string name="syclop_resolver_processing">This source is still processing on your connected service. Try another source or return later.</string>
     <string name="syclop_resolver_auth_expired">Your connected service rejected its account authorization. Reconnect the account in Settings.</string>
     <string name="syclop_resolver_rate_limited">Your connected service is limiting requests. Wait before trying it again.</string>

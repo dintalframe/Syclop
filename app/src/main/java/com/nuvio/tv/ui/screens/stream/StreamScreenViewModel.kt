@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.R
 import com.nuvio.tv.core.debrid.DebridStreamPresentation
+import com.nuvio.tv.core.debrid.DirectDebridFailure
 import com.nuvio.tv.core.debrid.DirectDebridResolveResult
 import com.nuvio.tv.core.debrid.DirectDebridResolver
 import com.nuvio.tv.core.debrid.DirectDebridStreamPreparer
@@ -136,6 +137,7 @@ class StreamScreenViewModel @Inject constructor(
     private var sourceResolutionJob: Job? = null
     private var sourceResolutionIsCurrent: (() -> Boolean)? = null
     private fun newSelectedSourceTicket(): Long {
+        dismissSourceResolutionFailure()
         sourceResolutionJob?.cancel()
         sourceResolutionJob = null
         sourceResolutionIsCurrent = null
@@ -150,6 +152,7 @@ class StreamScreenViewModel @Inject constructor(
         val selection = bitrateSettingsStore.activeProfileSelectionRevision
         val credentials = bitrateSettingsStore.activeCredentialRevision
         if (selection != bitrateMetadataSelectionRevision || credentials != bitrateMetadataCredentialRevision) {
+            dismissSourceResolutionFailure()
             bitrateJob?.cancel()
             nativeMetadataStreams.clear()
             lastSelectedBitrateStream = null
@@ -327,6 +330,7 @@ class StreamScreenViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             bitrateSettingsStore.settings.collectLatest { settings ->
+                if (bitrateSettings != null && bitrateSettings != settings) dismissSourceResolutionFailure()
                 if (sourceResolutionIsCurrent?.invoke() == false) cancelSourceRecovery()
                 if (bitrateSettingsStore.activeProfileId.value != playbackProfileId) {
                     syncBitrateMetadataScope(); return@collectLatest
@@ -468,6 +472,7 @@ class StreamScreenViewModel @Inject constructor(
                 }
             }
             StreamScreenEvent.OnRefresh -> {
+                dismissSourceResolutionFailure()
                 updateUiStateIfChanged {
                     it.copy(
                         isLoading = true,
@@ -478,7 +483,10 @@ class StreamScreenViewModel @Inject constructor(
                 }
                 loadStreams(forceRefresh = true)
             }
-            StreamScreenEvent.OnRetry -> loadStreams()
+            StreamScreenEvent.OnRetry -> {
+                dismissSourceResolutionFailure()
+                loadStreams()
+            }
             StreamScreenEvent.OnBackPress -> { /* Handle in screen */ }
             StreamScreenEvent.OnResume -> {
                 scheduleBitrateMetadata(force = true)
@@ -1607,7 +1615,8 @@ class StreamScreenViewModel @Inject constructor(
             DirectDebridResolveResult.Error -> R.string.debrid_resolution_failed
             is DirectDebridResolveResult.Success -> return
         }
-        showDirectDebridPlaybackError(context.getString(message), refreshStreams = result == DirectDebridResolveResult.Stale)
+        showDirectDebridPlaybackError(context.getString(message), refreshStreams = result == DirectDebridResolveResult.Stale,
+            failure = (result as? DirectDebridResolveResult.Failure)?.detail)
     }
 
     private suspend fun inspectSelectedSource(stream: Stream, playback: StreamPlaybackInfo, selectedTicket: Long,
@@ -1720,7 +1729,11 @@ class StreamScreenViewModel @Inject constructor(
     }
 
     fun onPlaybackErrorShown() {
-        updateUiStateIfChanged { it.copy(playbackErrorMessage = null) }
+        updateUiStateIfChanged { if (it.sourceResolutionFailure == null) it.copy(playbackErrorMessage = null) else it }
+    }
+
+    fun dismissSourceResolutionFailure() {
+        updateUiStateIfChanged { it.copy(playbackErrorMessage = null, sourceResolutionFailure = null) }
     }
 
     fun onInternalPlayerLaunching() {
@@ -1800,7 +1813,8 @@ class StreamScreenViewModel @Inject constructor(
         }
     }
 
-    private fun showDirectDebridPlaybackError(message: String, refreshStreams: Boolean) {
+    private fun showDirectDebridPlaybackError(message: String, refreshStreams: Boolean,
+        failure: DirectDebridFailure? = null) {
         directAutoPlayFlowEnabledForSession = false
         updateUiStateIfChanged {
             it.copy(
@@ -1808,7 +1822,8 @@ class StreamScreenViewModel @Inject constructor(
                 showDirectAutoPlayOverlay = false,
                 directAutoPlayMessage = null,
                 autoPlayStream = null,
-                playbackErrorMessage = message
+                playbackErrorMessage = message,
+                sourceResolutionFailure = failure
             )
         }
         if (refreshStreams) {

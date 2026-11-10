@@ -163,7 +163,7 @@ internal fun PlayerRuntimeController.clearPendingEngineSwitchTrackPreference() {
     pendingEngineSwitchTrackPreference = null
 }
 
-private fun PlayerRuntimeController.rememberCurrentTrackPreferenceForEngineSwitch() {
+internal fun PlayerRuntimeController.rememberCurrentTrackPreferenceForEngineSwitch() {
     val state = _uiState.value
     val sourceEngine = currentInternalPlayerEngine
     logSwitchTrace(
@@ -579,6 +579,11 @@ private fun PlayerRuntimeController.resolveCurrentSubtitleSelectionForEngineSwit
     state: PlayerUiState,
     sourceEngine: InternalPlayerEngine
 ): PlayerRuntimeController.RememberedSubtitleSelection? {
+    if (sourceEngine == InternalPlayerEngine.EXOPLAYER && state.selectedSubtitleTrackIndex < 0 &&
+        state.selectedAddonSubtitle == null && !isSidecarAddonSubtitleActive() &&
+        _exoPlayer?.trackSelectionParameters?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) == true) {
+        return PlayerRuntimeController.RememberedSubtitleSelection.Disabled
+    }
     val capturedSelection = captureCurrentSubtitleSelectionForEngineSwitch(
         state = state,
         sourceEngine = sourceEngine

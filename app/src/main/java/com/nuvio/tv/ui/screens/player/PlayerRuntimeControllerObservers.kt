@@ -2,6 +2,9 @@ package com.nuvio.tv.ui.screens.player
 
 import android.util.Log
 import android.os.SystemClock
+import com.nuvio.tv.BuildConfig
+import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.core.streams.ServicePlaybackOrigin
 import com.nuvio.tv.core.player.OpenSubtitlesHasher
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -11,6 +14,8 @@ import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.domain.model.Subtitle
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.model.enabledAddons
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -41,18 +46,25 @@ internal fun PlayerRuntimeController.buildSubtitleFetchRequest(): SubtitleFetchR
 
 internal suspend fun PlayerRuntimeController.fetchAddonSubtitlesNow(
     onProgress: ((completed: Int, total: Int, addonName: String?) -> Unit)? = null,
-    onSubtitlesEmitted: ((List<Subtitle>) -> Unit)? = null
+    onSubtitlesEmitted: ((NetworkResult<List<Subtitle>>) -> Unit)? = null,
+    isCurrent: () -> Boolean = { true }
 ): List<Subtitle> {
+    fun ensureCurrent() {
+        if (!isCurrent()) throw CancellationException("Subtitle request superseded")
+    }
+    ensureCurrent()
     val request = buildSubtitleFetchRequest() ?: return withStreamSidecarSubtitles(emptyList())
     val installedAddonOrder = addonRepository.getInstalledAddons().firstOrNull()
         ?.enabledAddons()
         ?.map { it.displayName }
         .orEmpty()
+    ensureCurrent()
     _uiState.update { it.copy(installedSubtitleAddonOrder = installedAddonOrder) }
 
     // Compute hash lazily for providers that support OpenSubtitles-style matching.
     if (currentVideoHash == null && currentStreamUrl.isNotBlank()) {
         val result = OpenSubtitlesHasher.compute(currentStreamUrl, currentHeaders)
+        ensureCurrent()
         if (result != null) {
             currentVideoHash = result.hash
             if (currentVideoSize == null) currentVideoSize = result.fileSize
@@ -94,85 +106,115 @@ internal suspend fun PlayerRuntimeController.fetchAddonSubtitlesNow(
         }
     }
 
-    return withStreamSidecarSubtitles(
-        subtitleRepository.getSubtitles(
+    ensureCurrent()
+    val subtitles = subtitleRepository.getSubtitles(
             type = request.type,
             id = request.id,
             videoId = request.videoId,
             videoHash = currentVideoHash,
             videoSize = currentVideoSize,
             filename = currentFilename,
-            onProgress = onProgress,
-            onSubtitlesEmitted = { currentList ->
-                onSubtitlesEmitted?.invoke(withStreamSidecarSubtitles(currentList))
+            onProgress = { completed, total, addonName ->
+                if (isCurrent()) onProgress?.invoke(completed, total, addonName)
+            },
+            onSubtitlesEmitted = { outcome ->
+                if (isCurrent()) onSubtitlesEmitted?.invoke(when (outcome) {
+                    is NetworkResult.Success -> NetworkResult.Success(withStreamSidecarSubtitles(outcome.data))
+                    is NetworkResult.Error -> outcome
+                    NetworkResult.Loading -> NetworkResult.Loading
+                })
             }
         )
-    )
+    ensureCurrent()
+    return withStreamSidecarSubtitles(subtitles)
 }
 
 internal fun PlayerRuntimeController.fetchAddonSubtitles() {
-    if (buildSubtitleFetchRequest() == null) {
+    subtitleFetchJob?.cancel()
+    val request = buildSubtitleFetchRequest()
+    if (request == null) {
+        subtitleFetchJob = null
         publishStreamSidecarSubtitlesWithoutAddonFetch()
         return
     }
-
-    scope.launch {
+    val owner = currentProgressWriteOwner()
+    val origin = playbackOrigin
+    val resumeToken = resumeRequestGate.token()
+    val url = currentStreamUrl
+    val headers = currentHeaders.toMap()
+    val progressLease = owner?.let { progressWriteCoordinator.capture(it, completedAtCapture = false) }
+    fun accountOrigin() = debridSettingsDataStore?.let {
+        ServicePlaybackOrigin(it.activeProfileId.value, it.activeProfileSelectionRevision, it.activeCredentialRevision)
+    }
+    val account = accountOrigin()
+    val lookup = scope.launch(start = CoroutineStart.LAZY) {
+        val lookupJob = coroutineContext[Job]
+        fun isCurrent() = isActive && subtitleFetchJob === lookupJob && !isInBackground &&
+            buildSubtitleFetchRequest() == request && currentProgressWriteOwner() == owner &&
+            playbackOrigin === origin && resumeRequestGate.isCurrent(resumeToken) &&
+            currentStreamUrl == url && currentHeaders == headers && accountOrigin() == account &&
+            (account == null || account.profileId == profileId) &&
+            (progressLease == null || progressWriteCoordinator.mayPublish(progressLease))
+        if (!isCurrent()) return@launch
         _uiState.update {
             it.copy(
                 isLoadingAddonSubtitles = true,
                 addonSubtitlesError = null,
-                addonSubtitles = if (streamSubtitles.isNotEmpty()) {
-                    filterToVisibleAddonSubtitles(streamSubtitles)
-                } else {
-                    it.addonSubtitles
-                }
+                addonSubtitles = withStreamSidecarSubtitles(it.addonSubtitles)
             )
         }
-
         try {
             val subtitles = fetchAddonSubtitlesNow(
-                onSubtitlesEmitted = { currentList ->
-                    _uiState.update { it.copy(addonSubtitles = currentList) }
+                isCurrent = ::isCurrent,
+                onSubtitlesEmitted = { outcome ->
+                    if (isCurrent()) when (outcome) {
+                        is NetworkResult.Success -> _uiState.update {
+                            it.copy(addonSubtitles = withStreamSidecarSubtitles(it.addonSubtitles + outcome.data))
+                        }
+                        is NetworkResult.Error -> _uiState.update { it.copy(addonSubtitlesError = "lookup_failed") }
+                        NetworkResult.Loading -> Unit
+                    }
                 }
             )
-            val visibleSubtitles = filterToVisibleAddonSubtitles(subtitles)
+            if (!isCurrent()) return@launch
+            val visibleSubtitles = if (_uiState.value.addonSubtitlesError != null) {
+                withStreamSidecarSubtitles(_uiState.value.addonSubtitles + subtitles)
+            } else {
+                filterToVisibleAddonSubtitles(subtitles)
+            }
             Log.d(PlayerRuntimeController.TAG, "fetchAddonSubtitles done: ${subtitles.size} subs, visible=${visibleSubtitles.size}, persistedPref=${persistedTrackPreference?.subtitle?.javaClass?.simpleName}")
             _uiState.update {
-                it.copy(
-                    addonSubtitles = visibleSubtitles,
-                    isLoadingAddonSubtitles = false
-                )
+                it.copy(addonSubtitles = visibleSubtitles, isLoadingAddonSubtitles = false)
             }
             val pendingAddon = pendingRestoredAddonSubtitle
             if (pendingAddon != null) {
                 val match = visibleSubtitles.firstOrNull { it.id == pendingAddon.id }
                     ?: visibleSubtitles.firstOrNull { PlayerSubtitleUtils.matchesLanguageCode(it.lang, pendingAddon.lang) }
-                if (match != null) {
+                if (match != null && !isUserExplicitSubtitleSelection) {
                     autoSubtitleSelected = true
                     selectAddonSubtitle(match)
                     _uiState.update { it.copy(selectedAddonSubtitle = match, selectedSubtitleTrackIndex = -1) }
                     return@launch
                 }
             }
-            applyPersistedTrackPreference(
-                audioTracks = _uiState.value.audioTracks,
-                subtitleTracks = _uiState.value.subtitleTracks
-            )
-            tryAutoSelectPreferredSubtitleFromAvailableTracks()
-        } catch (e: Exception) {
-            _uiState.update {
-                it.copy(
-                    isLoadingAddonSubtitles = false,
-                    addonSubtitlesError = e.message,
-                    addonSubtitles = if (streamSubtitles.isNotEmpty()) {
-                        filterToVisibleAddonSubtitles(streamSubtitles)
-                    } else {
-                        it.addonSubtitles
-                    }
+            if (!isUserExplicitSubtitleSelection) {
+                applyPersistedTrackPreference(
+                    audioTracks = _uiState.value.audioTracks,
+                    subtitleTracks = _uiState.value.subtitleTracks
                 )
+                tryAutoSelectPreferredSubtitleFromAvailableTracks()
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            if (isCurrent()) _uiState.update {
+                it.copy(isLoadingAddonSubtitles = false, addonSubtitlesError = "lookup_failed")
             }
         }
     }
+    // Set identity before start, including scopes with immediate dispatch.
+    subtitleFetchJob = lookup
+    lookup.start()
 }
 
 private fun PlayerRuntimeController.publishStreamSidecarSubtitlesWithoutAddonFetch() {
@@ -218,7 +260,6 @@ internal fun PlayerRuntimeController.refreshSubtitlesForCurrentEpisode() {
 }
 
 internal fun PlayerRuntimeController.withStreamSidecarSubtitles(addonSubtitles: List<Subtitle>): List<Subtitle> {
-    if (streamSubtitles.isEmpty()) return filterToVisibleAddonSubtitles(addonSubtitles)
     return filterToVisibleAddonSubtitles(
         (streamSubtitles + addonSubtitles).distinctBy { addonSubtitleKey(it) }
     )
@@ -332,6 +373,8 @@ internal fun PlayerRuntimeController.observeSubtitleSettings() {
                 else -> currentState.centerMixLevelDb
             }
 
+            val playbackIssueReportsEnabled = settings.playbackIssueReportsEnabled &&
+                BuildConfig.PLAYBACK_REPORTS_BASE_URL.isNotBlank()
             _uiState.update { state ->
                 val shouldShowOverlay = when {
                     !settings.loadingOverlayEnabled -> false
@@ -343,9 +386,9 @@ internal fun PlayerRuntimeController.observeSubtitleSettings() {
                     subtitleStyle = settings.subtitleStyle,
                     loadingOverlayEnabled = settings.loadingOverlayEnabled,
                     showPlayerLoadingStatus = settings.showPlayerLoadingStatus,
-                    playbackIssueReportsEnabled = settings.playbackIssueReportsEnabled,
+                    playbackIssueReportsEnabled = playbackIssueReportsEnabled,
                     showLoadingOverlay = shouldShowOverlay,
-                    loadingIssueReportVisible = if (settings.playbackIssueReportsEnabled) {
+                    loadingIssueReportVisible = if (playbackIssueReportsEnabled) {
                         state.loadingIssueReportVisible
                     } else {
                         false
@@ -508,6 +551,7 @@ internal fun PlayerRuntimeController.loadSavedProgressFor(season: Int?, episode:
 
     val resumeRequest = resumeRequestGate.beginRequest()
     scope.launch {
+        if (!resumeRequestGate.isCurrent(resumeRequest)) return@launch
         pendingResumeProgress = null
         val local = if (isCloudLibraryPlayback) {
             loadCloudLibraryResumeProgress()

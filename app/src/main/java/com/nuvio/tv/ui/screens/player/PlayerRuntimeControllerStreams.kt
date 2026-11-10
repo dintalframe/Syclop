@@ -7,6 +7,7 @@ import androidx.media3.common.util.UnstableApi
 import com.nuvio.tv.core.debrid.DirectDebridPlayableResult
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.player.StreamAutoPlaySelector
+import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.data.local.PlayerSettings
 import com.nuvio.tv.data.local.StreamAutoPlayMode
 import com.nuvio.tv.data.local.StreamAutoPlaySource
@@ -624,6 +625,24 @@ internal fun streamFilenameFromUrl(url: String): String? =
     url.substringBefore('?').substringAfterLast('/', "")
         .takeIf { it.isNotBlank() && it.contains('.') }
 
+private fun PlayerRuntimeController.RememberedTrackSelection.forDifferentSource():
+    PlayerRuntimeController.RememberedTrackSelection? {
+    val knownLanguage = language?.let(PlayerSubtitleUtils::normalizeLanguageCode) ?: return null
+    if (knownLanguage.substringBefore('-') in listOf("", "und", "unk", "unknown", "mul", "mis", "zxx")) return null
+    return copy(language = knownLanguage, trackId = null, indexHint = null, languageIndexHint = null)
+}
+
+private fun PlayerRuntimeController.TrackPreference.forDifferentSource(): PlayerRuntimeController.TrackPreference? {
+    val sourceSubtitle = when (val selected = subtitle) {
+        PlayerRuntimeController.RememberedSubtitleSelection.Disabled -> selected
+        is PlayerRuntimeController.RememberedSubtitleSelection.Internal -> selected.track.forDifferentSource()
+            ?.let { PlayerRuntimeController.RememberedSubtitleSelection.Internal(it) }
+        else -> null // An addon URL/ID belongs to its selected file, like embedded track IDs.
+    }
+    return copy(audio = audio?.forDifferentSource(), subtitle = sourceSubtitle)
+        .takeUnless { it.audio == null && it.subtitle == null }
+}
+
 private fun PlayerRuntimeController.applySelectedStreamState(
     stream: Stream,
     url: String,
@@ -952,6 +971,29 @@ internal fun PlayerRuntimeController.switchToSourceStream(
         return
     }
 
+    val newHeaders = PlayerMediaSourceFactory.sanitizeHeaders(stream.behaviorHints?.proxyHeaders?.request)
+    val selectedRequest = PlayerMediaSourceFactory.normalizePlaybackRequest(url, newHeaders)
+    val selectedMime = PlayerMediaSourceFactory.inferMimeType(selectedRequest.url,
+        stream.behaviorHints?.filename ?: streamFilenameFromUrl(selectedRequest.url),
+        stream.behaviorHints?.proxyHeaders?.response)
+    val continuationPlayer = continuationRetryPlayer()?.takeIf {
+        selectedMime == androidx.media3.common.MimeTypes.VIDEO_MP4
+    }
+    val continuationProgress = continuationPlayer?.let { player ->
+        if (isInBackground) return
+        val owner = currentProgressWriteOwner() ?: return
+        val lease = progressWriteCoordinator.capture(owner, completedAtCapture = false) ?: return
+        if (!progressWriteCoordinator.mayPublish(lease)) return
+        currentWatchProgress(owner.contentId, owner.contentType,
+            player.currentPosition.coerceIn(0L, player.duration), player.duration, System.currentTimeMillis())
+    }
+    val continuationPaused = continuationPlayer?.let { userPausedManually || !it.playWhenReady } ?: false
+    val continuationTracks = if (continuationProgress != null) {
+        resumeRequestGate.invalidate()
+        rememberCurrentTrackPreferenceForEngineSwitch()
+        pendingEngineSwitchTrackPreference?.preference?.forDifferentSource()
+    } else null
+
     // Stop any active torrent before switching to HTTP stream
     stopTorrentStream()
 
@@ -959,10 +1001,6 @@ internal fun PlayerRuntimeController.switchToSourceStream(
     nextEpisodeAutoPlayJob = null
 
     flushPlaybackSnapshotForSwitchOrExit()
-
-    val newHeaders = PlayerMediaSourceFactory.sanitizeHeaders(
-        stream.behaviorHints?.proxyHeaders?.request
-    )
 
     resetLoadingOverlayForNewStream()
     releasePlayer(flushPlaybackState = false)
@@ -1012,6 +1050,19 @@ internal fun PlayerRuntimeController.switchToSourceStream(
     showStreamSourceIndicator(stream)
     resetPostPlayOverlayState(clearEpisode = false)
 
+    if (continuationProgress != null) {
+        pendingResumeProgress = continuationProgress
+        _uiState.update { it.copy(pendingSeekPosition = null) }
+        persistedTrackPreference = null
+        pendingEngineSwitchTrackPreference = continuationTracks?.let {
+            PlayerRuntimeController.PendingEngineSwitchTrackPreference(playbackUrl, it, InternalPlayerEngine.EXOPLAYER)
+        }
+        initializePlayer(playbackUrl, playbackHeaders,
+            overrideInternalPlayerEngine = InternalPlayerEngine.EXOPLAYER,
+            allowEngineFailover = false, startPaused = continuationPaused)
+        return
+    }
+
     _exoPlayer?.let { player ->
         scope.launch {
             try {
@@ -1042,7 +1093,10 @@ internal fun PlayerRuntimeController.switchToSourceStream(
             }
         }
     } ?: run {
+        // The resume read owns its generation before the initializer captures it.
+        loadSavedProgressFor(currentSeason, currentEpisode)
         initializePlayer(playbackUrl, playbackHeaders)
+        return
     }
 
     loadSavedProgressFor(currentSeason, currentEpisode)
@@ -1581,6 +1635,7 @@ internal fun PlayerRuntimeController.switchToEpisodeStream(
     pendingRestoredAddonSubtitle = null
     hasRetriedCurrentStreamAfter416 = false
     resetErrorRetryState()
+    resetSubtitleDelayIfVideoChanges(targetVideoId)
     currentVideoId = targetVideoId
     currentSeason = if (targetVideo != null) targetVideo.season else _uiState.value.episodeStreamsSeason ?: currentSeason
     currentEpisode = targetVideo?.episode ?: _uiState.value.episodeStreamsEpisode ?: currentEpisode
@@ -1664,6 +1719,12 @@ private fun String.safeStreamTraceHost(): String {
     }.getOrDefault("unknown")
 }
 
+private fun PlayerRuntimeController.resetSubtitleDelayIfVideoChanges(videoId: String?) {
+    if (videoId == currentVideoId) return
+    subtitleDelayUs.set(0L)
+    _uiState.update { it.copy(subtitleDelayMs = 0) }
+}
+
 /**
  * Shared episode stream setup used by both torrent and HTTP episode switching.
  */
@@ -1699,7 +1760,9 @@ private fun PlayerRuntimeController.switchToEpisodeStreamCommon(
     hasRetriedCurrentStreamAfterUnexpectedNpe = false
     hasRetriedCurrentStreamAfterMediaPeriodHolderCrash = false
 
-    currentVideoId = targetVideo?.id ?: _uiState.value.episodeStreamsForVideoId ?: currentVideoId
+    val targetVideoId = targetVideo?.id ?: _uiState.value.episodeStreamsForVideoId ?: currentVideoId
+    resetSubtitleDelayIfVideoChanges(targetVideoId)
+    currentVideoId = targetVideoId
     currentSeason = targetVideo?.season ?: _uiState.value.episodeStreamsSeason ?: currentSeason
     currentEpisode = targetVideo?.episode ?: _uiState.value.episodeStreamsEpisode ?: currentEpisode
     currentEpisodeTitle = targetVideo?.title ?: _uiState.value.episodeStreamsTitle ?: currentEpisodeTitle

@@ -12,11 +12,6 @@
         android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
         tools:node="remove" />
 
-    <uses-feature
-        android:name="android.software.leanback"
-        android:required="true"
-        tools:replace="android:required" />
-
     <application>
         <service
             android:name=".core.player.ExternalPlaybackKeepAliveService"

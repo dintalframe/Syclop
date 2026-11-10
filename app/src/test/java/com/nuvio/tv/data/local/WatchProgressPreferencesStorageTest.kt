@@ -1,30 +1,106 @@
 package com.nuvio.tv.data.local
 
+import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.domain.model.WatchProgress
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.nio.file.Files
 
 class WatchProgressPreferencesStorageTest {
     private val gson = Gson()
+
+    @Test
+    fun `deleted profile refuses stale writes while its existing DataStore drains`() = runBlocking {
+        val directory = Files.createTempDirectory("watch-progress-profile-deletion").toFile()
+        val context = mockk<Context>(relaxed = true) {
+            every { applicationContext } returns this
+            every { filesDir } returns directory
+        }
+        val factory = ProfileDataStoreFactory(context)
+        val profileId = 2
+        val key = stringPreferencesKey("owned_progress_marker")
+        try {
+            withTimeout(10_000L) {
+                val old = factory.get(profileId, WATCH_PROGRESS_RECENT_FEATURE)
+                old.edit { it[key] = "old" }
+                val entered = CompletableDeferred<Unit>()
+                val release = CompletableDeferred<Unit>()
+                val inFlight = async {
+                    old.edit {
+                        entered.complete(Unit)
+                        release.await()
+                        it[key] = "old in-flight update"
+                    }
+                }
+                entered.await()
+                val deletion = async(start = CoroutineStart.UNDISPATCHED) { factory.clearProfile(profileId) }
+                try {
+                    assertTrue(factory.isProfileDeleted(profileId))
+                    assertFalse(deletion.isCompleted)
+                    val stale = factory.get(profileId, WATCH_PROGRESS_RECENT_FEATURE)
+                    val read = runCatching { stale.data.first() }
+                    assertTrue("Stale read failed: ${read.exceptionOrNull()?.message}", read.isSuccess)
+                    assertEquals(emptyPreferences(), read.getOrThrow())
+                    var transformed = false
+                    val write = runCatching {
+                        stale.edit {
+                            transformed = true
+                            it[key] = "late stale update"
+                        }
+                    }
+                    assertTrue(write.exceptionOrNull() is CancellationException)
+                    assertFalse(transformed)
+                } finally {
+                    release.complete(Unit)
+                    inFlight.await()
+                    deletion.await()
+                }
+
+                // ProfileManager deletes the retired files after clearProfile returns.
+                val retiredFile = File(directory, "datastore/${WATCH_PROGRESS_RECENT_FEATURE}_p2.preferences_pb")
+                assertTrue(retiredFile.delete())
+                assertEquals(emptyPreferences(), factory.get(profileId, WATCH_PROGRESS_RECENT_FEATURE).data.first())
+                assertFalse(retiredFile.exists())
+
+                factory.markProfileCreated(profileId)
+                val replacement = factory.get(profileId, WATCH_PROGRESS_RECENT_FEATURE)
+                assertEquals(emptyPreferences(), replacement.data.first())
+                replacement.edit { it[key] = "new owner" }
+                assertEquals("new owner", replacement.data.first()[key])
+            }
+        } finally {
+            withContext(NonCancellable) { withTimeout(10_000L) { factory.clearProfile(profileId) } }
+            directory.deleteRecursively()
+        }
+    }
 
     @Test
     fun `account playback provenance survives persisted storage recreation`() = runTest {

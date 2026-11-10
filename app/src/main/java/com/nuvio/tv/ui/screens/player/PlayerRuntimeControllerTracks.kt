@@ -934,6 +934,7 @@ internal fun PlayerRuntimeController.applyPersistedTrackPreference(
     audioTracks: List<TrackInfo>,
     subtitleTracks: List<TrackInfo>
 ) {
+    if (isReleasingPlayer) return
     val switchPending = pendingEngineSwitchTrackPreference
         ?.takeIf { it.streamUrl == currentStreamUrl }
     if (pendingEngineSwitchTrackPreference != null && switchPending == null) {
@@ -1011,10 +1012,15 @@ internal fun PlayerRuntimeController.applyPersistedTrackPreference(
         null -> Unit
         PlayerRuntimeController.RememberedSubtitleSelection.Disabled -> {
             restoredSubtitle = subtitleSelection
-            val alreadyDisabled = subtitleTracks.none { it.isSelected }
+            // Early discovery can contain no selected text while Exo's selector is still enabled.
+            // Keep Off pending until disabling TEXT has reached the replacement player.
+            val exoTextDisabled = _exoPlayer?.trackSelectionParameters
+                ?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) == true
+            val alreadyDisabled = subtitleTracks.none { it.isSelected } &&
+                (isUsingMpvEngine() || exoTextDisabled)
             logSwitchTrace(
                 stage = "restore-subtitle-disabled",
-                message = "alreadyDisabled=$alreadyDisabled subtitleTrackCount=${subtitleTracks.size}"
+                message = "alreadyDisabled=$alreadyDisabled exoTextDisabled=$exoTextDisabled subtitleTrackCount=${subtitleTracks.size}"
             )
             if (!alreadyDisabled) {
                 Log.d(PlayerRuntimeController.TAG, "TRACK_PREF restore: subtitle disabled (re-applying)")
@@ -1976,7 +1982,11 @@ internal fun PlayerRuntimeController.applySubtitlePreferences(preferred: String,
     _exoPlayer?.let { player ->
         val builder = player.trackSelectionParameters.buildUpon()
 
-        if (preferred == "none") {
+        val restoringPreference = pendingEngineSwitchTrackPreference
+            ?.takeIf { it.streamUrl == currentStreamUrl }?.preference ?: persistedTrackPreference
+        // Apply restored Off before prepare can make the first text selection.
+        if (preferred == "none" ||
+            restoringPreference?.subtitle == PlayerRuntimeController.RememberedSubtitleSelection.Disabled) {
             builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             builder.setPreferredTextLanguage(null)
         } else {

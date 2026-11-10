@@ -91,6 +91,7 @@ internal fun SubtitleSelectionOverlay(
     subtitleDelayMs: Int,
     installedSubtitleAddonOrder: List<String>,
     isLoadingAddons: Boolean,
+    addonSubtitlesError: String? = null,
     useLibass: Boolean = false,
     isUsingMpv: Boolean = false,
     onInternalTrackSelected: (Int) -> Unit,
@@ -114,6 +115,9 @@ internal fun SubtitleSelectionOverlay(
     val sessionSelectedAddonSubtitle = remember(visible) { selectedAddonSubtitle?.copy() }
     val sessionInstalledSubtitleAddonOrder = remember(visible) { installedSubtitleAddonOrder.toList() }
     val sessionIsLoadingAddons = isLoadingAddons
+    val retryFocusRequester = remember(visible) { FocusRequester() }
+    val lookupFailed = addonSubtitlesError != null && !isLoadingAddons
+    val lookupStatusVisible = isLoadingAddons || addonSubtitlesError != null || addonSubtitles.isEmpty()
     val sessionSelectedSubtitleLanguageKey = remember(visible) {
         selectedSubtitleLanguageKey(
             internalTracks = sessionInternalTracks,
@@ -396,7 +400,7 @@ internal fun SubtitleSelectionOverlay(
         contentPadding = PaddingValues(start = 52.dp, end = 52.dp, top = 36.dp, bottom = 76.dp)
     ) {
         LaunchedEffect(visible) {
-            if (!visible) return@LaunchedEffect
+            if (!visible || lookupFailed) return@LaunchedEffect
             if (sessionInitialLanguageKey != SubtitleOffLanguageKey && sessionInitialSelectedOptionId != null) {
                 Log.d(
                     SubtitleFocusTag,
@@ -414,6 +418,12 @@ internal fun SubtitleSelectionOverlay(
                 )
                 requestLanguageFocus(sessionInitialLanguageKey)
             }
+        }
+
+        LaunchedEffect(visible, isLoadingAddons, lookupFailed) {
+            if (!visible) return@LaunchedEffect
+            if (lookupFailed) retryFocusRequester.requestFocusAfterFrames()
+            else if (isLoadingAddons) requestLanguageFocus(selectedLanguageKey)
         }
 
         LaunchedEffect(visible, sessionInitialLanguageKey, languageItems) {
@@ -468,6 +478,38 @@ internal fun SubtitleSelectionOverlay(
                 color = Color.White,
                 modifier = Modifier.padding(bottom = NuvioTheme.spacing.md)
             )
+
+            // Lookup status remains visible even when Off is the only language item.
+            when {
+                isLoadingAddons -> Box(Modifier.width(300.dp)) {
+                    OverlayLoadingCard(text = stringResource(R.string.subtitle_loading_addon))
+                }
+                lookupFailed -> Column(
+                    modifier = Modifier.width(600.dp).padding(bottom = NuvioTheme.spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm)
+                ) {
+                    Text(
+                        text = stringResource(R.string.subtitle_lookup_failed),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = NuvioTheme.colors.TextTertiary
+                    )
+                    Card(
+                        onClick = { onEvent(PlayerEvent.OnRetry) },
+                        modifier = Modifier.width(160.dp).focusRequester(retryFocusRequester)
+                            .focusProperties {
+                                languageItemRequesters[selectedLanguageKey]?.let { down = it }
+                            },
+                        colors = overlayCardColors(selected = false),
+                        border = overlayCardBorder(),
+                        scale = CardDefaults.scale(focusedScale = 1f, pressedScale = 1f)
+                    ) {
+                        Text(text = stringResource(R.string.action_retry), modifier = Modifier.padding(12.dp))
+                    }
+                }
+                addonSubtitles.isEmpty() -> Box(Modifier.width(300.dp)) {
+                    OverlayEmptyCard(text = stringResource(R.string.subtitle_no_addon))
+                }
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 SubtitleLanguageRail(
@@ -529,6 +571,7 @@ internal fun SubtitleSelectionOverlay(
                         selectedLanguageKey = selectedLanguageKey,
                         options = subtitleOptions,
                         isLoadingAddons = sessionIsLoadingAddons,
+                        lookupStatusVisible = lookupStatusVisible,
                         listState = optionListState,
                         itemFocusRequesters = optionItemRequesters,
                         focusTargetId = pendingOptionFocusId,
@@ -688,6 +731,7 @@ private fun SubtitleOptionsRail(
     selectedLanguageKey: String,
     options: List<SubtitleOptionRailItem>,
     isLoadingAddons: Boolean,
+    lookupStatusVisible: Boolean,
     listState: LazyListState,
     itemFocusRequesters: Map<String, FocusRequester>,
     focusTargetId: String?,
@@ -746,6 +790,8 @@ private fun SubtitleOptionsRail(
             selectedLanguageKey == SubtitleOffLanguageKey -> {
                 OverlayEmptyCard(text = stringResource(R.string.subtitle_none))
             }
+
+            options.isEmpty() && lookupStatusVisible -> Unit
 
             options.isEmpty() && isLoadingAddons -> {
                 OverlayLoadingCard(text = stringResource(R.string.subtitle_loading_addon))

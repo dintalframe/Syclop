@@ -4,6 +4,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.SeekParameters
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
 import com.nuvio.tv.core.player.LastPlaybackDiagnostics
 import com.nuvio.tv.core.tracking.TRACKING_SCROBBLE_DIAGNOSTIC_TAG
@@ -556,7 +557,7 @@ internal fun PlayerRuntimeController.stopWatchProgressSaving() {
 
 internal fun PlayerRuntimeController.submitPlaybackIssueReport() {
     val state = _uiState.value
-    if (!state.playbackIssueReportsEnabled) return
+    if (!state.playbackIssueReportsEnabled || BuildConfig.PLAYBACK_REPORTS_BASE_URL.isBlank()) return
     if (state.playbackIssueReportStatus == PlaybackIssueReportStatus.Sending ||
         state.playbackIssueReportStatus == PlaybackIssueReportStatus.Sent
     ) return
@@ -1407,6 +1408,13 @@ fun PlayerRuntimeController.hideControls() {
     _uiState.update { it.copy(showControls = false, showSeekOverlay = false, showMoreDialog = false) }
 }
 
+internal fun PlayerRuntimeController.continuationRetryPlayer(): androidx.media3.exoplayer.ExoPlayer? =
+    _exoPlayer?.takeIf { player ->
+        hasRenderedFirstFrame && !isTorrentStream && currentInternalPlayerEngine == InternalPlayerEngine.EXOPLAYER &&
+            currentStreamMimeType == androidx.media3.common.MimeTypes.VIDEO_MP4 &&
+            player.isCurrentMediaItemSeekable && !player.isCurrentMediaItemLive && player.duration > 0L
+    }
+
 fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
     if (event != PlayerEvent.OnParentalGuideHide) {
         onUserInteraction()
@@ -1562,6 +1570,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             scheduleProgressSyncAfterSeek()
             publishPartyPlayback(positionMs = 0L, paused = false)
             showControlsTemporarily()
+            if (_uiState.value.isLoadingAddonSubtitles) fetchAddonSubtitles()
         }
         is PlayerEvent.OnSeekTo -> {
             if (_playbackTimeline.value.isLive) return
@@ -1947,6 +1956,28 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             scheduleHideControls()
         }
         PlayerEvent.OnRetry -> {
+            val retryState = _uiState.value
+            if (!isInBackground && retryState.error == null && retryState.showSubtitleOverlay &&
+                retryState.addonSubtitlesError != null
+            ) {
+                if (!retryState.isLoadingAddonSubtitles && subtitleFetchJob?.isActive != true) fetchAddonSubtitles()
+                return
+            }
+            if (isInBackground || retryState.error == null) return
+            val retryPlayer = continuationRetryPlayer()
+            val retryOwner = currentProgressWriteOwner()
+            val retryProgress = if (retryPlayer != null && retryOwner != null) {
+                val lease = progressWriteCoordinator.capture(retryOwner, completedAtCapture = false)
+                if (lease == null || !progressWriteCoordinator.mayPublish(lease)) return
+                currentWatchProgress(retryOwner.contentId, retryOwner.contentType,
+                    retryPlayer.currentPosition.coerceIn(0L, retryPlayer.duration), retryPlayer.duration,
+                    System.currentTimeMillis())
+            } else null
+            val retryPaused = retryPlayer?.let { userPausedManually || !it.playWhenReady } ?: false
+            if (retryProgress != null) {
+                resumeRequestGate.invalidate()
+                rememberCurrentTrackPreferenceForEngineSwitch()
+            }
             hasRenderedFirstFrame = false
             endDetectionArmed = false
             mpvEofSeenClear = false
@@ -1954,7 +1985,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             playbackIssueReportRequestVersion.incrementAndGet()
             resetErrorRetryState()
             lastPlaybackIssueError = null
-            clearPendingEngineSwitchTrackPreference()
+            if (retryProgress == null) clearPendingEngineSwitchTrackPreference()
             resetPostPlayOverlayState(clearEpisode = false)
             _uiState.update { state ->
                 state.copy(
@@ -1991,7 +2022,15 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
                 )
             } else {
                 releasePlayer()
-                initializePlayer(currentStreamUrl, currentHeaders)
+                if (retryProgress != null) {
+                    pendingResumeProgress = retryProgress
+                    _uiState.update { it.copy(pendingSeekPosition = null) }
+                    initializePlayer(currentStreamUrl, currentHeaders,
+                        overrideInternalPlayerEngine = InternalPlayerEngine.EXOPLAYER,
+                        allowEngineFailover = false, startPaused = retryPaused)
+                } else {
+                    initializePlayer(currentStreamUrl, currentHeaders)
+                }
             }
         }
         PlayerEvent.OnReportPlaybackIssue -> {

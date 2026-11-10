@@ -61,6 +61,7 @@ import androidx.media3.extractor.ts.TsExtractor
 import androidx.media3.session.MediaSession
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
 import com.nuvio.tv.core.player.DolbyVisionCodecFallback
 import com.nuvio.tv.core.player.DolbyVisionBaseLayerPolicy
@@ -71,6 +72,7 @@ import com.nuvio.tv.core.player.DolbyVisionExtractorsFactory
 import com.nuvio.tv.core.player.DoviBridge
 import com.nuvio.tv.core.player.LastPlaybackDiagnostics
 import com.nuvio.tv.core.tracking.TrackingScrobbleAction
+import com.nuvio.tv.core.streams.ServicePlaybackOrigin
 import com.nuvio.tv.core.util.findCause
 import com.nuvio.tv.ui.screens.settings.MemoryBudget
 import com.nuvio.tv.data.local.AudioLanguageOption
@@ -81,6 +83,7 @@ import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.data.local.PlayerSettings
 import com.nuvio.tv.data.repository.PlaybackIssueErrorInput
 import com.nuvio.tv.domain.model.Subtitle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -166,10 +169,39 @@ internal fun PlayerRuntimeController.initializePlayer(
     firstWatchCapture = firstWatchStart
     mpvMediaLoadPrepared = false
     val afrPreflightToken = afrPreflightGate.token()
+    val resumeToken = resumeRequestGate.token()
+    val owner = currentProgressWriteOwner()
+    val progressLease = owner?.let { progressWriteCoordinator.capture(it, completedAtCapture = false) }
+    val origin = playbackOrigin
+    val streamUrl = currentStreamUrl
+    val streamHeaders = currentHeaders.toMap()
+    val infoHash = currentInfoHash
+    val fileIndex = currentFileIdx
+    fun accountOrigin() = debridSettingsDataStore?.let { settings ->
+        ServicePlaybackOrigin(settings.activeProfileId.value, settings.activeProfileSelectionRevision,
+            settings.activeCredentialRevision)
+    }
+    val account = accountOrigin()
+    fun sessionIsCurrent() = resumeRequestGate.isCurrent(resumeToken) &&
+        currentProgressWriteOwner() == owner && playbackOrigin === origin &&
+        currentStreamUrl == streamUrl && currentHeaders == streamHeaders &&
+        currentInfoHash == infoHash && currentFileIdx == fileIndex && accountOrigin() == account &&
+        (progressLease == null || progressWriteCoordinator.mayPublish(progressLease))
+    fun initializationIsCurrent() = afrPreflightGate.isCurrent(afrPreflightToken) &&
+        !isInBackground && sessionIsCurrent()
+    val resumeInitialization: () -> Unit = {
+        if (sessionIsCurrent()) initializePlayer(url, headers, overrideInternalPlayerEngine,
+            allowEngineFailover, startPaused = true)
+    }
+    pendingInitializationResume = resumeInitialization
 
     scope.launch {
         try {
-            if (!directDebridResolver.isPlaybackAuthorized(url, profileId, currentVideoId, currentSeason, currentEpisode, contentType)) {
+            if (!initializationIsCurrent()) return@launch
+            val playbackAuthorized = directDebridResolver.isPlaybackAuthorized(
+                url, profileId, currentVideoId, currentSeason, currentEpisode, contentType)
+            if (!initializationIsCurrent()) return@launch
+            if (!playbackAuthorized) {
                 _uiState.update { it.copy(error = com.nuvio.tv.core.streams.SyclopPlaybackPolicy.BLOCKED_MESSAGE,
                     showLoadingOverlay = false, isBuffering = false) }
                 return@launch
@@ -210,6 +242,7 @@ internal fun PlayerRuntimeController.initializePlayer(
             configuredBackBufferMs = 0
 
             val playerSettings = playerSettingsDataStore.playerSettings.first()
+            if (!initializationIsCurrent()) return@launch
             currentPlayerSettingsForReport = playerSettings
             rememberAudioDelayPerDeviceEnabled = playerSettings.rememberAudioDelayPerDevice
             // Always watch output-device changes so Bluetooth connect/disconnect can switch
@@ -236,6 +269,7 @@ internal fun PlayerRuntimeController.initializePlayer(
             if (effectiveInternalPlayerEngine == InternalPlayerEngine.AUTO) {
                 effectiveInternalPlayerEngine = resolveAutoInternalPlayerEngine()
             }
+            if (!initializationIsCurrent()) return@launch
             runtimeInternalPlayerEngineOverride = overrideInternalPlayerEngine
             if (overrideInternalPlayerEngine == null && playerSettings.internalPlayerEngine == InternalPlayerEngine.AUTO) {
                 resolvedAutoPlayerEngine = effectiveInternalPlayerEngine
@@ -254,7 +288,9 @@ internal fun PlayerRuntimeController.initializePlayer(
             )
             flushPendingPlaybackRawEventLines()
             val deviceAspectMode = deviceLocalPlayerPreferences.aspectMode.first()
+            if (!initializationIsCurrent()) return@launch
             val tunneledSurfaceFill = deviceLocalPlayerPreferences.tunneledSurfaceFill.first()
+            if (!initializationIsCurrent()) return@launch
             _uiState.update {
                 it.copy(
                     internalPlayerEngine = effectiveInternalPlayerEngine,
@@ -262,7 +298,8 @@ internal fun PlayerRuntimeController.initializePlayer(
                     resizeMode = playerSettings.resizeMode,
                     aspectMode = deviceAspectMode,
                     tunneledSurfaceFill = tunneledSurfaceFill,
-                    playbackIssueReportsEnabled = playerSettings.playbackIssueReportsEnabled,
+                    playbackIssueReportsEnabled = playerSettings.playbackIssueReportsEnabled &&
+                        BuildConfig.PLAYBACK_REPORTS_BASE_URL.isNotBlank(),
                     tunnelingEnabled = playerSettings.effectiveTunnelingEnabled &&
                             effectiveInternalPlayerEngine != InternalPlayerEngine.MVP_PLAYER
                 )
@@ -278,6 +315,8 @@ internal fun PlayerRuntimeController.initializePlayer(
                 url = url,
                 headers = headers
             )
+
+            if (!initializationIsCurrent()) return@launch
 
             val afrJob = async {
                 runAfrPreflightIfEnabled(
@@ -300,7 +339,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                         afrJob.cancel()
                     }
                     // A switch or release during the preflight replaced this start-up.
-                    if (!afrPreflightGate.isCurrent(afrPreflightToken)) return@launch
+                    if (!initializationIsCurrent()) return@launch
                     if (mpvDelayStartAfterAfrSwitch) {
                         Log.d(PlayerRuntimeController.TAG, "AFR display mode switched; delaying MPV start by ${MPV_AFR_SETTLE_DELAY_MS}ms")
                         delay(MPV_AFR_SETTLE_DELAY_MS)
@@ -309,8 +348,9 @@ internal fun PlayerRuntimeController.initializePlayer(
                         phase = "mpv_buffering",
                         message = context.getString(R.string.player_loading_buffering)
                     )
-                    if (!afrPreflightGate.isCurrent(afrPreflightToken)) return@launch
+                    if (!initializationIsCurrent()) return@launch
                     initializeMpvPlayer(url = url, headers = headers, allowEngineFailover = allowEngineFailover)
+                    if (pendingInitializationResume === resumeInitialization) pendingInitializationResume = null
                     fetchAddonSubtitles()
                 } finally {
                     mpvInitializationInProgress = false
@@ -644,7 +684,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                 afrJob.cancel()
             }
 
-            if (!afrPreflightGate.isCurrent(afrPreflightToken)) return@launch
+            if (!initializationIsCurrent()) return@launch
 
             // ── Libass Setup (From 0.5.7-beta/Left) ──
             requestedUseLibassByUser = playerSettings.useLibass
@@ -1012,7 +1052,7 @@ internal fun PlayerRuntimeController.initializePlayer(
 
             disposeExoPlayerBeforeRebuild()
             delay(PLAYER_REBUILD_SETTLE_DELAY_MS)
-            if (!afrPreflightGate.isCurrent(afrPreflightToken)) return@launch
+            if (!initializationIsCurrent()) return@launch
 
             _exoPlayer = if (useLibass) {
                 // Set libass render scale before building the player - this controls
@@ -1040,6 +1080,7 @@ internal fun PlayerRuntimeController.initializePlayer(
             } else {
                 buildDefaultPlayer()
             }
+            if (pendingInitializationResume === resumeInitialization) pendingInitializationResume = null
             _loadControl = loadControl
             activePlayerUsesLibass = useLibass
             libassPipelineSwitchInFlight = false
@@ -1422,6 +1463,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                     }
 
                     override fun onTracksChanged(tracks: Tracks) {
+                        if (_exoPlayer !== this@apply) return
                         updateAvailableTracks(tracks)
                         publishBadgeMediaInfo(badgePlayer)
                     }
@@ -1903,6 +1945,8 @@ internal fun PlayerRuntimeController.initializePlayer(
                 fetchAddonSubtitles()
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            if (!initializationIsCurrent()) return@launch
             if (
                 maybeAutoSwitchInternalPlayerOnStartupError(
                     detailedError = e.message ?: context.getString(com.nuvio.tv.R.string.player_error_initialize_failed),
@@ -1937,6 +1981,10 @@ internal fun PlayerRuntimeController.initializePlayer(
                     loadingIssueReportVisible = false,
                     loadingIssueElapsedMs = 0L
                 )
+            }
+        } finally {
+            if (!isInBackground && pendingInitializationResume === resumeInitialization) {
+                pendingInitializationResume = null
             }
         }
     }
@@ -2040,6 +2088,8 @@ internal suspend fun PlayerRuntimeController.prepareStartupSubtitles(): StartupS
 }
 
 internal fun PlayerRuntimeController.resetAddonSubtitleStateForNewStream() {
+    subtitleFetchJob?.cancel()
+    subtitleFetchJob = null
     autoSubtitleSelected = subtitleDisabledByPersistedPreference || subtitleAddonRestoredByPersistedPreference
     isUserExplicitSubtitleSelection = false
     hasScannedTextTracksOnce = false

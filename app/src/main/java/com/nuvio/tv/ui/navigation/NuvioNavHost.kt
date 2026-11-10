@@ -580,6 +580,7 @@ private fun PlaybackNavHost(
                 ?.toBooleanStrictOrNull() == true
             StreamScreen(
                 startFromBeginning = startFromBeginning,
+                onOpenSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
                 restoreSourceSelection = restoreSourceSelection,
                 onSourceSelectionRestoreHandled = {
                     streamSavedState[SOURCE_SELECTION_RESTORE_STATE_KEY] = false
@@ -1137,46 +1138,31 @@ private fun PlaybackNavHost(
                     )
                 },
                 onOpenPartyMedia = ::openPartyMedia,
-                onPlaybackErrorBack = {
-                    val returnedToStream = popBackToStream()
-                    if (!returnedToStream) {
-                        val args = backStackEntry.arguments
-                        val videoId = args?.getString("videoId").orEmpty()
-                        val contentType = args?.getString("contentType").orEmpty()
-                        val title = args?.getString("title").orEmpty()
-
-                        if (videoId.isBlank() || contentType.isBlank() || title.isBlank()) {
-                            navController.popBackStack()
-                        } else {
-                            val route = Screen.Stream.createRoute(
-                                videoId = videoId,
-                                contentType = contentType,
-                                title = title,
-                                poster = args?.getString("poster"),
-                                backdrop = args?.getString("backdrop"),
-                                logo = args?.getString("logo"),
-                                season = args?.getString("season")?.toIntOrNull(),
-                                episode = args?.getString("episode")?.toIntOrNull(),
-                                episodeName = args?.getString("episodeTitle"),
-                                genres = null,
-                                year = args?.getString("year"),
-                                contentId = args?.getString("contentId"),
-                                contentName = args?.getString("contentName"),
-                                runtime = null,
-                                manualSelection = true,
-                                returnToDetailOnBack = args?.getString("returnToDetailOnBack")
-                                    ?.toBooleanStrictOrNull() == true,
-                                returnToHomeOnBack = args?.getString("returnToHomeOnBack")
-                                    ?.toBooleanStrictOrNull() == true,
-                                profileId = args?.getString("profileId")?.toIntOrNull()
-                            )
-
+                onPlaybackErrorBack = { contentId, contentType, videoId, season, episode, profileId ->
+                    val currentOwner = if (contentId != null && contentType != null &&
+                        videoId != null && profileId != null) {
+                        com.nuvio.tv.ui.screens.player.PlayerProgressWriteOwner(
+                            profileId, contentId, contentType, videoId, season, episode)
+                    } else null
+                    @Suppress("RestrictedApi")
+                    val retainedStream = navController.currentBackStack.value.lastOrNull {
+                        it.destination.route == Screen.Stream.route
+                    }
+                    returnFromPlaybackError(
+                        currentOwner = currentOwner,
+                        retainedStreamOwner = playerSourceSelectionOwner(retainedStream?.arguments),
+                        arguments = backStackEntry.arguments,
+                        popBackToStream = ::popBackToStream,
+                        navigateToStream = { route ->
                             navController.navigate(route) {
-                                popUpTo(Screen.Player.route) { inclusive = true }
+                                popUpTo(if (retainedStream != null) Screen.Stream.route else Screen.Player.route) {
+                                    inclusive = true
+                                }
                                 launchSingleTop = true
                             }
-                        }
-                    }
+                        },
+                        goBack = { navController.popBackStack() }
+                    )
                 }
             )
         }

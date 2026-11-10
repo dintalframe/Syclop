@@ -62,7 +62,10 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
-internal class PlayerMediaSourceFactory(private val context: Context) {
+internal class PlayerMediaSourceFactory(
+    private val context: Context,
+    private val progressiveDataSourceFactory: DataSource.Factory? = null
+) {
     private var customExtractorsFactory: ExtractorsFactory? = null
     private var customSubtitleParserFactory: SubtitleParser.Factory? = null
     private val loadErrorHandlingPolicy = PlayerLoadErrorHandlingPolicy()
@@ -226,7 +229,7 @@ internal class PlayerMediaSourceFactory(private val context: Context) {
         )
         val useChunkSessionSource = useParallelConnections && !isHls && !isDash
         parallelStartupPrefetchUnlocked.set(!useChunkSessionSource)
-        val networkProgressiveFactory: DataSource.Factory = if (useChunkSessionSource) {
+        val networkProgressiveFactory: DataSource.Factory = progressiveDataSourceFactory ?: if (useChunkSessionSource) {
             val sessionConnections = parallelConnectionCount
             val scopedClient = playbackHttpClient.withScopedPlaybackHeaders(url, sanitizedHeaders.keys)
             val okHttpFactory = OkHttpDataSource.Factory(scopedClient).apply {

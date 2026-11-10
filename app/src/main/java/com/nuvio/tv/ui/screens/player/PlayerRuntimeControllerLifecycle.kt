@@ -16,6 +16,7 @@ internal fun PlayerRuntimeController.releasePlayer(
 ) {
     logScrobbleDiagnostic("release_player", "flushPlaybackState=$flushPlaybackState")
     isReleasingPlayer = true
+    pendingInitializationResume = null
     firstWatchCapture = null
     exoEndOfStreamRecovery.release()
     com.nuvio.tv.core.recommendations.TvRecommendationManager.isPlaybackActive.value = false
@@ -51,6 +52,8 @@ internal fun PlayerRuntimeController.releasePlayer(
     _uiState.update { it.copy(showStreamSourceIndicator = false) }
     hidePlayerEngineSwitchInfoJob?.cancel()
     hideSubtitleDelayOverlayJob?.cancel()
+    subtitleFetchJob?.cancel()
+    subtitleFetchJob = null
     subtitleAutoSyncLoadJob?.cancel()
     cancelAutomaticSubtitleSync() // AutoSync hook
     stopSidecarAddonSubtitle(clearView = true)

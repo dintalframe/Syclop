@@ -45,7 +45,7 @@ import org.xmlpull.v1.XmlPullParser
 
 /**
  * Manual emulator-only storage fixture. Never add this class to a generic or account-free UI suite.
- * Run the three fixed phases in separate cold target-app processes. Existing singleton DataStores
+ * Run the selected fixed protocol in separate cold target-app processes. Existing singleton DataStores
  * are reused; bootstrap is exercised only by the application's real attachBaseContext entry point.
  */
 @RunWith(AndroidJUnit4::class)
@@ -55,7 +55,9 @@ class LocalBackupStorageRoundTripAndroidTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val phase = InstrumentationRegistry.getArguments().getString(PHASE_ARGUMENT)
         assumeTrue("Explicit backup storage phase not selected.", phase != null)
-        require(phase in setOf("seed", "restore", "undo")) { "Unknown fixed backup storage phase." }
+        require(phase in setOf("seed", "seed-cancel", "cancel-reopen", "reject-reopen", "restore", "undo")) {
+            "Unknown fixed backup storage phase."
+        }
         require(isQemu()) { "Backup storage fixture refuses a physical installation." }
         require(BuildConfig.LOCAL_ONLY_BUILD) { "Backup storage fixture requires the account-free local build." }
         val context = instrumentation.targetContext
@@ -70,6 +72,9 @@ class LocalBackupStorageRoundTripAndroidTest {
                         withTimeout(10_000L) { access.profileManager.activeProfileReady.first { it } }
                         when (phase) {
                             "seed" -> seedPhase(context, access, report)
+                            "seed-cancel" -> seedPhase(context, access, report, cancelBeforeRestart = true)
+                            "cancel-reopen" -> cancelReopenPhase(context, access, report)
+                            "reject-reopen" -> rejectReopenPhase(context, access, report)
                             "restore" -> restorePhase(context, access, report)
                             "undo" -> undoPhase(context, access, report)
                         }
@@ -104,7 +109,7 @@ class LocalBackupStorageRoundTripAndroidTest {
         return Access(manager, profiles, factory, field(profiles, "dataStore"), LocalBackupManager(context, profiles, factory))
     }
 
-    private suspend fun seedPhase(context: Context, a: Access, report: JSONObject) {
+    private suspend fun seedPhase(context: Context, a: Access, report: JSONObject, cancelBeforeRestart: Boolean = false) {
         val root = fixtureRoot(context)
         require(!File(root, "ledger.json").exists()) { "A fixture ledger already exists; recover it before another run." }
         require(!a.backups.pending() && !a.backups.canUndo()) { "Existing restore state must be preserved." }
@@ -124,7 +129,8 @@ class LocalBackupStorageRoundTripAndroidTest {
             "Existing profile lock state must be preserved; fixture refused."
         }
         val ledger = JSONObject().put("schema", 1).put("nextPhase", "seeding").put("seedPid", Process.myPid())
-        saveOriginalStores(a, root)
+        if (cancelBeforeRestart) ledger.put("cancellationAndRejection", true)
+        saveStores(a, File(root, "original"))
         File(BackupRestoreBootstrap.root(context), "notice.txt").takeIf(File::isFile)
             ?.copyTo(File(root, "original-notice.txt"), overwrite = false)
         writeLedger(root, ledger)
@@ -159,18 +165,92 @@ class LocalBackupStorageRoundTripAndroidTest {
         ledger.put("archiveSha256", sha256(bytes)).put("profileCount", backup.profiles.size)
         seed(a, "B")
         privateSentinel(context).writeText(PRIVATE_B)
+        if (cancelBeforeRestart) {
+            saveStores(a, File(root, "cancel-baseline"))
+            ledger.put("cancelNoticeSha256", noticeHash(context))
+            writeLedger(root, ledger)
+        }
         a.backups.queue(backup)
         require(a.backups.pending())
-        ledger.put("nextPhase", "restore")
+        if (cancelBeforeRestart) {
+            a.backups.cancel()
+            requireNoPendingArchive(context, a)
+            require(!a.backups.canUndo())
+            verifyUnchangedB(context, a, root, ledger)
+            report.put("restoreCanceled", true).put("logicalStoresUnchanged", true)
+                .put("pendingArchiveRemoved", true)
+        }
+        ledger.put("nextPhase", if (cancelBeforeRestart) "cancel-reopen" else "restore")
         writeLedger(root, ledger)
         report.put("profilesExported", 2).put("publicDownloadsPublished", true).put("archiveReadbackVerified", true)
-            .put("privateSentinelExcluded", true).put("restoreQueued", true).put("archiveSha256", sha256(bytes))
+            .put("privateSentinelExcluded", true).put("restoreQueued", !cancelBeforeRestart).put("archiveSha256", sha256(bytes))
+    }
+
+    private suspend fun cancelReopenPhase(context: Context, a: Access, report: JSONObject) {
+        val root = fixtureRoot(context)
+        val ledger = readLedger(root, "cancel-reopen")
+        require(ledger.getBoolean("cancellationAndRejection"))
+        require(ledger.getInt("seedPid") != Process.myPid()) { "Cancellation check needs a cold target-app process." }
+        requireNoPendingArchive(context, a)
+        require(!a.backups.canUndo())
+        verifyUnchangedB(context, a, root, ledger)
+        require(noticeHash(context) == ledger.getString("cancelNoticeSha256"))
+        val restoreRoot = BackupRestoreBootstrap.root(context)
+        require(restoreRoot.listFiles().orEmpty().none { it.name.startsWith("rejected-") }) {
+            "An unowned rejected request must be preserved."
+        }
+        val backup = inspectOwnedArchive(context, a, ledger)
+        a.backups.queue(backup)
+        require(a.backups.pending())
+        val action = File(restoreRoot, "pending.json")
+        require(action.readText() == "{\"action\":\"restore\"}")
+        val archive = File(restoreRoot, "pending.zip")
+        require(archive.inputStream().use(PortableBackupArchive::decode) == backup)
+        ledger.put("queuedActionSha256", sha256(action)).put("nextPhase", "corrupting")
+            .put("cancelReopenPid", Process.myPid())
+        writeLedger(root, ledger)
+        // Corrupt only this fixture's queued archive; live stores stay owned by their DataStores.
+        BackupRestoreBootstrap.atomicWrite(archive, TRUNCATED_ARCHIVE.toByteArray(Charsets.UTF_8))
+        require(archive.readText() == TRUNCATED_ARCHIVE)
+        ledger.put("nextPhase", "reject-reopen")
+        writeLedger(root, ledger)
+        report.put("coldCancellationVerified", true).put("logicalStoresUnchanged", true)
+            .put("privateSentinelPreserved", true).put("publicRegistrationPreserved", true)
+            .put("coldPendingArchiveAbsent", true).put("ownedCorruptArchiveQueued", true)
+    }
+
+    private suspend fun rejectReopenPhase(context: Context, a: Access, report: JSONObject) {
+        val root = fixtureRoot(context)
+        val ledger = readLedger(root, "reject-reopen")
+        require(ledger.getBoolean("cancellationAndRejection"))
+        require(ledger.getInt("cancelReopenPid") != Process.myPid()) { "Rejection check needs a cold target-app process." }
+        requireNoPendingArchive(context, a)
+        require(!a.backups.canUndo())
+        verifyUnchangedB(context, a, root, ledger)
+        require(a.backups.notice() == "The queued restore was rejected before local data changed. Choose a valid Syclop backup and try again.")
+        val rejected = BackupRestoreBootstrap.root(context).listFiles().orEmpty().filter { it.name.startsWith("rejected-") }
+        require(rejected.size == 1 && rejected.single().isFile &&
+            sha256(rejected.single()) == ledger.getString("queuedActionSha256"))
+        ledger.put("ownedRejectedAction", rejected.single().name)
+        a.backups.queue(inspectOwnedArchive(context, a, ledger))
+        require(a.backups.pending())
+        ledger.put("nextPhase", "restore").put("rejectReopenPid", Process.myPid())
+        writeLedger(root, ledger)
+        report.put("coldRejectionVerified", true).put("logicalStoresUnchanged", true)
+            .put("privateSentinelPreserved", true).put("publicRegistrationPreserved", true)
+            .put("coldPendingArchiveAbsent", true).put("ownedRejectedActionVerified", true)
+            .put("validRestoreQueued", true)
     }
 
     private suspend fun restorePhase(context: Context, a: Access, report: JSONObject) {
         val root = fixtureRoot(context)
         val ledger = readLedger(root, "restore")
         require(ledger.getInt("seedPid") != Process.myPid()) { "Restore phase needs a cold target-app process." }
+        if (ledger.optBoolean("cancellationAndRejection")) {
+            require(ledger.getInt("rejectReopenPid") != Process.myPid()) { "Restore needs a cold process after rejection." }
+            require(!File(BackupRestoreBootstrap.root(context), ledger.getString("ownedRejectedAction")).exists())
+            report.put("validRestoreAfterRejection", true)
+        }
         require(!a.backups.pending() && a.backups.canUndo())
         verifySeed(a, "A")
         require(!privateSentinel(context).exists())
@@ -206,6 +286,11 @@ class LocalBackupStorageRoundTripAndroidTest {
         val notice = File(BackupRestoreBootstrap.root(context), "notice.txt")
         val originalNotice = File(root, "original-notice.txt")
         if (originalNotice.exists()) originalNotice.copyTo(notice, overwrite = true) else notice.delete()
+        if (ledger.optBoolean("cancellationAndRejection")) {
+            requireNoPendingArchive(context, a)
+            require(BackupRestoreBootstrap.root(context).listFiles().orEmpty().none { it.name.startsWith("rejected-") })
+            report.put("ownedQueueAndQuarantineRemoved", true)
+        }
         report.put("coldUndoVerified", true).put("privateSentinelRecovered", true).put("restoredProfiles", 2)
             .put("ownedPublicationRemoved", true).put("originalLogicalPreferencesRestored", true)
             .put("limits", "No SAF picker, power-loss durability, real-account Keystore, or physical-Shield acceptance claim.")
@@ -276,12 +361,46 @@ class LocalBackupStorageRoundTripAndroidTest {
         }
     }
 
-    private suspend fun saveOriginalStores(a: Access, root: File) {
-        savePreferences(File(root, "original/profile_settings.preferences_pb"), a.profileStore.data.first())
+    private suspend fun saveStores(a: Access, directory: File) {
+        savePreferences(File(directory, "profile_settings.preferences_pb"), a.profileStore.data.first())
         for (profile in 1..2) for (feature in PortableBackupPolicy.features - "profile_settings") {
-            savePreferences(File(root, "original/$feature-p$profile.preferences_pb"), a.factory.get(profile, feature).data.first())
+            savePreferences(File(directory, "$feature-p$profile.preferences_pb"), a.factory.get(profile, feature).data.first())
         }
     }
+
+    private suspend fun verifyUnchangedB(context: Context, a: Access, root: File, ledger: JSONObject) {
+        val baseline = File(root, "cancel-baseline")
+        require(a.profileStore.data.first() == BackupRestoreBootstrap.readPreferences(File(baseline, "profile_settings.preferences_pb")))
+        for (profile in 1..2) for (feature in PortableBackupPolicy.features - "profile_settings") {
+            require(a.factory.get(profile, feature).data.first() ==
+                BackupRestoreBootstrap.readPreferences(File(baseline, "$feature-p$profile.preferences_pb"))) {
+                "Synthetic current store changed: $feature profile$profile."
+            }
+        }
+        verifySeed(a, "B")
+        require(privateSentinel(context).readText() == PRIVATE_B)
+        require(publicRegistrationHash(context) == ledger.getString("registrationHash"))
+        requireNoAccountBearingState(context)
+    }
+
+    private suspend fun inspectOwnedArchive(context: Context, a: Access, ledger: JSONObject): PortableBackup {
+        val uri = Uri.parse(ledger.getString("ownedUri"))
+        require(uri.scheme == "content" && uri.authority == "media")
+        val bytes = context.contentResolver.openInputStream(uri).use { checkNotNull(it).readBytes() }
+        require(sha256(bytes) == ledger.getString("archiveSha256"))
+        return a.backups.inspect(uri).also { backup ->
+            require(PortableBackupArchive.decode(bytes.inputStream()) == backup)
+            require(backup.profiles.map { it.id }.toSet() == setOf(1, 2) &&
+                backup.profiles.all { it.name == profileName("A", it.id) })
+        }
+    }
+
+    private fun requireNoPendingArchive(context: Context, a: Access) {
+        require(!a.backups.pending() && !File(BackupRestoreBootstrap.root(context), "pending.zip").exists())
+    }
+
+    private fun noticeHash(context: Context) = File(BackupRestoreBootstrap.root(context), "notice.txt")
+        .takeIf(File::isFile)?.let(::sha256) ?: "absent"
 
     private suspend fun restoreOriginalStores(context: Context, a: Access, root: File) {
         // Restore through exact live instances; replacing open DataStore files is unsafe.
@@ -376,7 +495,9 @@ class LocalBackupStorageRoundTripAndroidTest {
     private fun writeLedger(root: File, ledger: JSONObject) =
         BackupRestoreBootstrap.atomicWrite(File(root, "ledger.json"), ledger.toString().toByteArray())
     private fun readLedger(root: File, phase: String): JSONObject =
-        JSONObject(File(root, "ledger.json").readText()).also { require(it.getString("nextPhase") == phase) }
+        JSONObject(File(root, "ledger.json").readText()).also {
+            require(it.getInt("schema") == 1 && it.getString("nextPhase") == phase)
+        }
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
         .joinToString("") { "%02x".format(it) }
     private fun sha256(file: File): String {
@@ -399,6 +520,7 @@ class LocalBackupStorageRoundTripAndroidTest {
 
     private companion object {
         const val PHASE_ARGUMENT = "backupRoundTripPhase"
+        const val TRUNCATED_ARCHIVE = "owned-backup-fixture-truncated-zip"
         const val FIXTURE_TIME = 1_800_000_000_000L
         const val PRIVATE_MARKER = "backup-fixture-private-marker"
         const val PRIVATE_A = "<map><string name=\"fixture_probe\">backup-fixture-private-A</string></map>"

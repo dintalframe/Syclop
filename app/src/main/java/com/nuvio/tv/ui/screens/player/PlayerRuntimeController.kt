@@ -70,7 +70,7 @@ import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-class PlayerRuntimeController(
+class PlayerRuntimeController internal constructor(
     context: Context,
     internal val watchProgressRepository: WatchProgressRepository,
     progressWriteAuthority: PlayerProgressWriteAuthority,
@@ -115,7 +115,8 @@ class PlayerRuntimeController(
     internal val scope: CoroutineScope,
     internal val firstWatchReadiness: com.nuvio.tv.core.setup.FirstWatchReadinessRepository? = null,
     internal val debridStreamPresentation: com.nuvio.tv.core.debrid.DebridStreamPresentation? = null,
-    internal val debridSettingsDataStore: com.nuvio.tv.data.local.DebridSettingsDataStore? = null
+    internal val debridSettingsDataStore: com.nuvio.tv.data.local.DebridSettingsDataStore? = null,
+    playbackMediaSourceFactory: PlayerMediaSourceFactory? = null
 ) {
 
     /** Resolved once so every `context.getString(...)` here follows the app language. */
@@ -216,7 +217,7 @@ class PlayerRuntimeController(
     internal val rememberedAudioLanguage: String? = navigationArgs.rememberedAudioLanguage
     internal val rememberedAudioName: String? = navigationArgs.rememberedAudioName
     internal val cloudSessionToken: String? = navigationArgs.cloudSessionToken
-    internal val mediaSourceFactory = PlayerMediaSourceFactory(context.applicationContext).apply {
+    internal val mediaSourceFactory = (playbackMediaSourceFactory ?: PlayerMediaSourceFactory(context.applicationContext)).apply {
         onStreamRedirected = { requestedUrl, resolvedUrl -> handleStreamRedirect(requestedUrl, resolvedUrl) }
     }
 
@@ -457,6 +458,7 @@ class PlayerRuntimeController(
     internal var partyPreviousKey: String? = null
     internal var hidePlayerEngineSwitchInfoJob: Job? = null
     internal var hideSubtitleDelayOverlayJob: Job? = null
+    internal var subtitleFetchJob: Job? = null
     internal var subtitleAutoSyncLoadJob: Job? = null
     internal var automaticSubtitleSyncJob: Job? = null // AutoSync hook
     /** mpv: the add-on subtitle download and sub-add in flight, which AutoSync lets land first. */
@@ -675,6 +677,7 @@ class PlayerRuntimeController(
         }
     internal var pendingResumeProgress: WatchProgress? = null
     internal val resumeRequestGate = PlayerResumeRequestGate()
+    internal var pendingInitializationResume: (() -> Unit)? = null
     internal var hasRetriedCurrentStreamAfter416: Boolean = false
     internal var isReleasingPlayer: Boolean = false
     internal var cachedDecoderPriority: Int = 1

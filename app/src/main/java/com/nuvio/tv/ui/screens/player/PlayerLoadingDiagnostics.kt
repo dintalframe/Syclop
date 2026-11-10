@@ -3,6 +3,7 @@ package com.nuvio.tv.ui.screens.player
 import android.net.Uri
 import android.os.SystemClock
 import androidx.media3.common.Player
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.data.repository.PlaybackIssueLoadingEventInput
 import com.nuvio.tv.data.repository.PlaybackIssueLoadingInput
 import kotlinx.coroutines.delay
@@ -123,7 +124,9 @@ internal fun PlayerRuntimeController.scheduleLoadingIssueReportAvailability() {
     startupLoadingReportJob = scope.launch {
         delay(LOADING_ISSUE_REPORT_DELAY_MS)
         val state = _uiState.value
-        if (state.playbackIssueReportsEnabled && !hasRenderedFirstFrame && state.error == null && state.showLoadingOverlay) {
+        if (BuildConfig.PLAYBACK_REPORTS_BASE_URL.isNotBlank() && state.playbackIssueReportsEnabled &&
+            !hasRenderedFirstFrame && state.error == null && state.showLoadingOverlay
+        ) {
             val elapsedMs = (SystemClock.elapsedRealtime() - loadingDiagnosticsStartedAtMs).coerceAtLeast(0L)
             _uiState.update {
                 it.copy(

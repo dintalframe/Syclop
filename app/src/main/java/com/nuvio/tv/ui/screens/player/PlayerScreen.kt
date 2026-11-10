@@ -193,7 +193,8 @@ internal fun playerBackOpensCurrentEpisodeStreams(
 fun PlayerScreen(
     viewModel: PlayerViewModel = hiltViewModel(),
     onBackPress: (currentVideoId: String?, currentSeason: Int?, currentEpisode: Int?, autoPlayEnabled: Boolean, playbackCompleted: Boolean) -> Unit,
-    onPlaybackErrorBack: () -> Unit = { onBackPress(null, null, null, false, false) },
+    onPlaybackErrorBack: (contentId: String?, contentType: String?, videoId: String?, season: Int?, episode: Int?, profileId: Int?) -> Unit =
+        { _, _, videoId, season, episode, _ -> onBackPress(videoId, season, episode, false, false) },
     onPlaybackEnded: ((nextVideoId: String?, nextSeason: Int?, nextEpisode: Int?, exitReason: PlayerExitReason?) -> Unit)? = null,
     onPlayRecommendation: (PostPlayRecommendation, manualSelection: Boolean) -> Unit = { _, _ -> },
     onOpenRecommendationDetails: (PostPlayRecommendation) -> Unit = {},
@@ -269,8 +270,10 @@ fun PlayerScreen(
     val exitPlayerFromError: () -> Unit = exitPlayerFromError@{
         if (exitDispatched) return@exitPlayerFromError
         exitDispatched = true
+        val owner = viewModel.currentPlaybackErrorSourceOwner()
         viewModel.stopAndRelease()
-        onPlaybackErrorBack()
+        onPlaybackErrorBack(owner?.contentId, owner?.contentType, owner?.videoId,
+            owner?.season, owner?.episode, owner?.profileId)
     }
     val dismissStreamInfoOverlay = {
         viewModel.onEvent(PlayerEvent.OnDismissStreamInfo)
@@ -1387,7 +1390,12 @@ fun PlayerScreen(
         // Error state
         if (uiState.error != null) {
             ErrorOverlay(
-                message = uiState.error!!,
+                message = stringResource(R.string.player_error_stopped),
+                onRetry = if (viewModel.canRetryCurrentPlaybackError()) ({
+                    if (viewModel.canRetryCurrentPlaybackError()) viewModel.onEvent(PlayerEvent.OnRetry)
+                }) else null,
+                backActionLabel = stringResource(if (viewModel.canChooseCurrentPlaybackErrorSource())
+                    R.string.source_repair_choose_another else R.string.player_go_back),
                 showSwitchToMpvAction = uiState.showSwitchToMpvErrorAction &&
                     uiState.internalPlayerEngine != InternalPlayerEngine.MVP_PLAYER,
                 onSwitchToMpv = { viewModel.onEvent(PlayerEvent.OnSwitchToMpvPlayer) },
@@ -2029,6 +2037,7 @@ fun PlayerScreen(
             subtitleDelayMs = uiState.subtitleDelayMs,
             installedSubtitleAddonOrder = uiState.installedSubtitleAddonOrder,
             isLoadingAddons = uiState.isLoadingAddonSubtitles,
+            addonSubtitlesError = uiState.addonSubtitlesError,
             useLibass = uiState.useLibass,
             isUsingMpv = uiState.internalPlayerEngine == InternalPlayerEngine.MVP_PLAYER,
             onInternalTrackSelected = { viewModel.onEvent(PlayerEvent.OnSelectSubtitleTrack(it)) },
@@ -3853,8 +3862,10 @@ private fun LoadingIssueReportAction(
 }
 
 @Composable
-private fun ErrorOverlay(
+internal fun ErrorOverlay(
     message: String,
+    onRetry: (() -> Unit)? = null,
+    backActionLabel: String? = null,
     showSwitchToMpvAction: Boolean = false,
     onSwitchToMpv: (() -> Unit)? = null,
     showReportAction: Boolean,
@@ -3864,24 +3875,27 @@ private fun ErrorOverlay(
     onReport: () -> Unit,
     onBack: () -> Unit
 ) {
+    val retryFocusRequester = remember { FocusRequester() }
     val exitFocusRequester = remember { FocusRequester() }
     val reportFocusRequester = remember { FocusRequester() }
     val mpvFocusRequester = remember { FocusRequester() }
     val onSwitchMpvAction = onSwitchToMpv.takeIf { showSwitchToMpvAction }
-    val targetFocusRequester = if (onSwitchMpvAction != null) mpvFocusRequester else exitFocusRequester
+    val hasRetry = onRetry != null
+    val reportEnabled = showReportAction && reportStatus != PlaybackIssueReportStatus.Sending &&
+        reportStatus != PlaybackIssueReportStatus.Sent
+    val targetFocusRequester = if (hasRetry) retryFocusRequester else exitFocusRequester
 
-    var targetButtonPlaced by remember(onSwitchMpvAction != null) { mutableStateOf(false) }
-    var mpvFocused by remember(onSwitchMpvAction != null) { mutableStateOf(false) }
-    var reportFocused by remember(onSwitchMpvAction != null) { mutableStateOf(false) }
-    var exitFocused by remember(onSwitchMpvAction != null) { mutableStateOf(false) }
-    val hasOverlayFocus = mpvFocused || reportFocused || exitFocused
+    var targetButtonPlaced by remember(hasRetry) { mutableStateOf(false) }
+    var retryFocused by remember(hasRetry) { mutableStateOf(false) }
+    var mpvFocused by remember(hasRetry) { mutableStateOf(false) }
+    var reportFocused by remember(hasRetry) { mutableStateOf(false) }
+    var exitFocused by remember(hasRetry) { mutableStateOf(false) }
+    val hasOverlayFocus = retryFocused || mpvFocused || reportFocused || exitFocused
 
-    LaunchedEffect(targetButtonPlaced, onSwitchMpvAction != null) {
+    LaunchedEffect(targetButtonPlaced, hasRetry) {
         if (!targetButtonPlaced) return@LaunchedEffect
         val focused = targetFocusRequester.requestFocusAfterFrames(frames = 0)
-        if (!focused) {
-            targetFocusRequester.requestFocusAfterFrames(frames = 2)
-        }
+        if (!focused) targetFocusRequester.requestFocusAfterFrames(frames = 2)
     }
 
     Box(
@@ -3948,17 +3962,49 @@ private fun ErrorOverlay(
                 horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.lg),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (onRetry != null) {
+                    PlayerOverlayButton(
+                        text = stringResource(R.string.action_retry),
+                        onClick = onRetry,
+                        primary = true,
+                        modifier = Modifier
+                            .focusRequester(retryFocusRequester)
+                            .onPlaced { targetButtonPlaced = true }
+                            .onFocusChanged { retryFocused = it.isFocused }
+                            .focusProperties {
+                                start = retryFocusRequester
+                                end = exitFocusRequester
+                            }
+                    )
+                }
+                PlayerOverlayButton(
+                    text = backActionLabel ?: stringResource(R.string.player_go_back),
+                    onClick = onBack,
+                    primary = !hasRetry,
+                    modifier = Modifier
+                        .focusRequester(exitFocusRequester)
+                        .onPlaced { if (!hasRetry) targetButtonPlaced = true }
+                        .onFocusChanged { exitFocused = it.isFocused }
+                        .focusProperties {
+                            start = if (hasRetry) retryFocusRequester else exitFocusRequester
+                            end = when {
+                                onSwitchMpvAction != null -> mpvFocusRequester
+                                reportEnabled -> reportFocusRequester
+                                else -> exitFocusRequester
+                            }
+                        }
+                )
                 if (onSwitchMpvAction != null) {
                     PlayerOverlayButton(
                         text = stringResource(R.string.player_switch_to_mpv),
                         onClick = onSwitchMpvAction,
-                        primary = true,
+                        primary = false,
                         modifier = Modifier
                             .focusRequester(mpvFocusRequester)
-                            .onPlaced { targetButtonPlaced = true }
                             .onFocusChanged { mpvFocused = it.isFocused }
                             .focusProperties {
-                                right = if (showReportAction) reportFocusRequester else exitFocusRequester
+                                start = exitFocusRequester
+                                end = if (reportEnabled) reportFocusRequester else mpvFocusRequester
                             }
                     )
                 }
@@ -3971,37 +4017,16 @@ private fun ErrorOverlay(
                         },
                         onClick = onReport,
                         primary = false,
-                        enabled = reportStatus != PlaybackIssueReportStatus.Sending &&
-                            reportStatus != PlaybackIssueReportStatus.Sent,
+                        enabled = reportEnabled,
                         modifier = Modifier
                             .focusRequester(reportFocusRequester)
                             .onFocusChanged { reportFocused = it.isFocused }
                             .focusProperties {
-                                if (onSwitchMpvAction != null) left = mpvFocusRequester
-                                right = exitFocusRequester
+                                start = if (onSwitchMpvAction != null) mpvFocusRequester else exitFocusRequester
+                                end = reportFocusRequester
                             }
                     )
                 }
-                PlayerOverlayButton(
-                    text = stringResource(R.string.player_go_back),
-                    onClick = onBack,
-                    primary = onSwitchMpvAction == null,
-                    modifier = Modifier
-                        .focusRequester(exitFocusRequester)
-                        .onPlaced {
-                            if (onSwitchMpvAction == null) targetButtonPlaced = true
-                        }
-                        .onFocusChanged { exitFocused = it.isFocused }
-                        .focusProperties {
-                            left = if (showReportAction) {
-                                reportFocusRequester
-                            } else if (onSwitchMpvAction != null) {
-                                mpvFocusRequester
-                            } else {
-                                FocusRequester.Default
-                            }
-                        }
-                )
             }
         }
     }
