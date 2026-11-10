@@ -5,10 +5,57 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 
 
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/android-release.yml"
+
+
+class ReviewedReleaseNotesTests(unittest.TestCase):
+    def run_notes_step(self, reviewed, exclusions=""):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            note = root / "scripts/release_notes/reviewed/0.1.3.md"
+            note.parent.mkdir(parents=True)
+            if reviewed is not None:
+                note.write_text(reviewed)
+            fallback = root / "scripts/generate-release-notes.sh"
+            fallback.write_text("#!/bin/bash\ncase \" $* \" in *' --strict '*) ;; *) exit 3;; esac\n"
+                                "printf '%s\\n' '- Fixed generated release note'\n"
+                                "printf '%s\\n' 'Generated' > release-note-quality.md\n")
+            fallback.chmod(0o755)
+            subprocess.run(["git", "add", "scripts"], cwd=root, check=True)
+            subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test",
+                            "-c", "commit.gpgsign=false", "commit", "-qm", "Fixture"], cwd=root, check=True)
+            head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            note.write_text("- Uncommitted replacement\n")
+            step = WORKFLOW.read_text().split("      - name: Generate release notes\n", 1)[1]
+            step = step.split("\n      - name: Upload release-note review", 1)[0]
+            script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+            script = script.replace("${{ steps.release.outputs.title }}", "0.1.3")
+            env = dict(os.environ, RELEASE_PRERELEASE="false", RELEASE_VERSION="0.1.3", RELEASE_COMMIT=head,
+                       PREVIOUS_BUMP=head, CURRENT_BUMP=head, EXCLUDE_COMMITS=exclusions, RELEASE_MODE="publish",
+                       GITHUB_REPOSITORY="example/fixture", GITHUB_STEP_SUMMARY=str(root / "summary.md"))
+            result = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script], cwd=root,
+                                    env=env, text=True, capture_output=True, timeout=20)
+            output = (root / "release-notes.md").read_bytes() if (root / "release-notes.md").exists() else None
+            return result, output
+
+    def test_reviewed_notes_use_exact_committed_bytes_and_reject_exclusions(self):
+        reviewed = "### What's new\n\n- Fix an issue that paused playback at startup.\n"
+        result, output = self.run_notes_step(reviewed)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(reviewed.encode(), output)
+        result, _ = self.run_notes_step(reviewed, exclusions="abc123")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("cannot be combined with commit exclusions", result.stderr)
+
+    def test_missing_reviewed_notes_keep_strict_generation(self):
+        result, output = self.run_notes_step(None)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(b"- Fixed generated release note\n", output)
 
 
 class LegacyReleaseSafetyTests(unittest.TestCase):
