@@ -173,6 +173,7 @@ fun SettingsScreen(
     onNavigateToSupportersContributors: () -> Unit = {},
     onNavigateToLicensesAttributions: () -> Unit = {},
     onNavigateToWatchParty: () -> Unit = {},
+    onChooseTitle: () -> Unit = {},
     profileViewModel: ProfileSettingsViewModel = hiltViewModel(),
     experienceModeViewModel: ExperienceModeSettingsViewModel = hiltViewModel(),
     partyViewModel: PartyViewModel = hiltViewModel()
@@ -658,7 +659,8 @@ fun SettingsScreen(
                                 onNavigateToAuthQrSignIn = onNavigateToAuthQrSignIn,
                                 onNavigateToSupportersContributors = onNavigateToSupportersContributors,
                                 onNavigateToLicensesAttributions = onNavigateToLicensesAttributions,
-                                onNavigateToWatchParty = onNavigateToWatchParty
+                                onNavigateToWatchParty = onNavigateToWatchParty,
+                                onChooseTitle = onChooseTitle
                             )
                         }
                     }
@@ -821,7 +823,8 @@ fun SettingsScreen(
                             onNavigateToAuthQrSignIn = onNavigateToAuthQrSignIn,
                             onNavigateToSupportersContributors = onNavigateToSupportersContributors,
                             onNavigateToLicensesAttributions = onNavigateToLicensesAttributions,
-                            onNavigateToWatchParty = onNavigateToWatchParty
+                            onNavigateToWatchParty = onNavigateToWatchParty,
+                            onChooseTitle = onChooseTitle
                         )
                     }
                 }
@@ -856,7 +859,8 @@ private fun SettingsDetailPane(
     onNavigateToAuthQrSignIn: () -> Unit,
     onNavigateToSupportersContributors: () -> Unit,
     onNavigateToLicensesAttributions: () -> Unit,
-    onNavigateToWatchParty: () -> Unit
+    onNavigateToWatchParty: () -> Unit,
+    onChooseTitle: () -> Unit
 ) {
     if (selectedCategory !in availableSettingsCategories(isPrimaryProfile, isEssentialMode,
             BuildConfig.IS_DEBUG_BUILD, isWatchPartyAvailable, AppFeaturePolicy.pluginsEnabled, BuildConfig.LOCAL_ONLY_BUILD)) return
@@ -867,7 +871,8 @@ private fun SettingsDetailPane(
                 BuildConfig.IS_DEBUG_BUILD, isWatchPartyAvailable, AppFeaturePolicy.pluginsEnabled, BuildConfig.LOCAL_ONLY_BUILD),
             preferredFocusCategory = menuReturnCategory,
             initialFocusRequester = contentFocusRequesters[selectedCategory].takeIf { allowDetailAutofocus },
-            onOpen = onOpenSettingsCategory
+            onOpen = onOpenSettingsCategory,
+            onChooseTitle = onChooseTitle
         )
         SettingsCategory.LIBRARY -> TrackingSettingsContent(
             initialFocusRequester = contentFocusRequesters[SettingsCategory.LIBRARY].takeIf { allowDetailAutofocus }

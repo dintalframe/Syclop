@@ -22,7 +22,9 @@ data class Addon(
     val manifestLanguage: String? = null,
     val configVersion: Long? = null,
     val timestamp: Long? = null,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    // Older Gson cache entries predate this local marker and deserialize it as null.
+    val localConfigurationRevision: String? = null
 ) {
     val isActive: Boolean
         get() = enabled

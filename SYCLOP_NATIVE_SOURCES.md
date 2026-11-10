@@ -2,6 +2,8 @@
 
 Syclop's native-source companion is prepared as `syclop-native-sources-0.1.1.tar.gz`. It identifies fixed native inputs independently of the final application Git commit. Published release assets must identify their exact app source, APK hashes, signer and qualification scope separately. Preparation of this archive is not a stable-release or publication claim.
 
+`SYCLOP_SOURCE_MANIFEST.json` describes historical 0.1.1/native-input provenance. Its version, code and hashes remain historical when the application advances. The release workflow generates `release-identity.json` from both final signed APKs, including their verified root Git revisions, current app versions, hashes, signer and ABI sets. Its `nativeSourceCompanion` preserves the historical archive filename, hash, size and release URL. Identity verification establishes no alignment, unchanged-native-library or runtime qualification claim.
+
 ## Qualification and release status
 
 Signed-candidate/runtime and public-updater acceptance belong to the exact release qualification record. Consult the release assets for artifact-specific status. A successful source build, repeated native hashes or the universal ABI list does not establish support for every Android TV device.

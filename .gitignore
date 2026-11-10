@@ -45,6 +45,7 @@ scripts/*
 !scripts/generate-release-notes.sh
 !scripts/generate_release_notes.py
 !scripts/verify_bundled_release_notes.py
+!scripts/verify_release_identity.py
 !scripts/release_notes/
 !scripts/release_notes/*.py
 !scripts/release-metadata.sh

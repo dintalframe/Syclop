@@ -22,6 +22,65 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 
 /** Actual resolver, RD HTTP/file selection, private grants and proof-bound caches. */
 class NativeMalDebridMappingIntegrationTest {
+    @Test fun `contradictory reboot source stops before account HTTP and creates no grant`() = runBlocking {
+        for ((year, other) in listOf(2011 to 1999, 1999 to 2011)) for (filenameHint in listOf(false, true)) Harness().use { h ->
+            h.bindYear(year)
+            // Complete responses make unsafe continuation an assertion failure rather than a timeout.
+            h.readyNamedPack("Hunter x Hunter ($year) S01E01.mkv")
+            val contrary = "Hunter x Hunter ($other) S01E01.mkv"
+            val wrong = if (filenameHint) source().copy(title = "Hunter x Hunter pack",
+                behaviorHints = source().behaviorHints!!.copy(filename = contrary)) else source().copy(title = contrary)
+            val result = withTimeout(10_000) { h.resolver.resolve(wrong, 1, 1, nativeVideoId = MAL, nativeMediaType = "series") }
+            assertEquals(wrongDebridFile(null), result)
+            assertEquals(0, h.rd.requestCount)
+            assertNull(h.resolver.cachedPlayableStream(wrong, 1, 1, MAL, "series"))
+            assertFalse(h.resolver.isPlaybackAuthorized(FILE))
+            verify(exactly = 0) { h.grants.issue(FILE, "realdebrid", any()) }
+        }
+    }
+
+    @Test fun `contradictory actual reboot file stops selection without grant or cache`() = runBlocking {
+        for ((year, other) in listOf(2011 to 1999, 1999 to 2011)) Harness().use { h ->
+            h.bindYear(year)
+            h.readyNamedPack("Hunter x Hunter ($other) S01E01.mkv")
+            val selected = source().copy(title = "Hunter x Hunter pack")
+            val result = withTimeout(10_000) { h.resolver.resolve(selected, 1, 1, nativeVideoId = MAL, nativeMediaType = "series") }
+            assertEquals(wrongDebridFile("realdebrid"), result)
+            assertEquals(2, h.rd.requestCount)
+            assertNull(h.resolver.cachedPlayableStream(selected, 1, 1, MAL, "series"))
+            assertFalse(h.resolver.isPlaybackAuthorized(FILE))
+            verify(exactly = 0) { h.grants.issue(FILE, "realdebrid", any()) }
+        }
+    }
+
+    @Test fun `contradictory final unlock reboot filename cannot grant or cache a correctly selected file`() = runBlocking {
+        for ((year, other) in listOf(2011 to 1999, 1999 to 2011)) Harness().use { h ->
+            h.bindYear(year)
+            h.readyNamedPack("Hunter x Hunter ($year) S01E01.mkv", "Hunter x Hunter ($other) S01E01.mkv")
+            val selected = source().copy(title = "Hunter x Hunter pack")
+            val result = withTimeout(10_000) { h.resolver.resolve(selected, 1, 1, nativeVideoId = MAL, nativeMediaType = "series") }
+            assertEquals(wrongDebridFile("realdebrid"), result)
+            assertEquals(5, h.rd.requestCount)
+            assertNull(h.resolver.cachedPlayableStream(selected, 1, 1, MAL, "series"))
+            assertFalse(h.resolver.isPlaybackAuthorized(FILE))
+            verify(exactly = 0) { h.grants.issue(FILE, "realdebrid", any()) }
+        }
+    }
+
+    @Test fun `correct and unqualified native reboot sources still resolve exact named file`() = runBlocking {
+        for (year in listOf(2011, 1999)) for (qualified in listOf(false, true)) Harness().use { h ->
+            h.bindYear(year)
+            val filename = "Hunter x Hunter ($year) S01E01.mkv"
+            h.readyNamedPack(filename)
+            val selected = source().copy(title = if (qualified) "Hunter x Hunter ($year) pack" else "Hunter x Hunter pack")
+            assertEquals(DirectDebridResolveResult.Success(FILE, filename, 222L, providerId = "realdebrid"),
+                withTimeout(10_000) { h.resolver.resolve(selected, 1, 1, nativeVideoId = MAL, nativeMediaType = "series") })
+            assertTrue(h.resolver.isPlaybackAuthorized(FILE, 1, MAL, 1, 1, "series"))
+            assertNotNull(h.resolver.cachedPlayableStream(selected, 1, 1, MAL, "series"))
+            assertEquals(5, h.rd.requestCount)
+        }
+    }
+
     @Test fun `MAL sequel UI episode one selects actual TVDB S2E1 and scoped cache never original S1E1`() = runBlocking {
         Harness().use { h ->
             h.readyPack()
@@ -230,6 +289,19 @@ class NativeMalDebridMappingIntegrationTest {
                 mockk(), mockk(), mockk(), CoroutineScope(job + Dispatchers.Unconfined), grants, mappings)
         }
         fun proof(id: Long) = NativeAnimeMappingCodec.parse("""{"titles":{"en":"Frieren"},"mappings":{"mal_id":$id,"thetvdb_id":424536},"episodeCount":10,"episodes":{"1":{"tvdbShowId":424536,"tvdbId":10719109,"seasonNumber":${if(id == 59978L) 2 else 1},"episodeNumber":1,"absoluteEpisodeNumber":${if(id == 59978L) 29 else 1},"episode":"1"}}}""", id)!!.episodes.getValue(1)
+        fun bindYear(year: Int) {
+            // Synthetic title/coordinate contract; does not assert a new MAL catalog mapping.
+            val reboot = requireNotNull(NativeAnimeMappingCodec.parse("""{"titles":{"en":"Hunter x Hunter ($year)"},"mappings":{"mal_id":59978,"thetvdb_id":424536},"episodes":{"1":{"tvdbShowId":424536,"tvdbId":10719109,"seasonNumber":1,"episodeNumber":1,"absoluteEpisodeNumber":1,"episode":"1"}}}""", 59978)?.episodes?.get(1))
+            coEvery { mappings.proof(MAL, any()) } returns reboot
+            every { mappings.cachedProof(MAL) } returns reboot
+        }
+        fun readyNamedPack(selectedFilename: String, unlockFilename: String = selectedFilename) {
+            rd.enqueue(json("""{"id":"synthetic-job"}"""))
+            rd.enqueue(json("""{"status":"downloaded","files":[{"id":1,"path":"/$selectedFilename","bytes":222,"selected":0}]}"""))
+            rd.enqueue(MockResponse().setResponseCode(204))
+            rd.enqueue(json("""{"status":"downloaded","files":[{"id":1,"path":"/$selectedFilename","bytes":222,"selected":1}],"links":["https://real-debrid.example.test/selected"]}"""))
+            rd.enqueue(json("""{"download":"$FILE","filename":"$unlockFilename","filesize":222}"""))
+        }
         fun beforePack() {
             rd.enqueue(json("""{"id":"synthetic-job"}"""))
             rd.enqueue(json("""{"status":"downloaded","files":[{"id":1,"path":"/Frieren.S01E01.mkv","bytes":111,"selected":0},{"id":2,"path":"/Frieren.S02E01.mkv","bytes":222,"selected":0}]}"""))

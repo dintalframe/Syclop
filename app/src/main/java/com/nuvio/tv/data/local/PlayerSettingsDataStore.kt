@@ -549,6 +549,10 @@ class PlayerSettingsDataStore @Inject constructor(
     private val playerPreferenceKey = stringPreferencesKey("player_preference")
     private val externalPlayerPackageKey = stringPreferencesKey("external_player_package")
     private val internalPlayerEngineKey = stringPreferencesKey("internal_player_engine")
+    private val firstWatchEngineRevisionKey = stringPreferencesKey("first_watch_engine_revision")
+    val firstWatchEngineRevision: Flow<String> = profileManager.activeProfileId.flatMapLatest { pid ->
+        store(pid).data.map { it[firstWatchEngineRevisionKey].orEmpty() }
+    }
     private val autoSwitchInternalPlayerOnErrorKey = booleanPreferencesKey("auto_switch_internal_player_on_error")
     private val useLibassKey = booleanPreferencesKey("use_libass")
     private val libassRenderTypeKey = stringPreferencesKey("libass_render_type")
@@ -1145,6 +1149,8 @@ class PlayerSettingsDataStore @Inject constructor(
 
     suspend fun setPlayerPreference(preference: PlayerPreference) {
         store().edit { prefs ->
+            val before = runCatching { PlayerPreference.valueOf(prefs[playerPreferenceKey].orEmpty()) }.getOrDefault(PlayerPreference.INTERNAL)
+            if (before != preference) prefs[firstWatchEngineRevisionKey] = java.util.UUID.randomUUID().toString()
             prefs[playerPreferenceKey] = preference.name
         }
     }
@@ -1155,18 +1161,23 @@ class PlayerSettingsDataStore @Inject constructor(
         val revision = profileManager.activeProfileSelectionRevision
         store(profile).edit { prefs ->
             if (profileManager.activeProfileId.value != profile || profileManager.activeProfileSelectionRevision != revision) return@edit
+            if (prefs[externalPlayerPackageKey] != packageName) prefs[firstWatchEngineRevisionKey] = java.util.UUID.randomUUID().toString()
             if (packageName == null) prefs.remove(externalPlayerPackageKey) else prefs[externalPlayerPackageKey] = packageName
         }
     }
 
     suspend fun setInternalPlayerEngine(engine: InternalPlayerEngine) {
         store().edit { prefs ->
+            val before = runCatching { InternalPlayerEngine.valueOf(prefs[internalPlayerEngineKey].orEmpty()) }.getOrDefault(InternalPlayerEngine.EXOPLAYER)
+            if (before != engine) prefs[firstWatchEngineRevisionKey] = java.util.UUID.randomUUID().toString()
             prefs[internalPlayerEngineKey] = engine.name
         }
     }
 
     suspend fun setAutoSwitchInternalPlayerOnError(enabled: Boolean) {
         store().edit { prefs ->
+            if ((prefs[autoSwitchInternalPlayerOnErrorKey] ?: false) != enabled)
+                prefs[firstWatchEngineRevisionKey] = java.util.UUID.randomUUID().toString()
             prefs[autoSwitchInternalPlayerOnErrorKey] = enabled
         }
     }

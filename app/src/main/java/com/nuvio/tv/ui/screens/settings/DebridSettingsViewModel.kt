@@ -11,6 +11,9 @@ import com.nuvio.tv.core.debrid.DebridDeviceAuthorizationTokenResult
 import com.nuvio.tv.core.debrid.DebridProviderCapability
 import com.nuvio.tv.core.debrid.DebridProviders
 import com.nuvio.tv.core.debrid.DebridAccountValidator
+import com.nuvio.tv.core.debrid.DebridAccountCheck
+import com.nuvio.tv.core.setup.FirstWatchAccountOutcome
+import com.nuvio.tv.core.setup.firstWatchAccountBinding
 import com.nuvio.tv.core.debrid.DebridNativeDeviceAuth
 import com.nuvio.tv.core.debrid.PremiumizeDeviceAuth
 import com.nuvio.tv.core.debrid.DebridAuthProfileGuard
@@ -45,6 +48,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 @HiltViewModel
@@ -55,10 +59,11 @@ class DebridSettingsViewModel @Inject constructor(
     private val premiumizeApi: PremiumizeApi,
     private val accountValidator: DebridAccountValidator,
     private val nativeDeviceAuth: DebridNativeDeviceAuth,
-    private val premiumizeDeviceAuth: PremiumizeDeviceAuth
+    private val premiumizeDeviceAuth: PremiumizeDeviceAuth,
+    val firstWatch: com.nuvio.tv.core.setup.FirstWatchReadinessRepository
 ) : ViewModel() {
     val activeProfileId = dataStore.activeProfileId
-    private val authProfileGuard = DebridAuthProfileGuard(activeProfileId.value)
+    private val authProfileGuard = DebridAuthProfileGuard(activeProfileId.value) { dataStore.activeProfileSelectionRevision }
     private var formatterServer: DebridFormatterConfigServer? = null
     private var logoBytes: ByteArray? = null
 
@@ -70,15 +75,60 @@ class DebridSettingsViewModel @Inject constructor(
 
     private val _validationError = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val validationError: SharedFlow<String> = _validationError.asSharedFlow()
+    private val _checkingAccounts = MutableStateFlow(false)
+    val checkingAccounts: StateFlow<Boolean> = _checkingAccounts.asStateFlow()
+    private var accountCheckJob: Job? = null
+    private val accountCheckGeneration = java.util.concurrent.atomic.AtomicLong()
+
+    fun checkSavedAccounts() {
+        if (_checkingAccounts.value) return
+        cancelAccountCheck()
+        val operation = accountCheckGeneration.get()
+        val captured = firstWatch.captureScope()
+        val providers = _uiState.value.resolverProviders.map { it.id }
+        if (providers.isEmpty()) return
+        _checkingAccounts.value = true
+        accountCheckJob = viewModelScope.launch {
+            fun current() = accountCheckGeneration.get() == operation && firstWatch.isCurrent(captured)
+            try {
+                for (provider in providers) {
+                    if (!current()) return@launch
+                    val key = dataStore.credentialForProfile(captured.profileId, provider)
+                    if (key.isBlank() || !current()) return@launch
+                    val result = checkProviderAccount(provider, key)
+                    if (!current()) return@launch
+                    dataStore.recordFirstWatchAccount(captured, provider,
+                        firstWatchAccountBinding(captured.profileId, provider, key), result,
+                        System.currentTimeMillis(), ::current)
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                if (current()) _validationError.tryEmit(context.getString(R.string.first_watch_unavailable))
+            } finally {
+                if (accountCheckGeneration.get() == operation) {
+                    accountCheckJob = null
+                    _checkingAccounts.value = false
+                }
+            }
+        }
+    }
+
+    fun cancelAccountCheck() {
+        accountCheckGeneration.incrementAndGet()
+        accountCheckJob?.cancel()
+        accountCheckJob = null
+        _checkingAccounts.value = false
+    }
 
     private val manualCredentialSaver = DebridManualCredentialSaver(
         scope = viewModelScope,
         captureScope = { authProfileGuard.capture(activeProfileId.value) },
         isCurrent = { authProfileGuard.valid(it, activeProfileId.value) },
         credential = dataStore::credentialForProfile,
-        validate = ::validateProviderApiKey,
-        commit = { profile, provider, key, expected ->
-            dataStore.setProviderApiKeyForProfile(profile, provider, key, expected)
+        validate = ::checkProviderAccount,
+        commit = { profile, provider, key, expected, check ->
+            dataStore.setProviderApiKeyForProfile(profile, provider, key, expected,
+                acceptedCheck = check, checkedAtMs = System.currentTimeMillis())
         },
         setBusy = { _validating.value = it },
         onFailure = { failure ->
@@ -89,7 +139,7 @@ class DebridSettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            activeProfileId.collectLatest { authProfileGuard.observe(it); manualCredentialSaver.cancel() }
+            activeProfileId.collectLatest { authProfileGuard.observe(it); manualCredentialSaver.cancel(); cancelAccountCheck() }
         }
         loadLogoBytes()
         viewModelScope.launch {
@@ -249,27 +299,36 @@ class DebridSettingsViewModel @Inject constructor(
 
     fun cancelProviderCredentialValidation() { manualCredentialSaver.cancel() }
 
-    private suspend fun validateProviderApiKey(providerId: String, apiKey: String): Boolean {
+    private suspend fun checkProviderAccount(providerId: String, apiKey: String): DebridAccountCheck {
         return try {
             when (DebridProviders.byId(providerId)?.id) {
                 DebridProviders.TORBOX_ID -> {
                     val response = torboxApi.getUser("Bearer $apiKey")
-                    response.body()?.close()
+                    val body = response.body()?.use { body ->
+                        if (response.isSuccessful) com.google.gson.JsonParser.parseString(body.string()).asJsonObject else null
+                    }
                     response.errorBody()?.close()
-                    response.isSuccessful
+                    DebridAccountCheck(if (response.isSuccessful && body?.get("success")?.asBoolean == true &&
+                        body?.get("data")?.isJsonObject == true) FirstWatchAccountOutcome.ACCEPTED
+                        else if (response.code() in setOf(401, 403)) FirstWatchAccountOutcome.REJECTED
+                        else FirstWatchAccountOutcome.UNAVAILABLE)
                 }
                 DebridProviders.PREMIUMIZE_ID -> {
                     val response = premiumizeApi.accountInfo("Bearer $apiKey")
                     response.errorBody()?.close()
-                    response.isSuccessful && response.body()?.status.equals("success", ignoreCase = true)
+                    val body = response.body()
+                    DebridAccountCheck(if (response.isSuccessful && body?.status.equals("success", ignoreCase = true))
+                        FirstWatchAccountOutcome.ACCEPTED else if (response.code() in setOf(401, 403)) FirstWatchAccountOutcome.REJECTED
+                        else FirstWatchAccountOutcome.UNAVAILABLE,
+                        body?.premiumUntil?.takeIf { it > 0L && it <= Long.MAX_VALUE / 1_000L }?.times(1_000L))
                 }
                 DebridProviders.REAL_DEBRID_ID, DebridProviders.ALL_DEBRID_ID ->
-                    accountValidator.validate(providerId, apiKey)
-                else -> false
+                    accountValidator.check(providerId, apiKey)
+                else -> DebridAccountCheck(FirstWatchAccountOutcome.UNAVAILABLE)
             }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            false
+            DebridAccountCheck(FirstWatchAccountOutcome.UNAVAILABLE)
         }
     }
 
@@ -299,13 +358,15 @@ class DebridSettingsViewModel @Inject constructor(
             else -> null
         }
         if (!authProfileGuard.valid(ticket, activeProfileId.value)) return null
-        return result?.copy(profileId = ticket.profileId, profileRevision = ticket.revision, expectedCredential = expected)
+        return result?.copy(profileId = ticket.profileId, profileRevision = ticket.revision, expectedCredential = expected,
+            profileSelectionRevision = ticket.selectionRevision)
     }
 
     fun isCurrentDeviceSession(session: DebridDeviceAuthorization): Boolean {
         val profile = session.profileId ?: return false
         val revision = session.profileRevision ?: return false
-        return authProfileGuard.valid(DebridAuthProfileGuard.Ticket(profile, revision), activeProfileId.value)
+        val selection = session.profileSelectionRevision ?: return false
+        return authProfileGuard.valid(DebridAuthProfileGuard.Ticket(profile, revision, selection), activeProfileId.value)
     }
 
     fun cancelDeviceAuthorization() { authProfileGuard.invalidate() }
@@ -313,10 +374,12 @@ class DebridSettingsViewModel @Inject constructor(
     suspend fun completeDeviceAuthorization(session: DebridDeviceAuthorization,
         result: DebridDeviceAuthorizationTokenResult.Authorized): Boolean {
         if (!isCurrentDeviceSession(session) || nativeDeviceAuth.expired(session)) return false
-        if (!validateProviderApiKey(session.providerId, result.accessToken)) return false
+        val checked = checkProviderAccount(session.providerId, result.accessToken)
+        if (checked.outcome != FirstWatchAccountOutcome.ACCEPTED) return false
         if (!isCurrentDeviceSession(session) || nativeDeviceAuth.expired(session)) return false
         return dataStore.setProviderApiKeyForProfile(session.profileId!!, session.providerId,
-            result.accessToken, session.expectedCredential, result.realDebridOAuth)
+            result.accessToken, session.expectedCredential, result.realDebridOAuth,
+            acceptedCheck = checked, checkedAtMs = System.currentTimeMillis())
     }
 
     suspend fun redeemDeviceAuthorization(providerId: String, session: DebridDeviceAuthorization): DebridDeviceAuthorizationTokenResult {

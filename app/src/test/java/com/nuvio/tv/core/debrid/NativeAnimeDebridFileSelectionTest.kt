@@ -9,6 +9,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativeAnimeDebridFileSelectionTest {
+    @Test fun `actual selected file and explicit hints cannot borrow correct coordinates across reboot years`() {
+        for ((year, other) in listOf(2011 to 1999, 1999 to 2011)) {
+            val mapping = """{"titles":{"en":"Hunter x Hunter ($year)"},"mappings":{"mal_id":59978,"thetvdb_id":424536},"episodes":{"1":{"tvdbShowId":424536,"tvdbId":10719109,"seasonNumber":1,"episodeNumber":1,"absoluteEpisodeNumber":1,"episode":"1"}}}"""
+            val reboot = requireNotNull(NativeAnimeMappingCodec.parse(mapping, 59978)?.episodes?.get(1))
+            val correct = File("Hunter x Hunter ($year) S01E01.mkv", 100)
+            val contrary = File("Hunter x Hunter ($year)/Hunter x Hunter: ( $other ) S01E01.mkv", 9000)
+            assertEquals(correct, select(listOf(contrary, correct), resolve(), reboot))
+            assertEquals(correct, select(listOf(correct), resolve(filename = correct.path, index = 0), reboot))
+            assertNull(select(listOf(contrary), resolve(), reboot))
+            assertNull(select(listOf(contrary, correct), resolve(filename = contrary.path, index = 0), reboot))
+            val unqualified = File("[Group $other] Hunter x Hunter S01E01 ($other).mkv", 100)
+            assertEquals(unqualified, select(listOf(unqualified), resolve(), reboot))
+        }
+    }
+
     private val proof = requireNotNull(NativeAnimeMappingCodec.parse(
         """{"titles":{"en":"Frieren 2nd Season"},"mappings":{"mal_id":59978,"thetvdb_id":424536},"episodes":{"1":{"tvdbShowId":424536,"tvdbId":10719109,"seasonNumber":2,"episodeNumber":1,"absoluteEpisodeNumber":29,"episode":"1"}}}""", 59978
     )?.episodes?.get(1))

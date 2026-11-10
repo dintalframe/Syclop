@@ -119,7 +119,8 @@ class PlayerViewModel @Inject constructor(
     private val serverStreams: com.nuvio.tv.data.mediaserver.ServerStreams,
     partyRepository: com.nuvio.tv.core.party.PartyRepository,
     private val profileManager: com.nuvio.tv.core.profile.ProfileManager,
-    savedStateHandle: SavedStateHandle
+    savedStateHandle: SavedStateHandle,
+    firstWatchReadiness: com.nuvio.tv.core.setup.FirstWatchReadinessRepository
 ) : ViewModel() {
 
     init {
@@ -171,7 +172,10 @@ class PlayerViewModel @Inject constructor(
         profileId = savedStateHandle.get<String>("profileId")?.toIntOrNull()
             ?: profileManager.activeProfileId.value,
         savedStateHandle = savedStateHandle,
-        scope = viewModelScope
+        scope = viewModelScope,
+        firstWatchReadiness = firstWatchReadiness,
+        debridStreamPresentation = debridStreamPresentation,
+        debridSettingsDataStore = sourcePanelDebridSettings
     )
 
     init {

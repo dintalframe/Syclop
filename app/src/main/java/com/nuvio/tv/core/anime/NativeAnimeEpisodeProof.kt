@@ -47,16 +47,27 @@ class NativeAnimeEpisodeProof private constructor(
     }
 
     /** A parent-series name alone is insufficient: its release must also prove this exact episode. */
-    internal fun acceptsReleaseTitle(value: String): Boolean =
-        titleIdentity?.matchesRelease(value) == true ||
-            (verifiedParent?.matchesRelease(value) == true && matchesFile(value))
+    internal fun acceptsReleaseTitle(value: String): Boolean = hasTrustedTitleIdentity && acceptsTitle(value, true)
+
+    private fun acceptsTitle(value: String, parentNeedsCoordinates: Boolean): Boolean {
+        val child = titleIdentity?.matchRelease(value) ?: NativeAnimeTitleIdentity.Match.NO_MATCH
+        val parent = verifiedParent?.matchRelease(value) ?: NativeAnimeTitleIdentity.Match.NO_MATCH
+        // Independently supported parent/child years may differ. An unknown-year alias cannot
+        // erase the other's applicable contradiction; a parent override still needs this episode.
+        if (child == NativeAnimeTitleIdentity.Match.SUPPORTED_YEAR) return true
+        if (parent == NativeAnimeTitleIdentity.Match.SUPPORTED_YEAR)
+            return !parentNeedsCoordinates || matchesCoordinates(value)
+        if (child == NativeAnimeTitleIdentity.Match.YEAR_CONFLICT || parent == NativeAnimeTitleIdentity.Match.YEAR_CONFLICT) return false
+        return child.accepted || (parent.accepted && (!parentNeedsCoordinates || matchesCoordinates(value)))
+    }
 
     /** Both declared franchise title and exact coordinates must match the actual basename. */
-    fun matchesFile(path: String): Boolean {
+    fun matchesFile(path: String): Boolean = hasTrustedTitleIdentity && acceptsTitle(path, false) && matchesCoordinates(path)
+
+    private fun matchesCoordinates(path: String): Boolean {
         if (path.isBlank() || path.length > 4_096 || path.any(Char::isISOControl)) return false
         val normalized = Normalizer.normalize(path, Normalizer.Form.NFKC)
-        if (normalized.length > 4_096 || !hasTrustedTitleIdentity ||
-            (titleIdentity?.matchesRelease(normalized) != true && verifiedParent?.matchesRelease(normalized) != true)) return false
+        if (normalized.length > 4_096) return false
         val file = normalized.replace('\\', '/').substringAfterLast('/')
         if (file.isBlank() || compound.containsMatchIn(file) ||
             range.findAll(file).any { !resolutionSuffix.matches(it.groupValues[1]) } ||
@@ -104,34 +115,10 @@ class NativeAnimeEpisodeProof private constructor(
 
     private class VerifiedParentTitle(val imdbId: String, val title: String,
         private val identity: NativeAnimeTitleIdentity) {
-        private val normalized = normalizedTitle(title)
         val fingerprint = "$imdbId:${identity.fingerprint}"
 
         /** Exact complete parent title before the episode, never a sequel-prefix or bracket claim. */
-        fun matchesRelease(value: String): Boolean {
-            if (!identity.matchesRelease(value)) return false
-            val file = Normalizer.normalize(value, Normalizer.Form.NFKC).replace('\\', '/').substringAfterLast('/')
-            val stack = ArrayDeque<Char>()
-            val visible = StringBuilder(file.length)
-            for (char in file) when (char) {
-                '[', '(' -> { if (stack.size >= 4) return false; stack.addLast(char); visible.append(' ') }
-                ']', ')' -> {
-                    if (stack.removeLastOrNull() != if (char == ']') '[' else '(') return false
-                    visible.append(' ')
-                }
-                else -> visible.append(if (stack.isEmpty()) char else ' ')
-            }
-            if (stack.isNotEmpty()) return false
-            val firstTitle = visible.indexOfFirst(Char::isLetterOrDigit)
-            val boundary = parentEpisodeLabel.findAll(file).firstOrNull {
-                visible[it.range.first] != ' ' || (firstTitle >= 0 && firstTitle < it.range.first)
-            }?.range?.first ?: return false
-            return normalizedTitle(visible.substring(0, boundary)) == normalized
-        }
-
-        companion object {
-            private val parentEpisodeLabel = Regex("(?<![a-z0-9])(?:s[0-9]{1,3}[ ._-]*e[0-9]{1,5}|[0-9]{1,3}x[0-9]{1,5}|e[0-9]{1,5}|-\\s*[0-9]{1,5})(?![a-z0-9])", RegexOption.IGNORE_CASE)
-        }
+        fun matchRelease(value: String): NativeAnimeTitleIdentity.Match = identity.matchRelease(value, complete = true)
     }
 
     private object Decoder {

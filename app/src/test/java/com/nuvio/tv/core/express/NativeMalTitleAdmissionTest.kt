@@ -16,6 +16,45 @@ import org.junit.Test
 
 /** Actual adapter HTTP admission: unrelated broad matches cannot consume accepted-result budgets. */
 class NativeMalTitleAdmissionTest {
+    @Test fun `native movie row admission applies year identity without episode labels`() {
+        val selected = media().copy(type = "movie", title = "Synthetic Anime Film (2011)", year = 2011,
+            season = null, episode = null, absoluteNumber = null,
+            nativeAnimeIdentity = requireNotNull(NativeAnimeTitleIdentity.create(59978,
+                "Synthetic Anime Film (2011)", emptyList())))
+        assertTrue(selected.acceptsNativeAnimeRow(ExpressRow("Synthetic Anime Film (2011) 1080p", null, null, HASH)))
+        assertTrue(selected.acceptsNativeAnimeRow(ExpressRow("Synthetic Anime Film 1080p", null, null, HASH)))
+        assertFalse(selected.acceptsNativeAnimeRow(ExpressRow("Synthetic Anime Film (1999) 1080p", null, null, HASH)))
+    }
+
+    @Test fun `native row admission rejects explicit opposite reboot years in title or filename`() {
+        for ((year, other) in listOf(2011 to 1999, 1999 to 2011)) {
+            val selected = media().copy(title = "Hunter x Hunter ($year)", year = year,
+                nativeAnimeIdentity = requireNotNull(NativeAnimeTitleIdentity.create(59978,
+                    "Hunter x Hunter ($year)", emptyList())))
+            val correct = "Hunter x Hunter ($year) S01E01.mkv"
+            val contrary = "Hunter x Hunter ($other) S01E01.mkv"
+            assertTrue(selected.acceptsNativeAnimeRow(ExpressRow(correct, null, null, HASH)))
+            assertTrue(selected.acceptsNativeAnimeRow(ExpressRow("Hunter x Hunter S01E01.mkv", null, null, HASH)))
+            assertFalse(selected.acceptsNativeAnimeRow(ExpressRow(contrary, null, null, HASH)))
+            assertFalse(selected.acceptsNativeAnimeRow(ExpressRow(correct, null, null, HASH, filename = contrary)))
+            assertFalse(selected.acceptsNativeAnimeRow(ExpressRow(contrary, null, null, HASH, filename = correct)))
+        }
+    }
+
+    @Test fun `contradictory reboot rows cannot consume adapter accepted result budget`() = runBlocking {
+        MockWebServer().use { server ->
+            val correct = "Hunter x Hunter (2011) S01E01.mkv"
+            server.dispatcher = dispatcher(server, 1) { rows(List(30) { "Hunter x Hunter (1999) S01E01.$it.mkv" } + correct) }
+            val selected = media().copy(title = "Hunter x Hunter (2011)", year = 2011,
+                nativeAnimeIdentity = requireNotNull(NativeAnimeTitleIdentity.create(59978,
+                    "Hunter x Hunter (2011)", emptyList())))
+            val adapter = adapter(selected)
+            val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
+            val result = withTimeout(10_000) { adapter.search(addon, request()) } as NetworkResult.Success
+            assertEquals(listOf(correct), result.data.map { it.title })
+        }
+    }
+
     @Test fun `unrelated first twenty rows cannot hide a later native MAL franchise result`() = runBlocking {
         MockWebServer().use { server ->
             val titles = List(30) { "Night.on.Earth.S01.29.$it.2160p" } + "[Group] Sousou no Frieren - 29 (S02E01).mkv"

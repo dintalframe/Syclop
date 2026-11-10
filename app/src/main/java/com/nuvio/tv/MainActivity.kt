@@ -293,6 +293,12 @@ open class MainActivity : ComponentActivity() {
     lateinit var addonRepository: AddonRepository
 
     @Inject
+    lateinit var addonPreferences: com.nuvio.tv.data.local.AddonPreferences
+
+    @Inject
+    lateinit var firstWatchReadiness: com.nuvio.tv.core.setup.FirstWatchReadinessRepository
+
+    @Inject
     lateinit var trackingProgressRefreshCoordinator: TrackingProgressRefreshCoordinator
 
     @Inject
@@ -597,9 +603,9 @@ open class MainActivity : ComponentActivity() {
             val mainUiPrefs by key(activeProfileId, startupSession) {
                 mainUiPrefsFlow.collectAsState(initial = MainUiPrefs(hasChosenLayout = null))
             }
-            val installedAddons by key(activeProfileId, startupSession) {
-                remember(addonRepository) {
-                    addonRepository.getInstalledAddons()
+            val installedAddonConfiguration by key(activeProfileId, startupSession) {
+                remember(addonPreferences) {
+                    addonPreferences.installedAddonConfiguration
                 }.collectAsState(initial = null)
             }
             val discoverLocation = mainUiPrefs.discoverLocation
@@ -819,16 +825,25 @@ open class MainActivity : ComponentActivity() {
                         )
                     } else {
 
+                    var essentialSetupShown by remember(activeProfileId, startupSession) { mutableStateOf(false) }
                     val layoutChosen = mainUiPrefs.hasChosenLayout
-                    val prefsLoading = layoutChosen == null || !mainUiPrefs.experienceModeLoaded || installedAddons == null
+                    val addonConfigurationReady = com.nuvio.tv.core.setup.firstWatchAddonConfigurationReady(activeProfile, installedAddonConfiguration)
+                    val prefsLoading = layoutChosen == null || !mainUiPrefs.experienceModeLoaded || !addonConfigurationReady
                     if (!prefsLoading) {
                     val effectiveExperienceMode = mainUiPrefs.experienceMode
                         ?: if (layoutChosen) ExperienceMode.ADVANCED else null
                     val needsExperienceSelection = effectiveExperienceMode == null
                     val needsEssentialAddonSetup =
-                        effectiveExperienceMode == ExperienceMode.ESSENTIAL &&
-                            installedAddons.orEmpty().isEmpty() &&
-                            !mainUiPrefs.addonSetupSkipped
+                        com.nuvio.tv.core.setup.shouldShowFirstWatchSetup(
+                            isEssential = effectiveExperienceMode == ExperienceMode.ESSENTIAL,
+                            hasAddons = installedAddonConfiguration?.hasAddons == true,
+                            skipped = mainUiPrefs.addonSetupSkipped,
+                            alreadyShown = essentialSetupShown,
+                            configurationLoaded = addonConfigurationReady
+                        )
+                    LaunchedEffect(needsEssentialAddonSetup) {
+                        if (needsEssentialAddonSetup) essentialSetupShown = true
+                    }
                     val pendingDeepLink by pendingDeepLinkUrl.collectAsState()
                     val addonLinkProfileRevision = profileManager.activeProfileSelectionRevision
                     var addonLinkConfirmation by remember(activeProfileId, addonLinkProfileRevision, startupSession) {

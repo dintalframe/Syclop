@@ -6,6 +6,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativeAnimeEpisodeProofTest {
+    @Test fun `exact episode coordinates cannot erase trusted reboot year contradiction`() {
+        for ((year, other) in listOf(2011 to 1999, 1999 to 2011)) {
+            val source = fixture().replace("Frieren 2nd Season", "Hunter x Hunter ($year)")
+            val proof = requireNotNull(NativeAnimeMappingCodec.parse(source, 59978)?.episodes?.get(1))
+            for (name in listOf("Hunter x Hunter ($year) S02E01.mkv", "Hunter x Hunter S02E01.mkv",
+                "[Group $other] Hunter x Hunter - 29.mkv", "Hunter x Hunter S02E01 ($other).mkv")) {
+                assertTrue(name, proof.acceptsReleaseTitle(name))
+                assertTrue(name, proof.matchesFile(name))
+            }
+            for (name in listOf("Hunter x Hunter ($other) S02E01.mkv", "Hunter x Hunter $other - 29.mkv",
+                "Hunter x Hunter ($year)/Hunter x Hunter ($other) S02E01.mkv",
+                "Hunter x Hunter: ( $other ) S02E01.mkv")) {
+                assertFalse(name, proof.acceptsReleaseTitle(name))
+                assertFalse(name, proof.matchesFile(name))
+            }
+            assertFalse(proof.matchesFile("Hunter x Hunter ($year) S01E01.mkv"))
+        }
+    }
+
     @Test fun `minimal public identity maps MAL relative one to actual season two absolute twenty nine`() {
         val record = requireNotNull(parse())
         val proof = requireNotNull(record.episodes[1])

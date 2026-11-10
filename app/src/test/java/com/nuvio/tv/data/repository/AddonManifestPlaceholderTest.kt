@@ -10,6 +10,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,10 +20,13 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import retrofit2.Response
 import java.io.IOException
@@ -46,6 +50,56 @@ import java.util.concurrent.atomic.AtomicLong
 class AddonManifestPlaceholderTest {
 
     private val addonUrl = "https://addon.example"
+
+    @Test fun `pre first-watch persisted manifest cache remains usable offline without its new local revision`() = runBlocking {
+        val legacyJson = """
+            {"https://addon.example":{"id":"test-addon","name":"Test Addon","displayName":"Test Addon",
+            "version":"1.0.0","baseUrl":"https://addon.example","catalogs":[],"types":[],"rawTypes":[],
+            "resources":[],"idPrefixes":[],"enabled":true}}
+        """.trimIndent()
+        val editor = mockk<android.content.SharedPreferences.Editor>(relaxed = true)
+        val prefs = mockk<android.content.SharedPreferences>(relaxed = true)
+        every { prefs.getString("manifests_v2", null) } returns legacyJson
+        every { prefs.edit() } returns editor
+        val context = mockk<Context>(relaxed = true)
+        every { context.getSharedPreferences("addon_manifest_cache", Context.MODE_PRIVATE) } returns prefs
+        val h = newRepository(context = context, clock = { 0L })
+        val cached = withTimeoutOrNull(5_000L) {
+            h.repository.getInstalledAddons().first { list -> list.any { it.id == "test-addon" } }.single()
+        }
+        assertNotNull("An upgrade must display the existing persisted manifest while the client is offline", cached)
+        assertEquals(REAL_NAME, cached!!.displayName)
+        assertEquals(addonUrl, cached.baseUrl)
+        assertTrue(cached.enabled)
+        verify(exactly = 0) { editor.clear(); editor.remove("manifests_v2") }
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun `changed cached manifest rotates local identity through away and back and process recreation`() = runTest {
+        val saved = mutableMapOf<String, String?>()
+        val editor = mockk<android.content.SharedPreferences.Editor>(relaxed = true)
+        every { editor.putString(any(), any()) } answers { saved[firstArg()] = secondArg(); editor }
+        val prefs = mockk<android.content.SharedPreferences>(relaxed = true)
+        every { prefs.getString(any(), any()) } answers { saved[firstArg()] ?: secondArg() }
+        every { prefs.edit() } returns editor
+        val context = mockk<Context>(relaxed = true)
+        every { context.getSharedPreferences("addon_manifest_cache", Context.MODE_PRIVATE) } returns prefs
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val h = newRepository(reachable = true, dispatcher = dispatcher, context = context)
+        val original = h.repository.getInstalledAddons().first { it.any { item -> item.version == REAL_VERSION } }.single()
+        assertTrue(!original.localConfigurationRevision.isNullOrBlank())
+        coEvery { h.api.getManifest(any()) } returns Response.success(AddonManifestDto(id = "test-addon", name = REAL_NAME, version = "2"))
+        h.repository.forceRefreshAddon(addonUrl)
+        coEvery { h.api.getManifest(any()) } returns Response.success(AddonManifestDto(id = "test-addon", name = REAL_NAME, version = REAL_VERSION))
+        h.repository.forceRefreshAddon(addonUrl)
+        val returned = h.repository.getInstalledAddons().first { it.singleOrNull()?.version == REAL_VERSION }.single()
+        assertNotEquals(original.localConfigurationRevision, returned.localConfigurationRevision)
+        h.repository.forceRefreshAddon(addonUrl)
+        assertEquals(returned.localConfigurationRevision, h.repository.getInstalledAddons().first().single().localConfigurationRevision)
+        val restored = newRepository(reachable = true, dispatcher = dispatcher, context = context)
+        assertEquals(returned.localConfigurationRevision,
+            restored.repository.getInstalledAddons().first { it.isNotEmpty() }.single().localConfigurationRevision)
+    }
 
     private companion object {
         const val REAL_NAME = "Test Addon"
@@ -245,6 +299,7 @@ class AddonManifestPlaceholderTest {
 
     private data class Harness(
         val repository: AddonRepositoryImpl,
+        val api: AddonApi,
         val preferences: AddonPreferences,
         val manifestCalls: AtomicInteger,
         val reachable: AtomicBoolean
@@ -284,6 +339,7 @@ class AddonManifestPlaceholderTest {
                 dispatcher = dispatcher,
                 clock = clock
             ),
+            api = api,
             preferences = preferences,
             manifestCalls = manifestCalls,
             reachable = isReachable

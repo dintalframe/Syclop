@@ -2,9 +2,11 @@ package com.nuvio.tv.ui.screens.addon
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -49,21 +51,29 @@ import androidx.tv.material3.Text
 import com.nuvio.tv.R
 import com.nuvio.tv.core.server.AddonWebConfigMode
 import com.nuvio.tv.ui.theme.NuvioTheme
+import com.nuvio.tv.ui.screens.settings.DebridSettingsViewModel
+import com.nuvio.tv.ui.screens.settings.DebridSettingsContent
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun EssentialAddonSetupScreen(
     onSkip: () -> Unit,
-    viewModel: AddonManagerViewModel = hiltViewModel()
+    viewModel: AddonManagerViewModel = hiltViewModel(),
+    debridViewModel: DebridSettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
     val phoneFocus = remember { FocusRequester() }
     val enterOnTvFocus = remember { FocusRequester() }
     val linkFocus = remember { FocusRequester() }
+    val servicesFocus = remember { FocusRequester() }
+    val servicesBackFocus = remember { FocusRequester() }
+    val readiness by debridViewModel.firstWatch.snapshot.collectAsState()
+    val checkingAccounts by debridViewModel.checkingAccounts.collectAsState()
     var optionsFocus by remember { mutableStateOf(phoneFocus) }
     var showManualEntry by rememberSaveable { mutableStateOf(false) }
     var linkFocused by remember { mutableStateOf(false) }
+    var showServices by rememberSaveable { mutableStateOf(false) }
     val showProviderOptions = showManualEntry && uiState.providerInstallOptions.isNotEmpty()
 
     val closeManualEntry: () -> Unit = {
@@ -78,8 +88,8 @@ fun EssentialAddonSetupScreen(
 
     BackHandler(enabled = showManualEntry && !showProviderOptions, onBack = closeManualEntry)
 
-    LaunchedEffect(showManualEntry, uiState.isQrModeActive, showProviderOptions) {
-        if (!uiState.isQrModeActive && !showProviderOptions) {
+    LaunchedEffect(showManualEntry, uiState.isQrModeActive, showProviderOptions, showServices) {
+        if (!uiState.isQrModeActive && !showProviderOptions && !showServices) {
             withFrameNanos { }
             val requester = if (showManualEntry) linkFocus else optionsFocus
             requester.requestFocus()
@@ -87,7 +97,7 @@ fun EssentialAddonSetupScreen(
     }
 
     DisposableEffect(Unit) {
-        onDispose { viewModel.stopQrMode() }
+        onDispose { viewModel.stopQrMode(); debridViewModel.cancelAccountCheck() }
     }
 
     Box(
@@ -98,7 +108,7 @@ fun EssentialAddonSetupScreen(
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 440.dp)
+                .widthIn(max = if (showManualEntry) 440.dp else 820.dp)
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -181,6 +191,12 @@ fun EssentialAddonSetupScreen(
                     color = NuvioTheme.colors.TextSecondary,
                     textAlign = TextAlign.Center
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(28.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    FirstWatchChecklist(readiness, checkingAccounts, debridViewModel::checkSavedAccounts,
+                        debridViewModel::cancelAccountCheck)
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = {
                         optionsFocus = phoneFocus
@@ -197,7 +213,7 @@ fun EssentialAddonSetupScreen(
                     Text(stringResource(R.string.essential_addon_enter_link_on_tv))
                 }
                 Button(
-                    onClick = onSkip,
+                    onClick = { debridViewModel.cancelAccountCheck(); onSkip() },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.colors(
                         containerColor = NuvioTheme.colors.BackgroundCard,
@@ -207,6 +223,15 @@ fun EssentialAddonSetupScreen(
                     )
                 ) {
                     Text(stringResource(R.string.essential_addon_continue_for_now))
+                }
+                Button(onClick = { debridViewModel.cancelAccountCheck(); optionsFocus = servicesFocus; showServices = true },
+                    modifier = Modifier.fillMaxWidth().focusRequester(servicesFocus)) {
+                    Text(stringResource(R.string.first_watch_connect))
+                }
+                Button(onClick = { debridViewModel.cancelAccountCheck(); onSkip() }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.first_watch_choose_title))
+                }
+                }
                 }
             }
 
@@ -260,5 +285,17 @@ fun EssentialAddonSetupScreen(
             message = uiState.transientMessage,
             isError = uiState.transientMessageIsError
         )
+        if (showServices) {
+            Popup(onDismissRequest = { debridViewModel.cancelAccountCheck(); showServices = false },
+                properties = PopupProperties(focusable = true, dismissOnClickOutside = false)) {
+                LaunchedEffect(Unit) { withFrameNanos { }; servicesBackFocus.requestFocus() }
+                Column(Modifier.fillMaxSize().background(NuvioTheme.colors.Background).padding(36.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = { debridViewModel.cancelAccountCheck(); showServices = false },
+                        modifier = Modifier.focusRequester(servicesBackFocus)) { Text(stringResource(R.string.action_back)) }
+                    Box(Modifier.weight(1f)) { DebridSettingsContent(viewModel = debridViewModel, showAdvancedOptions = false) }
+                }
+            }
+        }
     }
 }

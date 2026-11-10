@@ -547,8 +547,8 @@ class AddonRepositoryImpl(
     private fun putCachedManifestIfChanged(url: String, addon: Addon): Boolean {
         val changed = synchronized(manifestCacheLock) {
             val existing = manifestCache[url]
-            if (existing == null || hasManifestChanged(existing, addon)) {
-                manifestCache[url] = addon
+            if (existing == null || hasManifestChanged(existing, addon) || existing.localConfigurationRevision.isNullOrBlank()) {
+                manifestCache[url] = addon.copy(localConfigurationRevision = java.util.UUID.randomUUID().toString())
                 true
             } else {
                 false

@@ -256,6 +256,21 @@ jobs:
             --aapt "${aapt_path}" --version "${RELEASE_VERSION}" --notes release-notes.md \
             release/syclop-release.apk release/syclop-arm64-release.apk
 
+      - name: Verify current release identity
+        env:
+          RELEASE_VERSION: ${{ needs.review.outputs.version }}
+        run: |
+          aapt_path="$(printf '%s\n' "${ANDROID_HOME}"/build-tools/*/aapt | sort -V | tail -n 1)"
+          apksigner_path="$(dirname "${aapt_path}")/apksigner"
+          test -x "${aapt_path}"
+          test -x "${apksigner_path}"
+          python3 scripts/verify_release_identity.py \
+            --aapt "${aapt_path}" --apksigner "${apksigner_path}" \
+            --version "${RELEASE_VERSION}" --source-commit "${GITHUB_SHA}" \
+            --repository "${GITHUB_REPOSITORY}" --native-manifest SYCLOP_SOURCE_MANIFEST.json \
+            --output release/release-identity.json \
+            release/syclop-release.apk release/syclop-arm64-release.apk
+
       - name: Clean release signing files
         if: always()
         run: rm -f -- local.properties local.dev.properties "${RUNNER_TEMP}/syclop-release.jks"
@@ -267,6 +282,7 @@ jobs:
           path: |
             release/*.apk
             release/SHA256SUMS
+            release/release-identity.json
             release-notes.md
             release-notes.version
           if-no-files-found: error
@@ -280,7 +296,7 @@ jobs:
           RELEASE_TARGET: ${{ github.sha }}
           RELEASE_PRERELEASE: ${{ needs.review.outputs.prerelease }}
         run: |
-          release_apks=(release/syclop-release.apk release/syclop-arm64-release.apk release/SHA256SUMS release-notes.md release-notes.version)
+          release_apks=(release/syclop-release.apk release/syclop-arm64-release.apk release/SHA256SUMS release/release-identity.json release-notes.md release-notes.version)
           for asset in "${release_apks[@]}"; do
             if [[ ! -s "$asset" ]]; then
               echo "Missing release asset: $asset" >&2

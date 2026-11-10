@@ -3475,4 +3475,26 @@
     <string name="provider_update_times">Last attempt: %1$s · Last success: %2$s</string>
     <string name="tracking_source_automatic">Automatic</string>
     <string name="tracking_source_automatic_current">Automatic · %1$s</string>
+    <string name="first_watch_title">Before your first watch</string>
+    <string name="first_watch_saved">Saved</string>
+    <string name="first_watch_saved_service">An account is saved for %1$s. Check sign-in from the first-watch checklist.</string>
+    <string name="first_watch_catalog">Catalog: %1$s</string>
+    <string name="first_watch_source">Source provider: %1$s</string>
+    <string name="first_watch_added">Added · Not checked</string>
+    <string name="first_watch_missing">Not added</string>
+    <string name="first_watch_account_required">The supported source path needs a connected playback service. Checking sign-in does not check a title.</string>
+    <string name="first_watch_signin_accepted">Sign-in accepted</string>
+    <string name="first_watch_reconnect">Reconnect</string>
+    <string name="first_watch_unavailable">Unknown · Service or network unavailable</string>
+    <string name="first_watch_unknown">Unknown · Check again</string>
+    <string name="first_watch_saved_account">%1$s: Saved · %2$s</string>
+    <string name="first_watch_playback_started">Playback started for %1$s · %2$s</string>
+    <string name="first_watch_playback_failed">Playback could not start for %1$s · %2$s</string>
+    <string name="first_watch_playback_unknown">Playback: Unknown · Choose an authorized title and play it</string>
+    <string name="first_watch_check_accounts">Check saved accounts</string>
+    <string name="first_watch_cancel_check">Cancel account check</string>
+    <string name="first_watch_seconds_ago">%1$d seconds ago</string>
+    <string name="first_watch_minutes_ago">%1$d minutes ago</string>
+    <string name="first_watch_connect">Connected playback services</string>
+    <string name="first_watch_choose_title">Choose a title</string>
 </resources>

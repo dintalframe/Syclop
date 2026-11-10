@@ -1,8 +1,8 @@
 package com.nuvio.tv.core.debrid
 
 /** Invalidates a pending account operation even when a viewer switches away and back. */
-class DebridAuthProfileGuard(initialProfileId: Int) {
-    data class Ticket(val profileId: Int, val revision: Long)
+class DebridAuthProfileGuard(initialProfileId: Int, private val selectionRevision: () -> Long = { 0L }) {
+    data class Ticket(val profileId: Int, val revision: Long, val selectionRevision: Long = 0L)
     private var profileId = initialProfileId
     private var revision = 0L
 
@@ -14,11 +14,11 @@ class DebridAuthProfileGuard(initialProfileId: Int) {
 
     @Synchronized fun capture(activeProfileId: Int): Ticket {
         observe(activeProfileId)
-        return Ticket(profileId, revision)
+        return Ticket(profileId, revision, selectionRevision())
     }
 
     @Synchronized fun valid(ticket: Ticket, activeProfileId: Int): Boolean {
         observe(activeProfileId)
-        return ticket.profileId == profileId && ticket.revision == revision
+        return ticket.profileId == profileId && ticket.revision == revision && ticket.selectionRevision == selectionRevision()
     }
 }

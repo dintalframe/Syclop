@@ -4,6 +4,57 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativeAnimeParentTitleProofTest {
+    @Test fun `exact verified parent preserves year checks across punctuation whitespace and NFKC`() {
+        val parent = NativeAnimeParentFixtures.PARENT.replace("\"name\":\"Cyberpunk: Edgerunners\"",
+            "\"name\":\"Cyberpunk: Edgerunners (2022)\"")
+        val proof = record().withVerifiedParentMetadata(parent).episodes.getValue(1)
+        for (qualifier in listOf(": (2022)", " ( 2022 )", "— [2022]", "– [ 2022 ]",
+            "： （ 2022 ）", "— ［　2022　］", "： （　２０２２　）")) {
+            val name = "Cyberpunk Edgerunners$qualifier S02E01.mkv"
+            assertTrue(name, proof.acceptsReleaseTitle(name))
+            assertTrue(name, proof.matchesFile(name))
+        }
+        for (qualifier in listOf(": (1999)", " ( 1999 )", "— [1999]", "– [ 1999 ]",
+            "： （ 1999 ）", "— ［　1999　］", "： （　１９９９　）")) {
+            val name = "Cyberpunk Edgerunners$qualifier S02E01.mkv"
+            assertFalse(name, proof.acceptsReleaseTitle(name))
+            assertFalse(name, proof.matchesFile(name))
+        }
+        for (name in listOf("[Group ( 1999 )] Cyberpunk Edgerunners S02E01.mkv",
+            "[1999] Cyberpunk Edgerunners S02E01.mkv", "Cyberpunk Edgerunners S02E01 : ( 1999 ).mkv")) {
+            assertTrue(name, proof.acceptsReleaseTitle(name))
+            assertTrue(name, proof.matchesFile(name))
+        }
+    }
+
+    @Test fun `verified parent premiere year and child season year remain distinct evidence`() {
+        // Synthetic qualifiers exercise binding policy, not a new public catalog assertion.
+        val mapping = NativeAnimeParentFixtures.MAPPING
+            .replace("Cyberpunk: Edgerunners 2", "Cyberpunk: Edgerunners Season 2 (2026)")
+            .replace("Cyberpunk: Edgerunners II", "Cyberpunk: Edgerunners Season 2 (2026)")
+            .replace("CYBERPUNK: EDGERUNNERS II", "Cyberpunk: Edgerunners Season 2 (2026)")
+        val record = requireNotNull(NativeAnimeMappingCodec.parse(mapping, 61990))
+        val parent = NativeAnimeParentFixtures.PARENT.replace("\"name\":\"Cyberpunk: Edgerunners\"",
+            "\"name\":\"Cyberpunk: Edgerunners (2022)\"")
+        val proof = record.withVerifiedParentMetadata(parent).episodes.getValue(1)
+        assertEquals("tt12590266", proof.verifiedParentImdbId)
+        for (name in listOf("Cyberpunk Edgerunners (2022) S02E01.mkv",
+            "Cyberpunk Edgerunners (2026) S02E01.mkv", "Cyberpunk Edgerunners S02E01.mkv")) {
+            assertTrue(name, proof.acceptsReleaseTitle(name))
+            assertTrue(name, proof.matchesFile(name))
+        }
+        for (name in listOf("Cyberpunk Edgerunners (1999) S02E01.mkv",
+            "Cyberpunk Edgerunners (2022) S01E01.mkv")) {
+            assertFalse(name, proof.acceptsReleaseTitle(name))
+            assertFalse(name, proof.matchesFile(name))
+        }
+        val unknownParent = record.withVerifiedParentMetadata(NativeAnimeParentFixtures.PARENT).episodes.getValue(1)
+        assertNotEquals(unknownParent.cacheKey, proof.cacheKey)
+        assertTrue(unknownParent.matchesFile("Cyberpunk Edgerunners S02E01.mkv"))
+        assertFalse(unknownParent.acceptsReleaseTitle("Cyberpunk Edgerunners (1999) S02E01.mkv"))
+        assertFalse(unknownParent.matchesFile("Cyberpunk Edgerunners (1999) S02E01.mkv"))
+    }
+
     @Test fun `verified exact parent episode fixes real sequel release without changing MAL coordinates`() {
         val record = record()
         val base = record.episodes.getValue(1)

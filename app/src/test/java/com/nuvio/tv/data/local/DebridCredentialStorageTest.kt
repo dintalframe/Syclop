@@ -106,6 +106,7 @@ class DebridCredentialStorageTest {
         val profiles = mockk<ProfileManager>()
         val active = MutableStateFlow(1)
         every { profiles.activeProfileId } returns active
+        every { profiles.activeProfileSelectionRevision } returns 0L
         val store = DebridSettingsDataStore(factory, profiles, cipher)
         active.value = 2
         assertFalse(store.setProviderApiKeyForProfile(1, DebridProviders.ALL_DEBRID_ID, "late-key"))
@@ -119,6 +120,7 @@ class DebridCredentialStorageTest {
         every { factory.get(1, "debrid_settings") } returns memory
         val profiles = mockk<ProfileManager>()
         every { profiles.activeProfileId } returns MutableStateFlow(1)
+        every { profiles.activeProfileSelectionRevision } returns 0L
         val brokenCipher = DebridCredentialCipher { throw IllegalStateException("Keystore unavailable") }
         val store = DebridSettingsDataStore(factory, profiles, brokenCipher)
         try {
@@ -135,6 +137,7 @@ class DebridCredentialStorageTest {
         every { factory.get(1, "debrid_settings") } returns memory
         val profiles = mockk<ProfileManager>()
         every { profiles.activeProfileId } returns MutableStateFlow(1)
+        every { profiles.activeProfileSelectionRevision } returns 0L
         return DebridSettingsDataStore(factory, profiles, cipher)
     }
 }

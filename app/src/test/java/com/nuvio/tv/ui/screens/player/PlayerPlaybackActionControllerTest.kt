@@ -12,11 +12,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import com.nuvio.tv.core.party.PartyPlayback
 import com.nuvio.tv.core.party.PartyUiState
+import com.nuvio.tv.core.debrid.DirectDebridPlayableResult
+import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.data.local.PlayerSettings
 import com.nuvio.tv.data.local.StreamAutoPlayMode
 import com.nuvio.tv.domain.model.Video
 import com.nuvio.tv.domain.model.WatchProgress
+import com.nuvio.tv.domain.model.AddonStreams
+import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.repository.WatchProgressRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -34,6 +38,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -505,6 +510,51 @@ class PlayerPlaybackActionControllerTest {
     }
 
     @Test
+    fun `backgrounding during next episode search prevents a delayed autoplay countdown`() = runTest {
+        val next = Video(id = "tt-fixture:1:2", title = "Episode 2", released = null,
+            thumbnail = null, season = 1, episode = 2, overview = null)
+        val nextInfo = NextEpisodeInfo(next.id, 1, 2, next.title, null, null, null, true, unairedMessage = null)
+        val fixture = fixture(PlayerUiState(currentVideoId = "tt-fixture:1:1", currentSeason = 1,
+            currentEpisode = 1, nextEpisode = nextInfo))
+        val stream = Stream("Fixture", null, null, "https://playback.example.invalid/next.mp4",
+            null, null, null, null, null, "Fixture", null)
+        val sourceRequested = CompletableDeferred<Unit>()
+        val releaseSource = CompletableDeferred<Unit>()
+        var nextJob: Job? = null
+        every { fixture.controller.nextEpisodeAutoPlayJob } answers { nextJob }
+        every { fixture.controller.nextEpisodeAutoPlayJob = any() } answers { nextJob = firstArg() }
+        every { fixture.controller.nextEpisodeVideo } returns next
+        every { fixture.controller.playerSettingsDataStore.playerSettings } returns flowOf(
+            PlayerSettings(streamAutoPlayMode = StreamAutoPlayMode.FIRST_STREAM,
+                streamAutoPlayPreferBingeGroupForNextEpisode = false)
+        )
+        every { fixture.controller.addonRepository.getInstalledAddons() } returns flowOf(emptyList())
+        val sources = fixture.controller.streamRepository
+        every { sources.getStreamsFromAllAddons("series", next.id, 1, 2, false) } returns flow {
+            sourceRequested.complete(Unit)
+            releaseSource.await()
+            emit(NetworkResult.Success(listOf(AddonStreams("Fixture", null, listOf(stream)))))
+        }
+        coEvery {
+            fixture.controller.directDebridResolver.resolveToPlayableStream(any(), any(), any(), any(), any(), any(), any(), any())
+        } returns DirectDebridPlayableResult.Success(stream)
+
+        fixture.controller.onEvent(PlayerEvent.OnPlayNextEpisode)
+        runCurrent()
+        assertTrue(sourceRequested.isCompleted)
+        assertTrue((fixture.ui.value.postPlayMode as? PostPlayMode.AutoPlay)?.searching == true)
+
+        fixture.controller.pauseForLifecycle()
+        background(fixture)
+        releaseSource.complete(Unit)
+        runCurrent()
+
+        assertNull(fixture.ui.value.postPlayMode)
+        assertEquals("tt-fixture:1:1", fixture.ui.value.currentVideoId)
+        verify(exactly = 0) { fixture.player.stop() }
+    }
+
+    @Test
     fun `manual next opens next episode source picker without playing or switching the current episode`() = runTest {
         val next = Video(id = "tt-fixture:1:2", title = "Episode 2", released = null,
             thumbnail = null, season = 1, episode = 2, overview = null)
@@ -645,6 +695,8 @@ class PlayerPlaybackActionControllerTest {
         every { controller._exoPlayer } returns player
         every { controller.currentInternalPlayerEngine } returns InternalPlayerEngine.EXOPLAYER
         every { controller.scope } returns backgroundScope
+        every { controller.debridStreamPresentation } returns null
+        every { controller.debridSettingsDataStore } returns null
         every { controller.resumeRequestGate } returns PlayerResumeRequestGate()
         val coordinator = PlayerProgressWriteCoordinator(authority)
         every { controller.progressWriteCoordinator } returns coordinator

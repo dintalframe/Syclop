@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class InstalledAddonConfiguration(val ownerProfileId: Int, val hasAddons: Boolean)
+
 @Singleton
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddonPreferences @Inject constructor(
@@ -49,6 +51,14 @@ class AddonPreferences @Inject constructor(
     private val userSetNamesKey = stringPreferencesKey("addon_user_set_names")
     private val addonEnabledStatesKey = stringPreferencesKey("installed_addon_enabled_states")
     private val manifestSuffix = "/manifest.json"
+    private val firstWatchSourceRevisionKey = stringPreferencesKey("first_watch_source_revision")
+    val firstWatchSourceRevision: Flow<String> = effectiveProfileIdFlow.flatMapLatest { pid ->
+        store(pid).data.map { it[firstWatchSourceRevisionKey].orEmpty() }
+    }
+
+    private fun invalidateFirstWatchSource(prefs: androidx.datastore.preferences.core.MutablePreferences) {
+        prefs[firstWatchSourceRevisionKey] = java.util.UUID.randomUUID().toString()
+    }
 
     private fun canonicalizeUrl(url: String): String {
         val trimmed = url.trim().trimEnd('/')
@@ -73,6 +83,10 @@ class AddonPreferences @Inject constructor(
                 legacySet.toList()
             }
         }
+    }
+
+    val installedAddonConfiguration: Flow<InstalledAddonConfiguration> = effectiveProfileIdFlow.flatMapLatest { pid ->
+        store(pid).data.map { InstalledAddonConfiguration(pid, getCurrentList(it).isNotEmpty()) }
     }
 
     val addonEnabledStates: Flow<Map<String, Boolean>> = effectiveProfileIdFlow.flatMapLatest { pid ->
@@ -123,6 +137,7 @@ class AddonPreferences @Inject constructor(
             val states = getCurrentEnabledStates(preferences).toMutableMap()
             states[normalizedUrl] = true
             preferences[addonEnabledStatesKey] = gson.toJson(states)
+            invalidateFirstWatchSource(preferences)
             changed = true
         }
         return changed
@@ -147,6 +162,7 @@ class AddonPreferences @Inject constructor(
             val states = getCurrentEnabledStates(preferences).toMutableMap()
             states.remove(normalizedUrl)
             preferences[addonEnabledStatesKey] = gson.toJson(states)
+            invalidateFirstWatchSource(preferences)
             changed = true
         }
         return changed
@@ -165,6 +181,7 @@ class AddonPreferences @Inject constructor(
             preferences[addonEnabledStatesKey] = gson.toJson(
                 orderedUrls.associateWith { url -> currentStates[url] ?: true }
             )
+            invalidateFirstWatchSource(preferences)
             changed = true
         }
         return changed
@@ -180,6 +197,7 @@ class AddonPreferences @Inject constructor(
             if ((states[normalizedUrl] ?: true) == enabled) return@edit
             states[normalizedUrl] = enabled
             preferences[addonEnabledStatesKey] = gson.toJson(states)
+            invalidateFirstWatchSource(preferences)
             changed = true
         }
         return changed
@@ -189,9 +207,12 @@ class AddonPreferences @Inject constructor(
         val active = profileManager.activeProfile
         if (active != null && !active.isPrimary && active.usesPrimaryAddons) return
         store().edit { preferences ->
-            preferences[addonEnabledStatesKey] = gson.toJson(
-                states.mapKeys { (url, _) -> canonicalizeUrl(url) }
-            )
+            val normalized = states.mapKeys { (url, _) -> canonicalizeUrl(url) }
+            val before = getCurrentEnabledStates(preferences)
+            if (getCurrentList(preferences).any { (before[it] ?: true) != (normalized[it] ?: true) }) {
+                invalidateFirstWatchSource(preferences)
+            }
+            preferences[addonEnabledStatesKey] = gson.toJson(normalized)
         }
     }
 

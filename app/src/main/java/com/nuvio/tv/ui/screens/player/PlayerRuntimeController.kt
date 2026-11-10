@@ -112,7 +112,10 @@ class PlayerRuntimeController(
     internal val party: com.nuvio.tv.core.party.PartyRepository,
     internal val profileId: Int,
     savedStateHandle: SavedStateHandle,
-    internal val scope: CoroutineScope
+    internal val scope: CoroutineScope,
+    internal val firstWatchReadiness: com.nuvio.tv.core.setup.FirstWatchReadinessRepository? = null,
+    internal val debridStreamPresentation: com.nuvio.tv.core.debrid.DebridStreamPresentation? = null,
+    internal val debridSettingsDataStore: com.nuvio.tv.data.local.DebridSettingsDataStore? = null
 ) {
 
     /** Resolved once so every `context.getString(...)` here follows the app language. */
@@ -120,6 +123,7 @@ class PlayerRuntimeController(
 
     // Start synchronously so a later save can never capture a replacement account's identity.
     internal var playbackOriginOwner: PlayerProgressWriteOwner? = null
+    internal var firstWatchCapture: FirstWatchPlaybackCapture? = null
     internal var playbackOrigin = capturePlaybackOrigin()
 
     internal fun capturePlaybackOrigin() = trackingScrobbleCoordinator.capturePlaybackOrigin(profileId) {

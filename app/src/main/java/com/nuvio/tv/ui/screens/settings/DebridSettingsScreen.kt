@@ -152,7 +152,7 @@ fun DebridSettingsContent(
                                     provider = provider,
                                     credential = uiState.apiKeyFor(provider.id),
                                     notSetLabel = stringResource(R.string.debrid_not_set),
-                                    connectedLabel = stringResource(R.string.debrid_connected)
+                                    connectedLabel = stringResource(R.string.first_watch_saved)
                                 ),
                                 onClick = {
                                     if (useDeviceAuth) activeDeviceAuthDialog = provider.id
@@ -1344,7 +1344,7 @@ private fun DebridDeviceAuthDialog(
     ) {
         if (isConnected) {
             Text(
-                text = stringResource(R.string.debrid_device_auth_connected, provider.displayName),
+                text = stringResource(R.string.first_watch_saved_service, provider.displayName),
                 style = MaterialTheme.typography.bodyMedium,
                 color = NuvioTheme.colors.TextSecondary,
                 textAlign = TextAlign.Center,

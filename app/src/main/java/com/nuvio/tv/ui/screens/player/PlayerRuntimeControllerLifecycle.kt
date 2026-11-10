@@ -16,6 +16,7 @@ internal fun PlayerRuntimeController.releasePlayer(
 ) {
     logScrobbleDiagnostic("release_player", "flushPlaybackState=$flushPlaybackState")
     isReleasingPlayer = true
+    firstWatchCapture = null
     exoEndOfStreamRecovery.release()
     com.nuvio.tv.core.recommendations.TvRecommendationManager.isPlaybackActive.value = false
     if (flushPlaybackState) {

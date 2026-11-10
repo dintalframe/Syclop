@@ -12,7 +12,8 @@ data class DebridDeviceAuthorization(
     val expiresAtMonotonicMillis: Long? = null,
     val profileId: Int? = null,
     val profileRevision: Long? = null,
-    val expectedCredential: String? = null
+    val expectedCredential: String? = null,
+    val profileSelectionRevision: Long? = null
 ) {
     override fun toString(): String = "DebridDeviceAuthorization(providerId=$providerId, codes=[redacted])"
 }

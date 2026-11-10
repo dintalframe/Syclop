@@ -42,6 +42,10 @@ import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
 import com.nuvio.tv.ui.theme.NuvioTheme
 import kotlinx.coroutines.launch
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.DisposableEffect
+import com.nuvio.tv.ui.screens.addon.FirstWatchChecklist
 
 private data class SettingsMenuLabel(@param:StringRes val title: Int, @param:StringRes val subtitle: Int,
     val icon: ImageVector)
@@ -53,7 +57,8 @@ internal fun SettingsMenuContent(
     entries: List<SettingsCategory>,
     preferredFocusCategory: SettingsCategory?,
     initialFocusRequester: FocusRequester?,
-    onOpen: (SettingsCategory) -> Unit
+    onOpen: (SettingsCategory) -> Unit,
+    onChooseTitle: () -> Unit = {}
 ) {
     val heading = when (category) {
         SettingsCategory.ACCOUNTS -> R.string.settings_menu_connected_services to R.string.settings_menu_connected_services_description
@@ -77,6 +82,20 @@ internal fun SettingsMenuContent(
                                 leadingIcon = label.icon, onClick = { onOpen(entry) },
                                 modifier = if (entry == focusTarget && initialFocusRequester != null)
                                     Modifier.focusRequester(initialFocusRequester) else Modifier)
+                        }
+                        if (category == SettingsCategory.ACCOUNTS) {
+                            item("first-watch-readiness") {
+                                val viewModel: DebridSettingsViewModel = hiltViewModel()
+                                val snapshot by viewModel.firstWatch.snapshot.collectAsStateWithLifecycle()
+                                val checking by viewModel.checkingAccounts.collectAsStateWithLifecycle()
+                                DisposableEffect(viewModel) { onDispose { viewModel.cancelAccountCheck() } }
+                                Column(verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm)) {
+                                    FirstWatchChecklist(snapshot, checking, viewModel::checkSavedAccounts, viewModel::cancelAccountCheck)
+                                    SettingsActionRow(title = stringResource(R.string.first_watch_choose_title),
+                                        subtitle = null, leadingIcon = Icons.Rounded.PlayArrow,
+                                        onClick = { viewModel.cancelAccountCheck(); onChooseTitle() })
+                                }
+                            }
                         }
                         if (category == SettingsCategory.APP) {
                             item("privacy-policy") {

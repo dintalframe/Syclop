@@ -157,10 +157,13 @@ internal fun PlayerRuntimeController.initializePlayer(
     allowEngineFailover: Boolean = true,
     startPaused: Boolean = false
 ) {
+    firstWatchCapture = null
     if (url.isEmpty()) {
         _uiState.update { it.copy(error = context.getString(R.string.player_error_no_stream_url), showLoadingOverlay = false) }
         return
     }
+    val firstWatchStart = captureFirstWatchPlayback(url)
+    firstWatchCapture = firstWatchStart
     mpvMediaLoadPrepared = false
     val afrPreflightToken = afrPreflightGate.token()
 
@@ -1042,6 +1045,7 @@ internal fun PlayerRuntimeController.initializePlayer(
             libassPipelineSwitchInFlight = false
 
             _exoPlayer?.apply {
+                attachFirstWatchMedia3Listener(this, firstWatchStart)
                 val badgePlayer = this
                 val audioAttributes = AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)

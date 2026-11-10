@@ -1948,6 +1948,13 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
             val installedAddons = streamAddonsFor(nextVideo.id)
             val installedAddonOrder = installedAddons.map { it.displayName }
             val preferredServerNames = serverStreams.preferredSourceNames(type, nextVideo.id)
+            val sourceSettings = debridSettingsDataStore?.settings?.first()
+
+            fun rankCandidates(streams: List<Stream>): List<Stream> = sourceSettings?.let { settings ->
+                debridStreamPresentation?.rankAll(streams, settings, enforceLimits = false,
+                    episodeRequest = true)
+            } ?: streams
+
             val effectiveMode = if (shouldAutoSelectInManualMode) {
                 StreamAutoPlayMode.FIRST_STREAM
             } else {
@@ -1984,7 +1991,7 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
 
             fun trySelectStream(data: List<AddonStreams>): Stream? {
                 val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
-                val allStreams = orderedStreams.flatMap { it.streams }
+                val allStreams = rankCandidates(orderedStreams.flatMap { it.streams })
                 return StreamAutoPlaySelector.selectAutoPlayStream(
                     streams = allStreams,
                     mode = effectiveMode,
@@ -2016,18 +2023,18 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                     nextEpisode = nextVideo.episode ?: 0
                 ) ?: currentFilename?.takeIf { it.isNotBlank() }
                 if (nextFilename != null) {
-                    val bingeAndFilename = allStreams.firstOrNull { stream ->
+                    val bingeAndFilename = rankCandidates(allStreams.filter { stream ->
                         !stream.isExternal() &&
                             stream.behaviorHints?.bingeGroup == currentStreamBingeGroup &&
                             com.nuvio.tv.core.player.FilenameEpisodeMatcher.matches(
                                 stream.behaviorHints?.filename, nextFilename
                             )
-                    }
+                    }).firstOrNull()
                     if (bingeAndFilename != null) return bingeAndFilename
                 }
                 // Early fallback: binge group alone
                 return StreamAutoPlaySelector.selectAutoPlayStream(
-                    streams = allStreams,
+                    streams = rankCandidates(allStreams),
                     mode = effectiveMode,
                     regexPattern = effectiveRegex,
                     source = effectiveSource,
@@ -2050,12 +2057,12 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                 ) ?: currentFilename?.takeIf { it.isNotBlank() }
                     ?: return null
                 val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
-                return orderedStreams.flatMap { it.streams }.firstOrNull { stream ->
+                return rankCandidates(orderedStreams.flatMap { it.streams }.filter { stream ->
                     !stream.isExternal() &&
                         com.nuvio.tv.core.player.FilenameEpisodeMatcher.matches(
                             stream.behaviorHints?.filename, nextFilename
                         )
-                }
+                }).firstOrNull()
             }
 
             fun recordSelection(candidate: Stream) {

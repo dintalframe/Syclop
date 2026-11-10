@@ -63,8 +63,9 @@ class DebridManualCredentialSaverTest {
         val errors = mutableListOf<DebridManualCredentialSaver.Failure>()
         val saver = DebridManualCredentialSaver(scope, { guard.capture(profile) }, { guard.valid(it, profile) },
             { pid, provider -> keys[pid to provider].orEmpty() },
-            { _, _ -> withContext(NonCancellable) { response.await() } },
-            { pid, provider, value, expected ->
+            { _, _ -> DebridAccountCheck(if (withContext(NonCancellable) { response.await() })
+                com.nuvio.tv.core.setup.FirstWatchAccountOutcome.ACCEPTED else com.nuvio.tv.core.setup.FirstWatchAccountOutcome.REJECTED) },
+            { pid, provider, value, expected, _ ->
                 if (failCommit) throw java.io.IOException("Synthetic storage failure")
                 if (profile != pid || expected != null && keys[pid to provider] != expected) false
                 else { keys[pid to provider] = value; true }

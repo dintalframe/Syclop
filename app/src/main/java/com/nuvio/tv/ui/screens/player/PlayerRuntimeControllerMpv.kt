@@ -233,6 +233,12 @@ internal fun PlayerRuntimeController.pauseForLifecycle() {
     // Mark we're in background so onPlayerError can defer recovery to onResume.
     isInBackground = true
 
+    if (nextEpisodeAutoPlayJob?.isActive == true) {
+        nextEpisodeAutoPlayJob?.cancel()
+        nextEpisodeAutoPlayJob = null
+        _uiState.update { it.copy(postPlayMode = null, postPlayDismissedForCurrentEpisode = true) }
+    }
+
     // Release the MediaSession so the system doesn't route media commands
     // (play/pause, audio focus) to this player while the app is in the background.
     try {

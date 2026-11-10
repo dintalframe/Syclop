@@ -357,6 +357,10 @@ internal fun PlayerRuntimeController.startProgressUpdates() {
                         firstFrameReady = view.isPositionFromRequestedMedia() &&
                             (pos > 0L || (playingNow && !cacheBuffering && playerDuration > 0L))
                         if (firstFrameReady) {
+                            val readinessCapture = firstWatchCapture
+                            if (readinessCapture != null && view.isRequestedMediaActive(readinessCapture.url)) {
+                                recordFirstWatchStarted(readinessCapture, "mpv", requestedMpvProgress = true)
+                            }
                             hasRenderedFirstFrame = true
                             resetMpvStartupWatchdog()
                             scheduleMpvStableProgressReset()

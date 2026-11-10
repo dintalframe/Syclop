@@ -8,6 +8,14 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.gson.Gson
 import com.nuvio.tv.core.debrid.DebridProviders
 import com.nuvio.tv.core.debrid.RealDebridOAuthState
+import com.nuvio.tv.core.debrid.DebridAccountCheck
+import com.nuvio.tv.core.setup.FirstWatchObservations
+import com.nuvio.tv.core.setup.FirstWatchPlaybackObservation
+import com.nuvio.tv.core.setup.FirstWatchWriteScope
+import com.nuvio.tv.core.setup.FirstWatchAccountObservation
+import com.nuvio.tv.core.setup.FirstWatchAccountOutcome
+import com.nuvio.tv.core.setup.firstWatchAccountBinding
+import com.nuvio.tv.core.backup.PortableBackupPolicy
 import com.nuvio.tv.core.debrid.DebridStreamFormatterDefaults
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.domain.model.DebridSettings
@@ -69,6 +77,8 @@ class DebridSettingsDataStore @Inject constructor(
     private val streamPreferencesKey = stringPreferencesKey("stream_preferences")
     private val streamNameTemplateKey = stringPreferencesKey("debrid_stream_name_template")
     private val streamDescriptionTemplateKey = stringPreferencesKey("debrid_stream_description_template")
+    private val firstWatchEvidenceKey = stringPreferencesKey("first_watch_evidence")
+    private val firstWatchResolverRevisionKey = stringPreferencesKey("first_watch_resolver_revision")
 
     val settings: Flow<DebridSettings> = profileManager.activeProfileId.flatMapLatest { pid ->
         factory.get(pid, FEATURE).data.map { original ->
@@ -138,7 +148,7 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     suspend fun setCloudLibraryEnabled(enabled: Boolean) {
-        store().edit { it[cloudLibraryEnabledKey] = enabled }
+        editPlaybackSourceSettings { it[cloudLibraryEnabledKey] = enabled }
     }
 
     suspend fun setCloudDeleteAfterPlayback(profileId: Int, enabled: Boolean) {
@@ -156,11 +166,11 @@ class DebridSettingsDataStore @Inject constructor(
 
     suspend fun setPreferredResolverProviderId(providerId: String) {
         val normalized = DebridProviders.byId(providerId)?.id.orEmpty()
-        store().edit { it[preferredResolverProviderIdKey] = normalized }
+        editPlaybackSourceSettings { it[preferredResolverProviderIdKey] = normalized }
     }
 
     suspend fun setConnectedServiceFallbackEnabled(enabled: Boolean) {
-        store().edit { it[connectedServiceFallbackEnabledKey] = enabled }
+        editPlaybackSourceSettings { it[connectedServiceFallbackEnabledKey] = enabled }
     }
 
     suspend fun setProviderApiKey(providerId: String, apiKey: String) {
@@ -168,6 +178,59 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     val activeProfileId get() = profileManager.activeProfileId
+    val firstWatchResolverRevision: Flow<String> = activeProfileId.flatMapLatest { pid ->
+        store(pid).data.map { it[firstWatchResolverRevisionKey].orEmpty() }
+    }
+    val firstWatchObservations: Flow<FirstWatchObservations> = activeProfileId.flatMapLatest { pid ->
+        store(pid).data.map { firstWatchEvidence(it) }
+    }
+
+    suspend fun recordFirstWatchAccount(scope: FirstWatchWriteScope, providerId: String, binding: String,
+        result: DebridAccountCheck, checkedAtMs: Long, isCurrent: () -> Boolean): Boolean {
+        if (DebridProviders.byId(providerId) == null || checkedAtMs <= 0L) return false
+        var saved = false
+        store(scope.profileId).edit { prefs ->
+            currentCoroutineContext().ensureActive()
+            if (!firstWatchScopeCurrent(scope) || !isCurrent()) return@edit
+            val credential = readCredential(prefs, scope.profileId, providerId)
+            if (credential.isBlank() || binding != firstWatchAccountBinding(scope.profileId, providerId, credential)) return@edit
+            val evidence = firstWatchEvidence(prefs)
+            prefs[firstWatchEvidenceKey] = gson.toJson(evidence.copy(accounts = evidence.accounts +
+                (providerId to FirstWatchAccountObservation(binding, checkedAtMs, result.outcome, result.entitlementExpiresAtMs))))
+            saved = true
+        }
+        return saved
+    }
+
+    suspend fun recordFirstWatchPlayback(scope: FirstWatchWriteScope, observation: FirstWatchPlaybackObservation,
+        isCurrent: () -> Boolean): Boolean {
+        if (observation.checkedAtMs <= 0L || observation.engine !in setOf("exo", "mpv") ||
+            observation.title.length > 512 || observation.videoId.length > 512 ||
+            !PortableBackupPolicy.safeText(observation.title) || !PortableBackupPolicy.safeText(observation.videoId)) return false
+        var saved = false
+        store(scope.profileId).edit { prefs ->
+            currentCoroutineContext().ensureActive()
+            if (!firstWatchScopeCurrent(scope) || !isCurrent()) return@edit
+            if (prefs[firstWatchResolverRevisionKey].orEmpty() != scope.resolverRevision) return@edit
+            prefs[firstWatchEvidenceKey] = gson.toJson(firstWatchEvidence(prefs).copy(playback = observation))
+            saved = true
+        }
+        return saved
+    }
+
+    private fun firstWatchScopeCurrent(scope: FirstWatchWriteScope): Boolean = scope.credentialRevision >= 0L &&
+        activeProfileId.value == scope.profileId && activeProfileSelectionRevision == scope.selectionRevision &&
+        activeCredentialRevision == scope.credentialRevision
+
+    private fun firstWatchEvidence(prefs: Preferences): FirstWatchObservations = runCatching {
+        gson.fromJson(prefs[firstWatchEvidenceKey], FirstWatchObservations::class.java)?.let { evidence ->
+            evidence.copy(accounts = evidence.accounts.filter { (id, item) ->
+                DebridProviders.byId(id) != null && item.binding.matches(Regex("[a-f0-9]{64}")) && item.checkedAtMs > 0L
+            })
+        }
+    }.getOrNull() ?: FirstWatchObservations()
+
+
     val activeProfileSelectionRevision get() = profileManager.activeProfileSelectionRevision
     private val credentialRevision = java.util.concurrent.atomic.AtomicLong()
     private val credentialMutations = java.util.concurrent.atomic.AtomicInteger()
@@ -197,11 +260,13 @@ class DebridSettingsDataStore @Inject constructor(
     /** Check the originating viewer again inside the atomic edit, after any network validation. */
     suspend fun setProviderApiKeyForProfile(
         profileId: Int, providerId: String, apiKey: String, expectedApiKey: String? = null,
-        realDebridOAuth: RealDebridOAuthState? = null
+        realDebridOAuth: RealDebridOAuthState? = null,
+        acceptedCheck: DebridAccountCheck? = null, checkedAtMs: Long = 0L
     ): Boolean {
         val provider = DebridProviders.byId(providerId) ?: return false
         val normalized = apiKey.trim()
         val pid = profileId
+        val selection = activeProfileSelectionRevision
         if (profileManager.activeProfileId.value != pid) return false
         credentialMutations.incrementAndGet()
         credentialRevision.incrementAndGet()
@@ -216,12 +281,18 @@ class DebridSettingsDataStore @Inject constructor(
         var saved = false
         store(pid).edit { prefs ->
             currentCoroutineContext().ensureActive()
-            if (profileManager.activeProfileId.value != pid ||
+            if (profileManager.activeProfileId.value != pid || activeProfileSelectionRevision != selection ||
                 (expectedApiKey != null && readCredential(prefs, pid, provider.id) != expectedApiKey)) return@edit
             providerKey(provider.id)?.let { key -> prefs[key] = encrypted }
             if (provider.id == DebridProviders.REAL_DEBRID_ID) {
                 if (encryptedOAuth == null) prefs.remove(realDebridOAuthKey) else prefs[realDebridOAuthKey] = encryptedOAuth
             }
+            val evidence = firstWatchEvidence(prefs)
+            val accepted = acceptedCheck?.takeIf { it.outcome == FirstWatchAccountOutcome.ACCEPTED && normalized.isNotBlank() && checkedAtMs > 0L }
+            val observations = evidence.accounts - provider.id
+            prefs[firstWatchEvidenceKey] = gson.toJson(evidence.copy(playback = null, accounts =
+                if (accepted == null) observations else observations + (provider.id to FirstWatchAccountObservation(
+                    firstWatchAccountBinding(pid, provider.id, normalized), checkedAtMs, accepted.outcome, accepted.entitlementExpiresAtMs))))
             val keys = DebridProviders.all().associate { it.id to readCredential(prefs, pid, it.id) }
             prefs[preferredResolverProviderIdKey] = preferredResolverProviderId(
                 stored = prefs[preferredResolverProviderIdKey],
@@ -267,13 +338,13 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     suspend fun setInstantPlaybackPreparationLimit(limit: Int) {
-        store().edit {
+        editPlaybackSourceSettings {
             it[instantPlaybackPreparationLimitKey] = normalizeDebridInstantPlaybackPreparationLimit(limit)
         }
     }
 
     suspend fun setStreamMaxResults(maxResults: Int) {
-        store().edit {
+        editPlaybackSourceSettings {
             val normalized = normalizeDebridStreamMaxResults(maxResults)
             it[streamMaxResultsKey] = normalized
             it[streamPreferencesKey] = gson.toJson(currentStreamPreferences(it[streamPreferencesKey]).copy(maxResults = normalized))
@@ -281,7 +352,7 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     suspend fun setStreamSortMode(mode: DebridStreamSortMode) {
-        store().edit {
+        editPlaybackSourceSettings {
             it[streamSortModeKey] = mode.name
             it[streamPreferencesKey] = gson.toJson(
                 currentStreamPreferences(it[streamPreferencesKey]).copy(sortCriteria = sortCriteriaForLegacyMode(mode))
@@ -290,7 +361,7 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     suspend fun setStreamMinimumQuality(quality: DebridStreamMinimumQuality) {
-        store().edit {
+        editPlaybackSourceSettings {
             it[streamMinimumQualityKey] = quality.name
             it[streamPreferencesKey] = gson.toJson(
                 currentStreamPreferences(it[streamPreferencesKey]).copy(requiredResolutions = resolutionsForMinimumQuality(quality))
@@ -299,7 +370,7 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     suspend fun setStreamDolbyVisionFilter(filter: DebridStreamFeatureFilter) {
-        store().edit {
+        editPlaybackSourceSettings {
             it[streamDolbyVisionFilterKey] = filter.name
             val current = currentStreamPreferences(it[streamPreferencesKey])
             it[streamPreferencesKey] = gson.toJson(
@@ -322,7 +393,7 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     suspend fun setStreamHdrFilter(filter: DebridStreamFeatureFilter) {
-        store().edit {
+        editPlaybackSourceSettings {
             it[streamHdrFilterKey] = filter.name
             val hdrTags = listOf(DebridStreamVisualTag.HDR, DebridStreamVisualTag.HDR10, DebridStreamVisualTag.HDR10_PLUS, DebridStreamVisualTag.HLG, DebridStreamVisualTag.HDR_ONLY, DebridStreamVisualTag.HDR_DV)
             val current = currentStreamPreferences(it[streamPreferencesKey])
@@ -346,7 +417,7 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     suspend fun setStreamCodecFilter(filter: DebridStreamCodecFilter) {
-        store().edit {
+        editPlaybackSourceSettings {
             it[streamCodecFilterKey] = filter.name
             it[streamPreferencesKey] = gson.toJson(
                 currentStreamPreferences(it[streamPreferencesKey]).copy(
@@ -362,11 +433,35 @@ class DebridSettingsDataStore @Inject constructor(
     }
 
     suspend fun setStreamPreferences(preferences: DebridStreamPreferences) {
-        store().edit {
+        editPlaybackSourceSettings {
             val normalized = preferences.normalized()
             it[streamPreferencesKey] = gson.toJson(normalized)
             it[streamMaxResultsKey] = normalizeDebridStreamMaxResults(normalized.maxResults)
             it[streamSortModeKey] = legacyModeForSortCriteria(normalized.sortCriteria).name
+        }
+    }
+
+    private fun playbackSourceConfiguration(prefs: Preferences): List<Any> = listOf(
+        prefs[cloudLibraryEnabledKey] ?: true, prefs[preferredResolverProviderIdKey].orEmpty(),
+        prefs[connectedServiceFallbackEnabledKey] ?: true,
+        normalizeDebridInstantPlaybackPreparationLimit(prefs[instantPlaybackPreparationLimitKey] ?: 0),
+        parseStreamPreferences(prefs[streamPreferencesKey]) ?: legacyStreamPreferences(
+            prefs[streamMaxResultsKey] ?: 0,
+            enumValueOrDefault(prefs[streamSortModeKey], DebridStreamSortMode.DEFAULT),
+            enumValueOrDefault(prefs[streamMinimumQualityKey], DebridStreamMinimumQuality.ANY),
+            enumValueOrDefault(prefs[streamDolbyVisionFilterKey], DebridStreamFeatureFilter.ANY),
+            enumValueOrDefault(prefs[streamHdrFilterKey], DebridStreamFeatureFilter.ANY),
+            enumValueOrDefault(prefs[streamCodecFilterKey], DebridStreamCodecFilter.ANY)))
+
+    private suspend fun editPlaybackSourceSettings(change: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
+        store().edit { prefs ->
+            val before = playbackSourceConfiguration(prefs)
+            change(prefs)
+            if (before != playbackSourceConfiguration(prefs)) {
+                // A persisted generation also rejects an in-flight capture after values return to A.
+                prefs[firstWatchResolverRevisionKey] = java.util.UUID.randomUUID().toString()
+                prefs[firstWatchEvidenceKey] = gson.toJson(firstWatchEvidence(prefs).copy(playback = null))
+            }
         }
     }
 
