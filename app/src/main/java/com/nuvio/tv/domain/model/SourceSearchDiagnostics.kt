@@ -3,6 +3,7 @@ package com.nuvio.tv.domain.model
 /** Fixed reason codes only: never retains provider URLs, account tokens or response payloads. */
 enum class SourceSearchReason(val label: String) {
     MISSING_MAPPING("missing anime mapping"),
+    ANIME_METADATA_FAILED("anime catalog lookup failures"),
     MISSING_COORDINATES("providers missing search data"),
     TIMEOUT("timed out"),
     RATE_LIMITED("rate limited"),
@@ -24,6 +25,20 @@ data class SourceSearchDiagnostics(
     val complete: Boolean = false,
     val counts: Map<SourceSearchReason, Int> = emptyMap()
 ) {
+    val hasProviderSearchIssue: Boolean
+        get() = failed > 0 || counts.any { (reason, count) ->
+            count > 0 && when (reason) {
+                SourceSearchReason.MISSING_COORDINATES,
+                SourceSearchReason.TIMEOUT,
+                SourceSearchReason.RATE_LIMITED,
+                SourceSearchReason.PARSER_ERROR,
+                SourceSearchReason.REQUEST_FAILED,
+                SourceSearchReason.UNSUPPORTED,
+                SourceSearchReason.REQUEST_BUDGET -> true
+                else -> false
+            }
+        }
+
     fun summary(): String = buildString {
         append(completed).append('/').append(providers).append(" providers completed")
         counts.entries.filter { it.value > 0 }.forEach { (reason, count) ->

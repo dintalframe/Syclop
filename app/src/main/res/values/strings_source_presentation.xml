@@ -2,5 +2,8 @@
     <string name="source_search_details">Search details</string>
     <string name="source_hide_search_details">Hide search details</string>
     <string name="source_bitrate_confidence">Bitrate confidence: native file estimate → reported estimate → unknown</string>
-    <string name="source_anime_mapping_missing">Some providers need an episode mapping for this anime. Try another episode or source.</string>
+    <string name="source_anime_mapping_missing">The episode mapping for this anime could not be verified. Try another episode or source.</string>
+    <string name="source_anime_catalog_failed">MyAnimeList details could not be verified.</string>
+    <string name="source_search_request_limit">The source search reached its request limit.</string>
+    <string name="source_search_providers_incomplete">Some providers could not be searched. See Search details.</string>
 </resources>

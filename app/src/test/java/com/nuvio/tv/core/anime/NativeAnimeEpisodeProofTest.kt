@@ -100,6 +100,132 @@ class NativeAnimeEpisodeProofTest {
         }
     }
 
+    @Test fun `catalog-only episodes do not hide a verified episode of an airing title`() {
+        val source = mutate {
+            getAsJsonObject("episodes").add("2", JsonParser.parseString(
+                """{"episode":"2","title":{"en":"The next episode"},"anidbEid":103000,"airdate":"2026-11-15"}"""
+            ))
+        }
+        val record = requireNotNull(parse(source))
+        assertEquals(setOf(1), record.episodes.keys)
+        assertTrue(record.episodes.getValue(1).matchesFile("Frieren.S02E01.mkv"))
+        assertNull(record.episodes[2])
+    }
+
+    @Test fun `missing episode translations do not invalidate verified episode coordinates`() {
+        val source = mutate {
+            val second = JsonParser.parseString(episode(2, 2, 30, 10719110)).asJsonObject
+            second.add("title", JsonParser.parseString("""{"en":null,"ja":"次の話"}"""))
+            getAsJsonObject("episodes").add("2", second)
+        }
+        assertEquals(setOf(1, 2), requireNotNull(parse(source)).episodes.keys)
+        assertNull(parse(source.replace("\"en\":null", "\"en\":29")))
+    }
+
+    @Test fun `available exact title survives null alternatives but a titleless record does not`() {
+        val source = mutate {
+            add("titles", JsonParser.parseString("""{"en":null,"x-jat":"Sousou no Frieren"}"""))
+        }
+        val proof = requireNotNull(parse(source)?.episodes?.get(1))
+        assertTrue(proof.matchesFile("Sousou no Frieren S02E01.mkv"))
+        assertNull(parse(source.replace("\"Sousou no Frieren\"", "null")))
+    }
+
+    @Test fun `a conflicting claimed TVDB record still invalidates the response`() {
+        val source = mutate {
+            getAsJsonObject("episodes").add("2", JsonParser.parseString(
+                """{"episode":"2","tvdbShowId":123,"tvdbId":10719110,"seasonNumber":2,"episodeNumber":2}"""
+            ))
+        }
+        assertNull(parse(source))
+    }
+
+    @Test fun `exact Kitsu edition proves local episode without supplying TVDB or absolute coordinates`() {
+        val proof = requireNotNull(NativeAnimeEpisodeProof.fromKitsu(
+            63367, 50497, KitsuAnimeEpisodes("Dragon Ball Super: Beerus", 2026, mapOf(1 to KitsuAnimeEpisode(393369, 1)))
+        )?.episodes?.get(1))
+        assertEquals(63367L, proof.malId)
+        assertEquals(1, proof.malEpisode)
+        assertTrue(proof.catalogOnly)
+        assertNull(proof.tvdbSeason)
+        assertNull(proof.tvdbEpisode)
+        assertNull(proof.absoluteEpisode)
+        for (file in listOf("Dragon Ball Super Beerus (2026) S01E01.mkv",
+            "[Group] Dragon Ball Super Beerus (2026) - 01 [1080p].mkv",
+            "Dragon Ball Super Beerus (2026) E01.mkv")) {
+            assertTrue(file, proof.matchesFile(file))
+            assertTrue(file, proof.acceptsReleaseTitle(file))
+        }
+        for (file in listOf("Dragon Ball Super (2026) - 01.mkv", "Dragon Ball Super Beerus (2026) S02E01.mkv",
+            "Dragon Ball Super Beerus (2026) - 02.mkv", "Dragon Ball Super Beerus (2015) - 01.mkv",
+            "Dragon Ball Super Beerus Recut (2026) - 01.mkv", "Dragon Ball Super Beerus (2026) - 01-02.mkv",
+            "Dragon Ball Super Beerus - 01.mkv", "Dragon Ball Super Beerus (2026).mkv")) {
+            assertFalse(file, proof.matchesFile(file))
+            assertFalse(file, proof.acceptsReleaseTitle(file))
+        }
+    }
+
+    @Test fun `unqualified catalog title requires a matching release year`() {
+        val proof = requireNotNull(NativeAnimeEpisodeProof.fromKitsu(
+            100, 200, KitsuAnimeEpisodes("Same Name", 2026, mapOf(1 to KitsuAnimeEpisode(300, 1)))
+        )?.episodes?.get(1))
+        assertFalse(proof.matchesFile("Same Name - 01.mkv"))
+        assertFalse(proof.matchesFile("Same Name (1997) - 01.mkv"))
+        assertTrue(proof.matchesFile("Same Name (2026) - 01.mkv"))
+        assertFalse(proof.matchesFile("Same Name (2026) [Part 2] - 01.mkv"))
+        assertFalse(proof.matchesFile("Same Name (2026) (Cour 2) - 01.mkv"))
+    }
+
+    @Test fun `catalog-only sequel treats the season in the title as edition identity`() {
+        val proof = requireNotNull(NativeAnimeEpisodeProof.fromKitsu(
+            100, 200, KitsuAnimeEpisodes("Citrus Road Season 2", 2026, mapOf(1 to KitsuAnimeEpisode(300, 1)))
+        )?.episodes?.get(1))
+        assertTrue(proof.matchesFile("Citrus Road Season 2 - 01.mkv"))
+        assertTrue(proof.matchesFile("Citrus Road Season 2 S01E01.mkv"))
+        assertFalse(proof.matchesFile("Citrus Road Season 3 - 01.mkv"))
+        assertFalse(proof.matchesFile("Citrus Road Season 2 [Cour 2] - 01.mkv"))
+    }
+
+    @Test fun `catalog number stays separate from the explicit Kitsu season-relative number`() {
+        val proof = requireNotNull(NativeAnimeEpisodeProof.fromKitsu(
+            100, 200, KitsuAnimeEpisodes("Citrus Road Season 2", 2026, mapOf(
+                1 to KitsuAnimeEpisode(300, 1),
+                12 to KitsuAnimeEpisode(301, 2, relativeNumber = 1),
+                13 to KitsuAnimeEpisode(302, 2)
+            ))
+        ))
+        assertTrue(proof.episodes.getValue(12).matchesFile("Citrus Road Season 2 - 12.mkv"))
+        assertTrue(proof.episodes.getValue(12).matchesFile("Citrus Road Season 2 S02E01.mkv"))
+        assertFalse(proof.episodes.getValue(12).matchesFile("Citrus Road Season 2 S02E12.mkv"))
+        assertFalse(proof.episodes.getValue(13).matchesFile("Citrus Road Season 2 S02E13.mkv"))
+    }
+
+    @Test fun `verified MAL count proves only an edition-qualified catalog episode`() {
+        val source = com.nuvio.tv.data.mal.MalSourceMetadata(100, "A Distant Harbor", 2024, "ona", 12,
+            startDate = "2024-02-29")
+        val proof = requireNotNull(NativeAnimeEpisodeProof.fromMal(100, 8, source))
+        assertTrue(proof.matchesFile("A Distant Harbor (2024) - 08.mkv"))
+        assertFalse(proof.matchesFile("A Distant Harbor (2024) S01E08.mkv"))
+        assertFalse(proof.matchesFile("A Distant Harbor (2024) [Part 2] - 08.mkv"))
+        assertFalse(proof.matchesFile("A Distant Harbor (2004) - 08.mkv"))
+        assertFalse(proof.matchesFile("A Distant Harbor - 08.mkv"))
+        assertNull(NativeAnimeEpisodeProof.fromMal(100, 13, source))
+        assertNull(NativeAnimeEpisodeProof.fromMal(100, 8, source.copy(episodeCount = 0)))
+        assertNull(NativeAnimeEpisodeProof.fromMal(100, 8, source.copy(startDate = "2024-02-30")))
+        assertNull(NativeAnimeEpisodeProof.fromMal(101, 8, source))
+    }
+
+    @Test fun `standalone special with a published MAL episode is a separate catalog title`() {
+        val source = com.nuvio.tv.data.mal.MalSourceMetadata(100, "A Distant Harbor: The Reunion", 2024,
+            "special", 1, startDate = "2024-02-29")
+        val proof = requireNotNull(NativeAnimeEpisodeProof.fromMal(100, 1, source))
+
+        assertTrue(proof.matchesFile("A Distant Harbor - The Reunion (2024) - 01.mkv"))
+        assertFalse(proof.matchesFile("A Distant Harbor (2024) - 01.mkv"))
+        assertFalse(proof.matchesFile("A Distant Harbor - The Reunion (2024) - 02.mkv"))
+        assertNull(NativeAnimeEpisodeProof.fromMal(100, 2, source))
+    }
+
     @Test fun `coordinate and body bounds fail closed`() {
         assertNull(parse(mutate { row().addProperty("seasonNumber", 1001) }))
         assertNull(parse(mutate { row().addProperty("episodeNumber", 4001) }))
@@ -116,6 +242,18 @@ class NativeAnimeEpisodeProofTest {
         assertEquals(setOf(1), parse(json)?.episodes?.keys)
         assertNull(parse(JsonParser.parseString(json).asJsonObject.apply { getAsJsonObject("episodes").remove("1") }.toString()))
         assertNull(parse(json.replace("\"episode\":\"S1\"", "\"episode\":\"S2\"")))
+    }
+
+    @Test fun `bonus rows and season zero mappings do not erase the verified regular episodes`() {
+        val source = mutate {
+            val episodes = getAsJsonObject("episodes")
+            episodes.add("O1", JsonParser.parseString("""{"episode":"O1","title":{"en":null},"anidbEid":1234}"""))
+            episodes.add("2", JsonParser.parseString(
+                """{"episode":"2","tvdbShowId":424536,"tvdbId":10719110,"seasonNumber":0,"episodeNumber":3}"""
+            ))
+        }
+        assertEquals(setOf(1), requireNotNull(parse(source)).episodes.keys)
+        assertNull(parse(source.replace("\"episode\":\"O1\"", "\"episode\":\"O2\"")))
     }
 
     @Test fun `regular mappings cannot duplicate TVDB coordinate episode ID or absolute number`() {

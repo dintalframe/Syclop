@@ -56,6 +56,8 @@ import com.nuvio.tv.ui.theme.NuvioComponents
 import com.nuvio.tv.ui.theme.NuvioMotion
 import com.nuvio.tv.ui.theme.NuvioRadii
 import com.nuvio.tv.ui.theme.NuvioStrokes
+import com.nuvio.tv.ui.theme.NuvioFocus
+import com.nuvio.tv.ui.theme.sidebarFocusStroke
 import com.nuvio.tv.ui.theme.NuvioTheme
 import com.nuvio.tv.ui.theme.accentBrush
 import com.nuvio.tv.ui.util.contentTextDirection
@@ -253,9 +255,8 @@ private fun SidebarNavigationItem(
     )
 
     val contentColorTarget = when {
-        selected -> accentColor
-        isFocused -> colors.TextPrimary
-        else -> colors.text.onOverlay
+        isFocused || selected -> colors.text.onOverlay
+        else -> colors.TextSecondary
     }
     val contentColor by animateColorAsState(
         targetValue = contentColorTarget,
@@ -300,12 +301,12 @@ private fun SidebarNavigationItem(
         border = CardDefaults.border(
             border = androidx.tv.material3.Border.None,
             focusedBorder = androidx.tv.material3.Border(
-                border = androidx.compose.foundation.BorderStroke(NuvioStrokes.tokens.thin, Color.Transparent),
+                border = sidebarFocusStroke(),
                 shape = shape
             )
         ),
         shape = CardDefaults.shape(shape = shape),
-        scale = CardDefaults.scale(focusedScale = 1f, pressedScale = 1f)
+        scale = CardDefaults.scale(focusedScale = 1f, pressedScale = NuvioFocus.tokens.pressedScale)
     ) {
         Row(
             modifier = Modifier
@@ -402,12 +403,12 @@ private fun SidebarProfileItem(
         border = CardDefaults.border(
             border = androidx.tv.material3.Border.None,
             focusedBorder = androidx.tv.material3.Border(
-                border = androidx.compose.foundation.BorderStroke(NuvioStrokes.tokens.thin, Color.Transparent),
+                border = sidebarFocusStroke(),
                 shape = shape
             )
         ),
         shape = CardDefaults.shape(shape = shape),
-        scale = CardDefaults.scale(focusedScale = 1f, pressedScale = 1f)
+        scale = CardDefaults.scale(focusedScale = 1f, pressedScale = NuvioFocus.tokens.pressedScale)
     ) {
         Row(
             modifier = Modifier

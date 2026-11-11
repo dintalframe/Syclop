@@ -2,6 +2,8 @@ package com.nuvio.tv.core.debrid
 
 import com.nuvio.tv.core.anime.NativeAnimeEpisodeProof
 import com.nuvio.tv.core.anime.NativeAnimeMappingCodec
+import com.nuvio.tv.core.anime.KitsuAnimeEpisode
+import com.nuvio.tv.core.anime.KitsuAnimeEpisodes
 import com.nuvio.tv.domain.model.StreamClientResolve
 import com.nuvio.tv.domain.model.StreamClientResolveRaw
 import com.nuvio.tv.domain.model.StreamClientResolveStream
@@ -9,6 +11,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativeAnimeDebridFileSelectionTest {
+    @Test fun `catalog ordinal cannot unlock a different season-relative file`() {
+        val scoped = requireNotNull(NativeAnimeEpisodeProof.fromKitsu(100, 200,
+            KitsuAnimeEpisodes("Citrus Road Season 2", 2026, mapOf(
+                12 to KitsuAnimeEpisode(301, 2, relativeNumber = 1)
+            )))?.episodes?.get(12))
+        val wrong = File("Citrus Road Season 2 S02E12.mkv", 9000)
+        val correct = File("Citrus Road Season 2 S02E01.mkv", 100)
+        assertEquals(correct, select(listOf(wrong, correct), resolve(episode = 12), scoped))
+        assertNull(select(listOf(wrong, correct), resolve(index = 0, episode = 12), scoped))
+        assertNull(select(listOf(wrong, correct), resolve(filename = wrong.path, episode = 12), scoped))
+    }
+
     @Test fun `actual selected file and explicit hints cannot borrow correct coordinates across reboot years`() {
         for ((year, other) in listOf(2011 to 1999, 1999 to 2011)) {
             val mapping = """{"titles":{"en":"Hunter x Hunter ($year)"},"mappings":{"mal_id":59978,"thetvdb_id":424536},"episodes":{"1":{"tvdbShowId":424536,"tvdbId":10719109,"seasonNumber":1,"episodeNumber":1,"absoluteEpisodeNumber":1,"episode":"1"}}}"""

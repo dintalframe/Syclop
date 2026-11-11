@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
@@ -23,6 +24,7 @@ import com.nuvio.tv.ui.components.SourceChipItem
 import com.nuvio.tv.ui.components.SourceChipStatus
 import com.nuvio.tv.ui.theme.NuvioTheme
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -38,8 +40,23 @@ class ProgressiveSourcesTvTest {
         val first = source("Selected source", 'a')
         val later = source("Later higher bitrate source", 'b')
         val streams = mutableStateOf(listOf(first))
-        var selected: Stream? = null
-        show(streams = { streams.value }, onSelected = { selected = it })
+        val returning = mutableStateOf(false)
+        val restoreHandled = AtomicBoolean(false)
+        val selections = mutableListOf<Stream>()
+        var selectedIndex = 0
+        var selectedKey: String? = null
+        show(
+            streams = { streams.value },
+            focusedStreamIndex = { selectedIndex },
+            selectedStreamKey = { selectedKey },
+            shouldRestoreFocusedStream = { returning.value },
+            onRestoreFocusedStreamHandled = { restoreHandled.set(true) },
+            onSelected = { selected, key, index ->
+                selections += selected
+                selectedKey = key
+                selectedIndex = index
+            }
+        )
         compose.onNodeWithText("Selected source").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
         compose.onNodeWithText("Selected source").assertIsFocused()
         compose.runOnIdle { streams.value = listOf(later, first) }
@@ -49,7 +66,16 @@ class ProgressiveSourcesTvTest {
         capture("progressive-sources-stable-focus")
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         compose.waitForIdle()
-        compose.runOnIdle { assertEquals(first, selected) }
+        compose.runOnIdle {
+            assertEquals(listOf(first), selections)
+            streams.value = listOf(first, later)
+            returning.value = true
+        }
+
+        compose.waitUntil(timeoutMillis = 5_000) { restoreHandled.get() }
+        compose.onNodeWithText("Selected source").assertIsFocused()
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+        compose.runOnIdle { assertEquals(listOf(first, first), selections) }
     }
 
     @Test fun emptySearchDisplaysStructuredReasonsWithoutMediaOrAccountData() {
@@ -58,8 +84,30 @@ class ProgressiveSourcesTvTest {
                 SourceSearchReason.RATE_LIMITED to 1, SourceSearchReason.TIMEOUT to 1))
         val detailsLabel = instrumentation.targetContext.getString(R.string.source_search_details)
         val hideDetailsLabel = instrumentation.targetContext.getString(R.string.source_hide_search_details)
+        val retryLabel = instrumentation.targetContext.getString(R.string.stream_retry)
+        val noSourcesLabel = instrumentation.targetContext.getString(R.string.stream_no_streams)
+        val findingLabel = instrumentation.targetContext.getString(R.string.stream_finding_source)
         val summary = "2/4 providers completed · 1 timed out · 1 rate limited · 12 season packs hidden"
-        show(streams = { emptyList() }, diagnostics = listOf(diagnostic))
+        var retries = 0
+        val otherSourceStatus = mutableStateOf(SourceChipStatus.LOADING)
+        // The loading chip shimmers indefinitely. Keep control of its frames until it settles.
+        compose.mainClock.autoAdvance = false
+        show(
+            streams = { emptyList() },
+            diagnostics = listOf(diagnostic),
+            sourceChips = {
+                listOf(SourceChipItem("Synthetic sources", SourceChipStatus.SUCCESS),
+                    SourceChipItem("Other source", otherSourceStatus.value))
+            },
+            onRetry = { retries++ }
+        )
+        compose.mainClock.advanceTimeBy(350)
+        compose.onNodeWithText(findingLabel).assertIsDisplayed()
+        compose.onNodeWithText(retryLabel).assertDoesNotExist()
+        compose.runOnIdle { otherSourceStatus.value = SourceChipStatus.ERROR }
+        compose.mainClock.advanceTimeByFrame()
+        compose.mainClock.advanceTimeByFrame()
+        compose.mainClock.autoAdvance = true
         compose.onNodeWithText(summary).assertDoesNotExist()
         compose.onNodeWithText(detailsLabel).assertIsDisplayed()
             .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
@@ -73,21 +121,41 @@ class ProgressiveSourcesTvTest {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         compose.onNodeWithText(detailsLabel).assertIsFocused()
         compose.onNodeWithText(summary).assertDoesNotExist()
+
+        compose.onNodeWithText(noSourcesLabel).assertDoesNotExist()
+        compose.onNodeWithText(retryLabel).assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onNodeWithText(retryLabel).assertIsFocused()
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+        compose.runOnIdle { assertEquals(1, retries) }
     }
 
-    private fun show(streams: () -> List<Stream>, diagnostics: List<SourceSearchDiagnostics> = emptyList(),
-        onSelected: (Stream) -> Unit = {}) {
+    private fun show(
+        streams: () -> List<Stream>,
+        diagnostics: List<SourceSearchDiagnostics> = emptyList(),
+        sourceChips: () -> List<SourceChipItem> = { listOf(SourceChipItem("Synthetic sources", SourceChipStatus.SUCCESS)) },
+        focusedStreamIndex: () -> Int = { 0 },
+        selectedStreamKey: () -> String? = { null },
+        shouldRestoreFocusedStream: () -> Boolean = { false },
+        onRestoreFocusedStreamHandled: () -> Unit = {},
+        onRetry: () -> Unit = {},
+        onSelected: (Stream, String, Int) -> Unit = { _, _, _ -> }
+    ) {
         compose.setContent {
             NuvioTheme {
-                RightStreamSection(isLoading = false, resumeText = null, error = null,
-                    searchDiagnostics = diagnostics, streams = streams(), availableAddons = listOf("Synthetic sources"),
-                    sourceChips = listOf(SourceChipItem("Synthetic sources", SourceChipStatus.SUCCESS)),
-                    selectedAddonFilter = null, showFileSizeBadges = false, showAddonLogo = false,
-                    badgePlacement = StreamBadgePlacement.BOTTOM, onAddonFilterSelected = {}, onRefresh = {},
-                    sharedStream = null, partySource = null, onSharedStreamSelected = {}, onStreamSelected = onSelected,
-                    focusedStreamIndex = 0, shouldRestoreFocusedStream = false,
-                    onRestoreFocusedStreamHandled = {}, onRetry = {}, hazeState = null,
-                    modifier = Modifier.fillMaxSize().background(NuvioTheme.colors.Background))
+                val restoring = shouldRestoreFocusedStream()
+                key(restoring) {
+                    RightStreamSection(isLoading = false, resumeText = null, error = null,
+                        searchDiagnostics = diagnostics, streams = streams(), availableAddons = listOf("Synthetic sources"),
+                        sourceChips = sourceChips(),
+                        selectedAddonFilter = null, showFileSizeBadges = false, showAddonLogo = false,
+                        badgePlacement = StreamBadgePlacement.BOTTOM, onAddonFilterSelected = {}, onRefresh = {},
+                        sharedStream = null, partySource = null, onSharedStreamSelected = {}, onStreamSelected = onSelected,
+                        focusedStreamIndex = focusedStreamIndex(), selectedStreamKey = selectedStreamKey(),
+                        shouldRestoreFocusedStream = restoring,
+                        onRestoreFocusedStreamHandled = onRestoreFocusedStreamHandled, onRetry = onRetry, hazeState = null,
+                        modifier = Modifier.fillMaxSize().background(NuvioTheme.colors.Background))
+                }
             }
         }
     }

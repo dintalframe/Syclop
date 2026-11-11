@@ -1,6 +1,7 @@
 package com.nuvio.tv.ui.theme
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -28,6 +29,10 @@ class NuvioFocusRingStyle internal constructor(
 }
 
 fun ThemeColorPalette.accentBrush(): Brush = createThemeBrush(accentGradient)
+
+@Composable
+internal fun sidebarFocusStroke(): BorderStroke =
+    BorderStroke(NuvioStrokes.tokens.focus, NuvioTheme.colors.text.onOverlay)
 
 internal fun createThemeBrush(colors: List<Color>): Brush {
     return if (colors.size == 1) {

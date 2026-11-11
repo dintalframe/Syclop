@@ -200,6 +200,8 @@ import com.nuvio.tv.ui.theme.NuvioMotion
 import com.nuvio.tv.ui.theme.NuvioPrimitives
 import com.nuvio.tv.ui.theme.NuvioRadii
 import com.nuvio.tv.ui.theme.NuvioStrokes
+import com.nuvio.tv.ui.theme.NuvioFocus
+import com.nuvio.tv.ui.theme.sidebarFocusStroke
 import com.nuvio.tv.ui.theme.NuvioTheme
 import com.nuvio.tv.ui.theme.ThemeColors
 import com.nuvio.tv.ui.theme.accentBrush
@@ -1650,6 +1652,7 @@ private fun LegacySidebarScaffold(
                                             .width(openDrawerItemWidth)
                                             .height(sidebarTokens.itemHeight)
                                             .background(color = profileBgColor, shape = profileItemShape)
+                                            .then(if (isProfileFocused) Modifier.border(sidebarFocusStroke(), profileItemShape) else Modifier)
                                             .onFocusChanged { isProfileFocused = it.isFocused }
                                             .clickable(enabled = isExpanded) {
                                                 onSwitchProfile()
@@ -1873,12 +1876,12 @@ internal fun LegacySidebarButton(
         border = CardDefaults.border(
             border = androidx.tv.material3.Border.None,
             focusedBorder = androidx.tv.material3.Border(
-                border = androidx.compose.foundation.BorderStroke(NuvioStrokes.tokens.thin, Color.Transparent),
+                border = sidebarFocusStroke(),
                 shape = itemShape
             )
         ),
         shape = CardDefaults.shape(shape = itemShape),
-        scale = CardDefaults.scale(focusedScale = 1f, pressedScale = 1f)
+        scale = CardDefaults.scale(focusedScale = 1f, pressedScale = NuvioFocus.tokens.pressedScale)
     ) {
         Box(
             modifier = Modifier

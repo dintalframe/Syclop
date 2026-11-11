@@ -3,6 +3,8 @@ package com.nuvio.tv.core.express
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeProof
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.core.plugin.absoluteAnimeEpisodeNumber
 import com.nuvio.tv.data.mal.MalMetadataService
@@ -35,10 +37,11 @@ data class ExpressMedia(
     /** Keeps catalog-relative, mapped TVDB and optional release-absolute coordinates distinct. */
     val nativeAnimeEpisode: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof? = null,
     /** Optional original spelling resolved against this record's IMDb identity. */
-    val originalTitle: String? = null
+    val originalTitle: String? = null,
+    internal val requiresStandaloneKitsuLabel: Boolean = false
 ) {
-    val hasMappedEpisodeCoordinates: Boolean get() = nativeAnimeEpisode != null
-    val catalogSeason: Int? get() = if (nativeAnimeEpisode != null) 1 else season
+    val hasMappedEpisodeCoordinates: Boolean get() = nativeAnimeEpisode?.catalogOnly == false
+    val catalogSeason: Int? get() = nativeAnimeEpisode?.catalogSeason ?: season
     val catalogEpisode: Int? get() = nativeAnimeEpisode?.malEpisode ?: episode
     val tvdbSeason: Int? get() = nativeAnimeEpisode?.tvdbSeason
     val tvdbEpisode: Int? get() = nativeAnimeEpisode?.tvdbEpisode
@@ -76,18 +79,33 @@ data class ExpressMedia(
 
 fun interface ExpressMetadataSource { suspend fun resolve(request: ExpressMediaRequest): ExpressMedia }
 
+internal class ExpressAnimeMappingUnavailable : ExpressException("A confirmed anime episode mapping is unavailable.")
+
 /** Metadata uses catalog IDs, never title-search guesses or season-to-absolute arithmetic. */
 @Singleton
 class ExpressMetadataResolver @Inject constructor(
     private val http: ExpressHttpClient,
     private val tmdb: TmdbService,
     private val mal: MalMetadataService,
-    private val animeMappings: com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings? = null
+    private val animeMappings: NativeAnimeEpisodeMappings? = null
 ) : ExpressMetadataSource {
     private data class Metadata(val title: String, val year: Int?, val originalTitle: String?)
     private val cache = ConcurrentHashMap<String, Metadata>()
 
     override suspend fun resolve(request: ExpressMediaRequest): ExpressMedia {
+        if (request.videoId.startsWith("kitsu:")) {
+            val (id, ordinal) = NativeAnimeEpisodeMappings.kitsuIdentity(request.videoId)
+                ?: throw ExpressAnimeMappingUnavailable()
+            if (request.type == "movie") throw ExpressAnimeMappingUnavailable()
+            val proof = animeMappings?.proof(request.videoId)?.takeIf { it.isKitsuEpisode(id, ordinal) }
+                ?: throw ExpressAnimeMappingUnavailable()
+            val identity = proof.titleIdentity ?: throw ExpressAnimeMappingUnavailable()
+            val year = identity.verifiedReleaseYear ?: throw ExpressAnimeMappingUnavailable()
+            val title = proof.queryTitles().firstOrNull() ?: throw ExpressAnimeMappingUnavailable()
+            return ExpressMedia("series", title, null, year, proof.tvdbSeason, proof.tvdbEpisode,
+                absoluteNumber = proof.absoluteEpisode, anime = true, nativeAnimeIdentity = identity,
+                nativeAnimeEpisode = proof, requiresStandaloneKitsuLabel = proof.catalogOnly)
+        }
         if (request.videoId.startsWith("mal:")) {
             val parts = request.videoId.split(':')
             val id = parts.getOrNull(1)?.toLongOrNull()?.takeIf { it > 0 }
@@ -95,6 +113,7 @@ class ExpressMetadataResolver @Inject constructor(
             val source = mal.sourceMetadata(id)
             if (source.malId != id) throw ExpressException("MyAnimeList metadata did not match the requested record.")
             val isMovie = source.mediaType == "movie"
+            if (!isMovie && parts.size == 2) throw ExpressAnimeMappingUnavailable()
             val episode = if (isMovie) null else absoluteAnimeEpisodeNumber(request.videoId)
                 ?.takeIf { it > 0 && (source.episodeCount <= 0 || it <= source.episodeCount) }
                 ?: if (isMovie) null else throw ExpressException("A valid MyAnimeList episode ID is required.")
@@ -106,7 +125,7 @@ class ExpressMetadataResolver @Inject constructor(
             // can supply the separate release-absolute coordinate used by declarative anime searches.
             val proof = if (isMovie) null else animeMappings?.proof(request.videoId)
                 ?.takeIf { it.hasTrustedTitleIdentity && it.malId == id && it.malEpisode == episode }
-                ?: if (isMovie) null else throw ExpressException("A confirmed anime episode mapping is unavailable.")
+                ?: if (isMovie) null else throw ExpressAnimeMappingUnavailable()
             // A valid S/E mapping remains useful without an absolute episode. Templates that
             // require the absent coordinate are skipped; catalog-relative numbers never fill it.
             val absolute = proof?.absoluteEpisode
@@ -236,9 +255,13 @@ internal fun expressTemplate(template: String, variables: Map<String, String>): 
 
 internal fun expressEncode(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
-/** Native MAL rows must carry the trusted title in every supplied release-identity field. */
+/** Native anime rows must carry the trusted title in every supplied release-identity field. */
 internal fun ExpressMedia.acceptsNativeAnimeRow(row: ExpressRow): Boolean {
-    val identity = nativeAnimeIdentity ?: return true // Non-MAL metadata paths retain prior behavior.
+    val identity = nativeAnimeIdentity ?: return true
+    if (requiresStandaloneKitsuLabel) {
+        val file = row.filename?.takeIf(String::isNotBlank) ?: row.title ?: return false
+        if (!NativeAnimeEpisodeProof.hasStandaloneEpisodeHint(file)) return false
+    }
     val names = listOfNotNull(row.title, row.filename).filter { it.isNotBlank() }
     return names.isNotEmpty() && names.all { nativeAnimeEpisode?.acceptsReleaseTitle(it) ?: identity.matchesRelease(it) }
 }

@@ -221,6 +221,21 @@ fun PlayerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val seekPresses = remember(viewModel, uiState.currentVideoId, uiState.currentStreamUrl) { PlayerSeekPresses() }
+    val previewSeekByKey: (KeyEvent) -> Boolean = { event ->
+        if (viewModel.playbackTimeline.value.isLive ||
+            !seekPresses.acceptDown(event.deviceId, event.keyCode, event.downTime, event.repeatCount)
+        ) {
+            false
+        } else {
+            val delta = PlayerScrubRates.deltaMsForKeyRepeat(
+                repeatCount = event.repeatCount,
+                forward = event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+            )
+            viewModel.onEvent(PlayerEvent.OnPreviewSeekBy(delta))
+            true
+        }
+    }
     val containerFocusRequester = remember { FocusRequester() }
     val playPauseFocusRequester = remember { FocusRequester() }
     val progressBarFocusRequester = remember { FocusRequester() }
@@ -640,6 +655,25 @@ fun PlayerScreen(
             .focusRequester(containerFocusRequester)
             .focusable(enabled = uiState.error == null)
             .onPreviewKeyEvent { keyEvent ->
+                val nativeEvent = keyEvent.nativeKeyEvent
+                if (nativeEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
+                    nativeEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                ) {
+                    // The focus that began a scrub can move before Android delivers repeats or release.
+                    val device = nativeEvent.deviceId
+                    val key = nativeEvent.keyCode
+                    val beganAt = nativeEvent.downTime
+                    if (nativeEvent.action == KeyEvent.ACTION_UP && seekPresses.release(device, key, beganAt)) {
+                        viewModel.onEvent(PlayerEvent.OnCommitPreviewSeek)
+                        return@onPreviewKeyEvent true
+                    }
+                    if (nativeEvent.action == KeyEvent.ACTION_DOWN && nativeEvent.repeatCount > 0 &&
+                        previewSeekByKey(nativeEvent)
+                    ) {
+                        return@onPreviewKeyEvent true
+                    }
+                }
+
                 // Consume the confirm KEY_UP that opened the subtitle timing dialog before
                 // the newly focused "Sync" button can treat it as a second click. Preview
                 // is required: after open, focus moves into the dialog so onKeyEvent on
@@ -818,19 +852,6 @@ fun PlayerScreen(
                         uiState.error != null
                 if (panelOrDialogOpen) return@onKeyEvent false
 
-                if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_UP) {
-                    when (keyEvent.nativeKeyEvent.keyCode) {
-                        KeyEvent.KEYCODE_DPAD_LEFT,
-                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                            if (!uiState.showControls) {
-                                viewModel.onEvent(PlayerEvent.OnCommitPreviewSeek)
-                                return@onKeyEvent true
-                            }
-                        }
-                    }
-                    return@onKeyEvent false
-                }
-
                 if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
                     if (uiState.showPauseOverlay) {
                         when (keyEvent.nativeKeyEvent.keyCode) {
@@ -866,14 +887,7 @@ fun PlayerScreen(
                             val overlayButtonsCoexist = skipButtonActuallyVisible &&
                                 uiState.postPlayMode is PostPlayMode.AutoPlay
                             if (!uiState.showControls && !overlayButtonsCoexist) {
-                                val isLeft =
-                                    keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT
-                                val deltaMs = PlayerScrubRates.deltaMsForKeyRepeat(
-                                    repeatCount = keyEvent.nativeKeyEvent.repeatCount,
-                                    forward = !isLeft
-                                )
-                                viewModel.onEvent(PlayerEvent.OnPreviewSeekBy(deltaMs))
-                                true
+                                previewSeekByKey(keyEvent.nativeKeyEvent)
                             } else {
                                 // Let focus system handle navigation when controls are visible
                                 // or both skip and next-episode buttons are on screen
@@ -1572,6 +1586,7 @@ fun PlayerScreen(
                     else -> null
                 },
                 onPlayPause = { viewModel.onEvent(PlayerEvent.OnPlayPause) },
+                onSeekPreview = previewSeekByKey,
                 onPlayNextEpisode = { viewModel.onEvent(PlayerEvent.OnPlayNextEpisode) },
                 onStartFromBeginning = { viewModel.onEvent(PlayerEvent.OnStartFromBeginning) },
                 onSeekForward = { viewModel.onEvent(PlayerEvent.OnSeekForward) },
@@ -2616,6 +2631,7 @@ private fun PlayerControlsOverlay(
     streamInfoFocusRequester: FocusRequester,
     progressBarUpFocusRequester: FocusRequester? = null,
     onPlayPause: () -> Unit,
+    onSeekPreview: (KeyEvent) -> Boolean,
     onPlayNextEpisode: () -> Unit,
     onStartFromBeginning: () -> Unit,
     onSeekForward: () -> Unit,
@@ -2752,6 +2768,7 @@ private fun PlayerControlsOverlay(
                         PlayerControlsProgressBarHost(
                             viewModel = viewModel,
                             chapters = uiState.chapters,
+                            onSeekPreview = onSeekPreview,
                             focusRequester = progressBarFocusRequester,
                             upFocusRequester = startFromBeginningFocusRequester,
                             downFocusRequester = playPauseFocusRequester,
@@ -3002,6 +3019,7 @@ private fun PlayerControlsOverlay(
 private fun PlayerControlsProgressBarHost(
     viewModel: PlayerViewModel,
     chapters: List<PlayerChapter>,
+    onSeekPreview: (KeyEvent) -> Boolean,
     focusRequester: FocusRequester,
     upFocusRequester: FocusRequester? = null,
     downFocusRequester: FocusRequester? = null,
@@ -3016,12 +3034,7 @@ private fun PlayerControlsProgressBarHost(
         chapters = chapters,
         currentPosition = playbackTimeline.currentPosition,
         duration = playbackTimeline.duration,
-        onSeekPreview = { delta ->
-            viewModel.onEvent(PlayerEvent.OnPreviewSeekBy(delta))
-        },
-        onSeekCommit = {
-            viewModel.onEvent(PlayerEvent.OnCommitPreviewSeek)
-        },
+        onSeekPreview = onSeekPreview,
         focusRequester = focusRequester,
         upFocusRequester = upFocusRequester,
         downFocusRequester = downFocusRequester,
@@ -3185,8 +3198,7 @@ internal fun ControlButton(
 private fun ProgressBar(
     currentPosition: Long,
     duration: Long,
-    onSeekPreview: (Long) -> Unit,
-    onSeekCommit: () -> Unit,
+    onSeekPreview: ((KeyEvent) -> Boolean)? = null,
     focusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
     downFocusRequester: FocusRequester? = null,
@@ -3245,11 +3257,6 @@ private fun ProgressBar(
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_UP) {
                     when (keyEvent.nativeKeyEvent.keyCode) {
-                        KeyEvent.KEYCODE_DPAD_LEFT,
-                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                            onSeekCommit()
-                            return@onPreviewKeyEvent true
-                        }
                         KeyEvent.KEYCODE_DPAD_CENTER,
                         KeyEvent.KEYCODE_ENTER,
                         KeyEvent.KEYCODE_NUMPAD_ENTER -> {
@@ -3298,23 +3305,9 @@ private fun ProgressBar(
                                 false
                             }
                         }
-                        KeyEvent.KEYCODE_DPAD_LEFT -> {
-                            onSeekPreview(
-                                PlayerScrubRates.deltaMsForKeyRepeat(
-                                    repeatCount = keyEvent.nativeKeyEvent.repeatCount,
-                                    forward = false
-                                )
-                            )
-                            true
-                        }
+                        KeyEvent.KEYCODE_DPAD_LEFT,
                         KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                            onSeekPreview(
-                                PlayerScrubRates.deltaMsForKeyRepeat(
-                                    repeatCount = keyEvent.nativeKeyEvent.repeatCount,
-                                    forward = true
-                                )
-                            )
-                            true
+                            onSeekPreview?.invoke(keyEvent.nativeKeyEvent) ?: false
                         }
                         else -> false
                     }
@@ -3390,8 +3383,6 @@ private fun SeekOverlay(
             ProgressBar(
                 currentPosition = currentPosition,
                 duration = duration,
-                onSeekPreview = {},
-                onSeekCommit = {},
                 bufferedPosition = bufferedPosition,
                 chapters = chapters
             )

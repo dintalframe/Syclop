@@ -1,19 +1,143 @@
 package com.nuvio.tv.core.express
 
 import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeProof
 import com.nuvio.tv.core.anime.NativeAnimeMappingCodec
+import com.nuvio.tv.core.anime.NativeAnimeTitleIdentity
+import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.data.mal.MalAnime
 import com.nuvio.tv.data.mal.MalMetadataService
 import com.nuvio.tv.data.mal.MalSourceMetadata
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import okhttp3.OkHttpClient
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Test
 
 class NativeMalExpressMappingTest {
+    @Test fun `corroborated Kitsu coordinates enable Express episode providers`() = runBlocking {
+        val title = "Hunter x Hunter (2011)"
+        val filename = "$title S02E10.mkv"
+        val identity = requireNotNull(NativeAnimeTitleIdentity.create(11061, title, emptyList()))
+        val proof = mockk<NativeAnimeEpisodeProof>()
+        every { proof.isKitsuEpisode(6448, 68) } returns true
+        every { proof.titleIdentity } returns identity
+        every { proof.queryTitles() } returns listOf("Hunter x Hunter")
+        every { proof.catalogOnly } returns false
+        every { proof.catalogSeason } returns 1
+        every { proof.malEpisode } returns 68
+        every { proof.tvdbSeason } returns 2
+        every { proof.tvdbEpisode } returns 10
+        every { proof.absoluteEpisode } returns null
+        every { proof.needsCatalogYear } returns true
+        every { proof.usesCatalogOrdinalForSearch } returns true
+        every { proof.acceptsReleaseTitle(any()) } answers { firstArg<String>() == filename }
+        every { proof.cacheKey } returns "verified-kitsu-68"
+        val mappings = mockk<NativeAnimeEpisodeMappings>()
+        val request = ExpressMediaRequest("anime", "kitsu:6448:68", 2, 10)
+        coEvery { mappings.proof(request.videoId, any()) } returns proof
+
+        MockWebServer().use { server ->
+            val config = """{"test":{"base_url":"${server.url("/backend")}",
+                "episode":{"query":"/search?q={query}","keywords":"{title} {episodeCode}"},
+                "anime":{"query":"/search?q={query}","keywords":"{title} {absoluteNumber}"},
+                "json_format":{"results":"streams","title":"title","hash":"infoHash"}},
+                "exact":{"base_url":"${server.url("/exact")}",
+                "anime":{"query":"/episode/{absoluteNumber}?q={query}","keywords":"{title} {absoluteNumber}"},
+                "json_format":{"results":"streams","title":"title","hash":"infoHash"}}}"""
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val body = when {
+                        request.path == "/config" -> config
+                        request.requestUrl?.queryParameter("q")?.endsWith(" s02e10") == true ->
+                            """{"streams":[{"title":"$filename","behaviorHints":{"filename":"$filename"},"infoHash":"$HASH"}]}"""
+                        else -> """{"streams":[]}"""
+                    }
+                    return MockResponse().setHeader("Content-Type", "application/json").setBody(body)
+                }
+            }
+            val http = ExpressHttpClient(OkHttpClient(), true)
+            val adapter = ExpressAddonAdapter(http, ExpressMetadataResolver(http, mockk(), mockk(), mappings), { 0L })
+            val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
+            val result = withTimeout(10_000) { adapter.search(addon, request) }
+            assertTrue("Expected a verified S/E source, got $result", result is NetworkResult.Success)
+            val stream = (result as NetworkResult.Success).data.single()
+            assertEquals(filename, stream.behaviorHints?.filename)
+            assertEquals(proof.cacheKey, stream.nativeKitsuProofCacheKey)
+            val queries = (1..server.requestCount).mapNotNull {
+                requireNotNull(server.takeRequest(1, TimeUnit.SECONDS)).requestUrl?.queryParameter("q")
+            }
+            assertEquals(listOf("Hunter x Hunter 2011 s02e10", "Hunter x Hunter 2011 68"), queries)
+        }
+    }
+
+    @Test fun `direct Kitsu episode searches the proof title year and ordinal without UI coordinates`() = runTest {
+        val proof = requireNotNull(com.nuvio.tv.core.anime.NativeAnimeEpisodeProof.fromKitsu(
+            11061, 6448, com.nuvio.tv.core.anime.KitsuAnimeEpisodes("Hunter x Hunter (2011)", 2011,
+                mapOf(68 to com.nuvio.tv.core.anime.KitsuAnimeEpisode(106287, 1, 68)))
+        )?.episodes?.get(68))
+        val mal = mockk<MalMetadataService>()
+        val mappings = mockk<NativeAnimeEpisodeMappings>()
+        coEvery { mappings.proof("kitsu:6448:68", any()) } returns proof
+        val media = ExpressMetadataResolver(ExpressHttpClient(), mockk(), mal, mappings)
+            .resolve(ExpressMediaRequest("anime", "kitsu:6448:68", 2, 10))
+        assertSame(proof, media.nativeAnimeEpisode)
+        assertFalse(media.hasMappedEpisodeCoordinates)
+        assertEquals("68", media.variables()["catalogEpisode"])
+        assertEquals("2011", media.variables()["year"])
+        for (field in listOf("season", "episode", "episodeCode", "absoluteNumber", "tvdbEpisode", "imdbId")) {
+            assertNull(field, media.variables()[field])
+        }
+        val adapter = ExpressAddonAdapter(ExpressHttpClient(), ExpressMetadataSource { media }, { 0L })
+        val provider = parseExpressObject("""{"base_url":"https://example.test/search","anime":{"query":"?q={query}","keywords":"{title} {absoluteNumber}"}}""")
+        assertEquals(listOf("Hunter x Hunter 2011 68"),
+            adapter.providerQueries(provider, media).map { it.toHttpUrl().queryParameter("q") })
+        assertTrue(media.acceptsNativeAnimeRow(ExpressRow("Hunter x Hunter (2011) - 68", null, null, HASH)))
+        assertFalse(media.acceptsNativeAnimeRow(ExpressRow("Hunter x Hunter (1999) - 68", null, null, HASH)))
+        assertFalse(media.acceptsNativeAnimeRow(ExpressRow("Hunter x Hunter (2011) - 67", null, null, HASH)))
+        assertFalse(media.acceptsNativeAnimeRow(ExpressRow("Hunter x Hunter (2011) - 68", null, null, HASH,
+            filename = "Hunter x Hunter (2011) S01E68.mkv")))
+        provider.getAsJsonObject("anime").addProperty("query", "by-episode/{absoluteNumber}?q={query}")
+        assertTrue(adapter.providerQueries(provider, media).isEmpty())
+        coVerify(exactly = 0) { mal.sourceMetadata(any()) }
+        coVerify(exactly = 1) { mappings.proof("kitsu:6448:68", any()) }
+    }
+
+    @Test fun `Kitsu episode fallback uses title and scoped episode only in text searches`() = runTest {
+        val proof = requireNotNull(com.nuvio.tv.core.anime.NativeAnimeEpisodeProof.fromKitsu(
+            63367, 50497, com.nuvio.tv.core.anime.KitsuAnimeEpisodes("Dragon Ball Super: Beerus", 2026,
+                mapOf(1 to com.nuvio.tv.core.anime.KitsuAnimeEpisode(393369, 1)))
+        )?.episodes?.get(1))
+        val mal = mockk<MalMetadataService>()
+        coEvery { mal.sourceMetadata(63367) } returns MalSourceMetadata(63367,
+            "Dragon Ball Super: Beerus", 2026, "tv", 19)
+        val mappings = mockk<NativeAnimeEpisodeMappings>()
+        coEvery { mappings.proof("mal:63367:1", any()) } returns proof
+        val media = ExpressMetadataResolver(ExpressHttpClient(), mockk(), mal, mappings)
+            .resolve(ExpressMediaRequest("series", "mal:63367:1", 1, 1))
+        assertFalse(media.hasMappedEpisodeCoordinates)
+        assertEquals("1", media.variables()["catalogEpisode"])
+        for (field in listOf("absoluteNumber", "episodeCode", "tvdbEpisode", "imdbId"))
+            assertNull(field, media.variables()[field])
+        val adapter = ExpressAddonAdapter(ExpressHttpClient(), ExpressMetadataSource { media }, { 0L })
+        val provider = parseExpressObject("""{"base_url":"https://example.test/search","anime":{"query":"?q={query}","keywords":"{title} {absoluteNumber}"}}""")
+        assertEquals(listOf("Dragon Ball Super: Beerus 2026 1"),
+            adapter.providerQueries(provider, media).map { it.toHttpUrl().queryParameter("q") })
+        provider.getAsJsonObject("anime").addProperty("query", "by-episode/{absoluteNumber}?q={query}")
+        assertTrue(adapter.providerQueries(provider, media).isEmpty())
+    }
+
     @Test fun `verified release absolute never changes raw MAL progress identity`() = runTest {
         val metadata = MalMetadataService.toMeta(MalAnime(59978, "Sousou no Frieren 2nd Season", totalEpisodes = 10, mediaType = "tv"))
         val raw = metadata.videos.first()

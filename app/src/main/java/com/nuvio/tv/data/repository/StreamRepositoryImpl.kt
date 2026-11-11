@@ -314,7 +314,7 @@ class StreamRepositoryImpl @Inject constructor(
                         try {
                             requireCurrentSourceConfiguration(sourceConfiguration)
                             if (expressAdapter?.isExpress(addon) == true) {
-                                val seen = mutableSetOf<String>()
+                                val seen = mutableSetOf<Pair<String, String?>>()
                                 expressAdapter.searchProgressively(addon, ExpressMediaRequest(type, videoId, season, episode))
                                     .collect { update ->
                                         requireCurrentSourceConfiguration(sourceConfiguration)
@@ -589,7 +589,7 @@ class StreamRepositoryImpl @Inject constructor(
             episodeRequest = episodeRequest)
 
     private fun mergeStreams(existing: List<Stream>, incoming: List<Stream>): List<Stream> {
-        val streamsByKey = LinkedHashMap<String, Stream>()
+        val streamsByKey = LinkedHashMap<Pair<String, String?>, Stream>()
         existing.forEach { stream -> streamsByKey[stream.dedupKey()] = stream }
         incoming.forEach { stream -> streamsByKey[stream.dedupKey()] = stream }
         return streamsByKey.values.toList()
@@ -703,7 +703,7 @@ class StreamRepositoryImpl @Inject constructor(
         )
     }
 
-    private fun Stream.dedupKey(): String {
+    private fun Stream.dedupKey(): Pair<String, String?> {
         val base = infoHash?.lowercase()?.let { hash -> "$hash:${fileIdx ?: ""}" }
             ?: clientResolve?.infoHash?.lowercase()?.let { hash -> "$hash:${clientResolve.fileIdx}" }
             ?: url
@@ -715,7 +715,7 @@ class StreamRepositoryImpl @Inject constructor(
             val discriminator = name?.takeIf { it.isNotBlank() }
             if (discriminator != null) "|$discriminator" else ""
         } else ""
-        return "$base$nameSuffix"
+        return "$base$nameSuffix" to nativeKitsuProofCacheKey
     }
 
     /**

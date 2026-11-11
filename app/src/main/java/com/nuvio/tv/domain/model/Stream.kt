@@ -37,7 +37,9 @@ data class Stream(
     /** Native, short-lived account observations. Add-on cache claims never populate this field. */
     val nativeDebridAvailability: List<StreamDebridCacheStatus> = emptyList(),
     /** Native resolver winner for display only; this field never authorizes a playback URL. */
-    val nativeResolvedProviderId: String? = null
+    val nativeResolvedProviderId: String? = null,
+    /** Set only by native Express search after verifying the exact Kitsu mapping. */
+    @Transient internal val nativeKitsuProofCacheKey: String? = null
 ) {
     /**
      * Returns the primary stream source URL
@@ -182,6 +184,10 @@ data class Stream(
         append(quality ?: "")
         append('\u0000')
         append(sources.orEmpty().joinToString("|"))
+        nativeKitsuProofCacheKey?.let {
+            append('\u0000')
+            append(it)
+        }
     }
 }
 

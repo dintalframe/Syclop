@@ -95,6 +95,7 @@ import com.nuvio.tv.core.debrid.DirectDebridFailureReason
 import com.nuvio.tv.core.streams.StreamBadgePlacement
 import com.nuvio.tv.core.streams.StreamBadgeSettings
 import com.nuvio.tv.data.local.PlayerPreference
+import com.nuvio.tv.domain.model.SourceSearchReason
 import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.ui.components.SourceChipItem
 import com.nuvio.tv.ui.components.SourceChipStatus
@@ -180,6 +181,7 @@ fun StreamScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     var focusedStreamIndex by rememberSaveable { mutableStateOf(0) }
+    var selectedStreamKey by rememberSaveable { mutableStateOf<String?>(null) }
     var restoreFocusedStream by rememberSaveable { mutableStateOf(false) }
     var pendingRestoreOnResume by rememberSaveable { mutableStateOf(false) }
     var showPlayerChoiceDialog by remember { mutableStateOf(false) }
@@ -510,17 +512,9 @@ fun StreamScreen(
                             }
                         }
                     },
-                    onStreamSelected = { stream ->
-                        val currentIndex = uiState.filteredStreams.indexOfFirst {
-                            it.url == stream.url &&
-                                it.infoHash == stream.infoHash &&
-                                it.ytId == stream.ytId &&
-                                it.serverTarget == stream.serverTarget &&
-                                it.addonName == stream.addonName
-                        }
-                        if (currentIndex >= 0) {
-                            focusedStreamIndex = currentIndex
-                        }
+                    onStreamSelected = { stream, key, index ->
+                        focusedStreamIndex = index
+                        selectedStreamKey = key
                         scope.coroutineLaunch {
                             val playbackInfo = viewModel.resolveAutomaticStreamForPlayback(stream)
                             if (playbackInfo != null) {
@@ -531,6 +525,7 @@ fun StreamScreen(
                         }
                     },
                     focusedStreamIndex = focusedStreamIndex,
+                    selectedStreamKey = selectedStreamKey,
                     shouldRestoreFocusedStream = restoreFocusedStream,
                     onRestoreFocusedStreamHandled = {
                         restoreFocusedStream = false
@@ -798,8 +793,9 @@ internal fun RightStreamSection(
     sharedStream: SharedStream?,
     partySource: PartySource?,
     onSharedStreamSelected: (Stream) -> Unit,
-    onStreamSelected: (Stream) -> Unit,
+    onStreamSelected: (stream: Stream, key: String, index: Int) -> Unit,
     focusedStreamIndex: Int,
+    selectedStreamKey: String? = null,
     shouldRestoreFocusedStream: Boolean,
     onRestoreFocusedStreamHandled: () -> Unit,
     onRetry: () -> Unit,
@@ -832,6 +828,24 @@ internal fun RightStreamSection(
     val firstStreamKey = streams.firstOrNull()?.stableKey(0)
     val searchDiagnosticSummary = remember(searchDiagnostics) {
         com.nuvio.tv.domain.model.SourceSearchDiagnostics.combine(searchDiagnostics)
+    }
+    val isWaitingForSources = streams.isEmpty() && (searchDiagnostics.any { !it.complete } ||
+        (error == null && sourceChips.any { chip ->
+            chip.status == SourceChipStatus.LOADING && (selectedAddonFilter == null || chip.name == selectedAddonFilter)
+        }))
+    val searchReasons = searchDiagnosticSummary.counts
+    val sourceListError = when {
+        error != null -> error
+        streams.isNotEmpty() || hiddenByPreferencesCount > 0 || !searchDiagnosticSummary.complete ||
+            sourceResolutionFailure != null -> null
+        searchReasons.getOrDefault(SourceSearchReason.MISSING_MAPPING, 0) > 0 ->
+            stringResource(R.string.source_anime_mapping_missing)
+        searchReasons.getOrDefault(SourceSearchReason.ANIME_METADATA_FAILED, 0) > 0 ->
+            stringResource(R.string.source_anime_catalog_failed)
+        searchReasons.getOrDefault(SourceSearchReason.REQUEST_BUDGET, 0) > 0 ->
+            stringResource(R.string.source_search_request_limit)
+        searchDiagnosticSummary.hasProviderSearchIssue -> stringResource(R.string.source_search_providers_incomplete)
+        else -> null
     }
     val refreshFocusRequester = remember { FocusRequester() }
     val repairFocusRequester = remember { FocusRequester() }
@@ -1006,12 +1020,6 @@ internal fun RightStreamSection(
                     Text(stringResource(if (showSearchDetails) R.string.source_hide_search_details else R.string.source_search_details),
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
                 }
-                if (streams.isEmpty() && !isLoading &&
-                    (searchDiagnosticSummary.counts[com.nuvio.tv.domain.model.SourceSearchReason.MISSING_MAPPING] ?: 0) > 0) {
-                    Text(text = stringResource(R.string.source_anime_mapping_missing),
-                        style = MaterialTheme.typography.bodyMedium, color = Color.White,
-                        modifier = Modifier.padding(horizontal = NuvioTheme.spacing.sm, vertical = NuvioTheme.spacing.xs))
-                }
                 if (showSearchDetails) {
                     Text(text = stringResource(R.string.syclop_debrid_playback_path),
                         style = MaterialTheme.typography.labelMedium, color = Color.White,
@@ -1034,12 +1042,12 @@ internal fun RightStreamSection(
                     contentAlignment = Alignment.Center
                 ) {
                     when {
-                        sharedStream == null && (isLoading || (streams.isEmpty() && searchDiagnostics.any { !it.complete })) -> {
+                        sharedStream == null && (isLoading || isWaitingForSources) -> {
                             LoadingState()
                         }
-                        sharedStream == null && error != null -> {
+                        sharedStream == null && sourceListError != null -> {
                             ErrorState(
-                                message = error,
+                                message = sourceListError,
                                 onRetry = onRetry
                             )
                         }
@@ -1055,6 +1063,7 @@ internal fun RightStreamSection(
                                 onSharedStreamSelected = onSharedStreamSelected,
                                 onStreamSelected = onStreamSelected,
                                 focusedStreamIndex = focusedStreamIndex,
+                                selectedStreamKey = selectedStreamKey,
                                 shouldRestoreFocusedStream = shouldRestoreFocusedStream,
                                 onRestoreFocusedStreamHandled = onRestoreFocusedStreamHandled,
                                 firstStreamFocusRequestId = firstStreamFocusRequestId,
@@ -1187,8 +1196,9 @@ private fun StreamsList(
     sharedStream: SharedStream?,
     partySource: PartySource?,
     onSharedStreamSelected: (Stream) -> Unit,
-    onStreamSelected: (Stream) -> Unit,
+    onStreamSelected: (stream: Stream, key: String, index: Int) -> Unit,
     focusedStreamIndex: Int = 0,
+    selectedStreamKey: String? = null,
     shouldRestoreFocusedStream: Boolean = false,
     onRestoreFocusedStreamHandled: () -> Unit = {},
     firstStreamFocusRequestId: Int = 0,
@@ -1209,7 +1219,6 @@ private fun StreamsList(
 ) {
     val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     val lastKeyRepeatDispatchRef = remember { java.util.concurrent.atomic.AtomicLong(0L) }
-    val restoreFocusRequester = remember { FocusRequester() }
     val streamListState = rememberLazyListState()
     val streamKeys = remember(streams) {
         val seen = mutableMapOf<String, Int>()
@@ -1234,9 +1243,10 @@ private fun StreamsList(
     var focusedStreamKey by remember { mutableStateOf<String?>(null) }
     val prevStreamKeysRef = remember { mutableStateOf(streamKeys) }
 
-    LaunchedEffect(streamKeys) {
+    LaunchedEffect(streamKeys, shouldRestoreFocusedStream) {
         val prevKeys = prevStreamKeysRef.value
         prevStreamKeysRef.value = streamKeys
+        if (shouldRestoreFocusedStream) return@LaunchedEffect
         val key = focusedStreamKey
         if (key != null && prevKeys !== streamKeys) {
             val oldIndex = prevKeys.indexOf(key)
@@ -1284,19 +1294,21 @@ private fun StreamsList(
         }
     }
 
-    LaunchedEffect(shouldRestoreFocusedStream, focusedStreamIndex, streams.size) {
+    val hasSharedRow = sharedStream != null
+    LaunchedEffect(shouldRestoreFocusedStream, focusedStreamIndex, selectedStreamKey, streamKeys, hasSharedRow) {
         if (!shouldRestoreFocusedStream) return@LaunchedEffect
-        val targetIndex = sourceSelectionRestoreTarget(focusedStreamIndex, streams.size)
+        val targetIndex = sourceSelectionRestoreTarget(focusedStreamIndex, selectedStreamKey, streamKeys)
         if (targetIndex == null) {
             onRestoreFocusedStreamHandled()
             return@LaunchedEffect
         }
+        val targetKey = streamKeys[targetIndex]
+        val listIndex = if (hasSharedRow) targetIndex + 1 else targetIndex
         repeat(2) { withFrameNanos { } }
-        try {
-            streamListState.scrollToItem(targetIndex)
+        streamListState.scrollToItem(listIndex)
+        for (attempt in 1..3) {
             withFrameNanos { }
-            restoreFocusRequester.requestFocus()
-        } catch (_: Exception) {
+            if (runCatching { streamFocusRequesters[targetKey]?.requestFocus() }.getOrNull() == true) break
         }
         onRestoreFocusedStreamHandled()
     }
@@ -1400,10 +1412,9 @@ private fun StreamsList(
                     badgePlacement = badgePlacement,
                     reserveBadgeSpace = hasBadgeRules && stream.badges.isEmpty(),
                     label = partySourceLabel.takeIf { isPartySource },
-                    onClick = { onStreamSelected(stream) },
-                    focusRequester = when {
-                        shouldRestoreFocusedStream && index == focusedStreamIndex.coerceIn(0, (streams.lastIndex).coerceAtLeast(0)) -> restoreFocusRequester
-                        else -> streamFocusRequesters.getOrPut(streamKeys[index]) { /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester() }
+                    onClick = { onStreamSelected(stream, streamKeys[index], index) },
+                    focusRequester = streamFocusRequesters.getOrPut(streamKeys[index]) {
+                        /* The remembered map preserves identity. */ @Suppress("RememberInComposition") FocusRequester()
                     },
                     onFocusChanged = { focused ->
                         if (focused) {

@@ -66,10 +66,8 @@ class SearchViewModel @Inject constructor(
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
     /** Saved focus state for restoring scroll/focus position after returning from details. */
-    var savedFocusRowKey: String? = null
-    var savedFocusItemIndex: Int = -1
+    internal var savedResultFocus: SearchResultFocus? = null
     var savedRowScrollPositions: Map<String, Pair<Int, Int>> = emptyMap()
-    var hasSavedSearchFocus: Boolean = false
 
     private val _watchedMovieIds = MutableStateFlow<Set<String>>(emptySet())
     val watchedMovieIds: StateFlow<Set<String>> = _watchedMovieIds.asStateFlow()

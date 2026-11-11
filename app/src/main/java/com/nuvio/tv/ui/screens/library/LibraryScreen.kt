@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -135,6 +136,7 @@ fun LibraryScreen(
     onCloudPlaybackResolved: (CloudLibraryPlaybackInfo) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val activeProfileId by viewModel.activeProfileId.collectAsState()
     val watchedMovieIds by viewModel.watchedMovieIds.collectAsState()
     val watchedSeriesIds by viewModel.watchedSeriesIds.collectAsState()
     val activityContext = LocalContext.current
@@ -150,22 +152,33 @@ fun LibraryScreen(
     var activeCloudItem by remember { mutableStateOf<CloudLibraryItem?>(null) }
     var pendingCloudPlayback by remember { mutableStateOf<CloudLibraryPlaybackInfo?>(null) }
     var showCloudPlayerChoice by remember { mutableStateOf(false) }
-    val primaryFocusRequester = remember { FocusRequester() }
-    val selectorFocusRequester = remember { FocusRequester() }
-    val gridState = rememberLazyGridState()
-    var pendingPrimaryFocus by remember { mutableStateOf(true) }
+    val primaryFocusRequester = remember(activeProfileId) { FocusRequester() }
+    val selectorFocusRequester = remember(activeProfileId) { FocusRequester() }
+    val gridState = key(activeProfileId) { rememberLazyGridState() }
+    var pendingPrimaryFocus by remember(activeProfileId) { mutableStateOf(true) }
     var serverFocusTarget by remember {
         mutableStateOf(serversViewModel.focusedShelfKey?.let { key -> serversViewModel.focusedIndexes[key]?.let { key to it } })
     }
     var lastFocusedPosterKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastFocusedPosterIndex by rememberSaveable { mutableStateOf(0) }
+    var lastFocusedPosterScope by rememberSaveable { mutableStateOf<String?>(null) }
+    val savedPosterScope = "$activeProfileId:${uiState.sourceMode.name}:${uiState.selectedListKey.orEmpty()}"
+    val showSavedListActions = uiState.listManagement != null && uiState.isTrackingAuthenticated
     val visibleItemKeys = remember(uiState.visibleItems) {
         uiState.visibleItems.map { "${it.type}:${it.id}" }
     }
     val visibleItemIndexByKey = remember(visibleItemKeys) {
         visibleItemKeys.withIndex().associate { (index, key) -> key to index }
     }
-    val posterFocusRequesters = remember(visibleItemKeys) {
+    val posterFocusRequesters = remember(activeProfileId, visibleItemKeys) {
         visibleItemKeys.associateWith { FocusRequester() }
+    }
+    fun recordSavedPosterFocus(key: String) {
+        if (viewModel.activeProfileId.value != activeProfileId) return
+        val index = visibleItemIndexByKey[key] ?: return
+        lastFocusedPosterKey = key
+        lastFocusedPosterIndex = index
+        lastFocusedPosterScope = savedPosterScope
     }
     val layoutDirection = LocalLayoutDirection.current
     val firstVisiblePosterKey = visibleItemKeys.firstOrNull()
@@ -213,50 +226,38 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(uiState.isLoading, uiState.sourceMode, uiState.listTabs.size) {
-        if (!uiState.isLoading && pendingPrimaryFocus && viewMode == LibraryViewMode.Servers && serverFocusTarget != null) {
+    LaunchedEffect(uiState.isLoading, viewMode, savedPosterScope, visibleItemKeys, showSavedListActions, uiState.listTabs.size) {
+        if (uiState.isLoading || !pendingPrimaryFocus) return@LaunchedEffect
+        if (viewMode == LibraryViewMode.Servers && serverFocusTarget != null) {
             pendingPrimaryFocus = false
+            return@LaunchedEffect
         }
-        if (!uiState.isLoading && pendingPrimaryFocus) {
-            val restoreKey = lastFocusedPosterKey
-            val restoreIndex = restoreKey?.let { visibleItemIndexByKey[it] }
-            val restoreRequester = restoreKey?.let { posterFocusRequesters[it] }
-
-            var focused = false
-            if (restoreIndex != null && restoreRequester != null) {
-                if (gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) {
-                    runCatching { gridState.scrollToItem(restoreIndex) }
-                }
-                focused = runCatching { restoreRequester.requestFocus() }.isSuccess
-                if (!focused) {
-                    delay(16)
-                    focused = runCatching { restoreRequester.requestFocus() }.isSuccess
-                }
-            }
-
-            if (!focused) {
-                focused = runCatching { primaryFocusRequester.requestFocus() }.isSuccess
-            }
-            if (!focused) {
-                delay(16)
-                runCatching { primaryFocusRequester.requestFocus() }
-            }
-            pendingPrimaryFocus = false
+        val restoreKey = lastFocusedPosterKey.takeIf {
+            viewMode == LibraryViewMode.Saved && lastFocusedPosterScope == savedPosterScope
         }
+        val target = restoreKey?.let {
+            savedLibraryPosterTarget(visibleItemKeys, it, lastFocusedPosterIndex, showSavedListActions)
+        }
+        if (target != null && restoreSavedLibraryPoster(gridState, target, posterFocusRequesters.getValue(target.key))) {
+            recordSavedPosterFocus(target.key)
+        } else {
+            if (viewMode == LibraryViewMode.Saved && gridState.layoutInfo.visibleItemsInfo.none { it.index == 1 }) {
+                gridState.scrollToItem(0)
+            }
+            primaryFocusRequester.requestFocusAfterFrames(frames = 1)
+        }
+        pendingPrimaryFocus = false
     }
 
-    LaunchedEffect(uiState.sortSelectionVersion, firstVisiblePosterKey) {
-        if (uiState.sortSelectionVersion <= 0L) return@LaunchedEffect
+    var handledSortVersion by remember(activeProfileId) { mutableStateOf(uiState.sortSelectionVersion) }
+    LaunchedEffect(viewMode, uiState.sortSelectionVersion, firstVisiblePosterKey) {
+        if (viewMode != LibraryViewMode.Saved || uiState.sortSelectionVersion <= handledSortVersion) return@LaunchedEffect
         val targetKey = firstVisiblePosterKey ?: return@LaunchedEffect
-        runCatching { gridState.scrollToItem(0) }
-        var focused = false
-        repeat(6) {
-            focused = posterFocusRequesters[targetKey]
-                ?.let { requester -> runCatching { requester.requestFocus() }.isSuccess }
-                ?: false
-            if (focused) return@LaunchedEffect
-            delay(24)
-        }
+        val target = savedLibraryPosterTarget(visibleItemKeys, targetKey, 0, showSavedListActions)
+            ?: return@LaunchedEffect
+        gridState.scrollToItem(0)
+        restoreSavedLibraryPoster(gridState, target, posterFocusRequesters.getValue(target.key))
+        handledSortVersion = uiState.sortSelectionVersion
     }
 
     if (uiState.isLoading) {
@@ -304,12 +305,16 @@ fun LibraryScreen(
             .fillMaxSize()
             .background(NuvioTheme.colors.Background)
             .focusRestorer {
-                val lastKey = lastFocusedPosterKey
-                (if (lastKey != null && lastKey in posterFocusRequesters) {
-                    posterFocusRequesters[lastKey]
+                if (viewMode != LibraryViewMode.Saved) {
+                    FocusRequester.Default
                 } else {
-                    posterFocusRequesters[firstVisibleCardKey]
-                }) ?: FocusRequester()
+                    val lastKey = lastFocusedPosterKey.takeIf { lastFocusedPosterScope == savedPosterScope }
+                    val visible = gridState.layoutInfo.visibleItemsInfo
+                    sequenceOf(lastKey, firstVisibleCardKey).filterNotNull()
+                        .firstNotNullOfOrNull { key ->
+                            posterFocusRequesters[key]?.takeIf { visible.any { item -> item.key == key } }
+                        } ?: FocusRequester.Default
+                }
             }
             .onPreviewKeyEvent { event ->
                 val native = event.nativeKeyEvent
@@ -441,7 +446,7 @@ fun LibraryScreen(
                 )
             }
 
-            if (uiState.listManagement != null && uiState.isTrackingAuthenticated) {
+            if (showSavedListActions) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     LibraryActionsRow(
                         pending = uiState.pendingOperation,
@@ -493,17 +498,17 @@ fun LibraryScreen(
                     focusRequester = posterFocusRequesters[focusKey],
                     showLabel = true,
                     onFocused = {
-                        lastFocusedPosterKey = focusKey
+                        if (!pendingPrimaryFocus) recordSavedPosterFocus(focusKey)
                         viewModel.prefetchMetaOnFocus(item.id, item.type)
                     },
                     onClick = {
-                        lastFocusedPosterKey = focusKey
+                        recordSavedPosterFocus(focusKey)
                         val backdrop = viewModel.getCachedBackdrop(item.id, item.type)
                         HeroBackdropState.update(backdrop)
                         onNavigateToDetail(item.id, item.type, item.addonBaseUrl)
                     },
                     onLongPress = {
-                        lastFocusedPosterKey = focusKey
+                        recordSavedPosterFocus(focusKey)
                         viewModel.posterOptions.show(previewForLongPress, item.addonBaseUrl)
                     }
                 )

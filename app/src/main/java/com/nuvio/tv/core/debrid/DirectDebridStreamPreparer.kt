@@ -42,7 +42,7 @@ class DirectDebridStreamPreparer @Inject constructor(
         if (!settings.canResolvePlayableLinks || limit <= 0) return
 
         val candidates = prioritizeCandidates(
-            streams = streams,
+            streams = streams.filterNot { it.requiresKitsuEpisodeProof(nativeVideoId) },
             limit = limit,
             playerSettings = playerSettings,
             installedAddonNames = installedAddonNames
@@ -133,7 +133,7 @@ class DirectDebridStreamPreparer @Inject constructor(
         return groups.map { group ->
             var changed = false
             val updatedStreams = group.streams.map { stream ->
-                if (stream.preparationKey() == key) {
+                if (stream.nativeKitsuProofCacheKey == original.nativeKitsuProofCacheKey && stream.preparationKey() == key) {
                     changed = true
                     prepared.copy(
                         addonName = stream.addonName,

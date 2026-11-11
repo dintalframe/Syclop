@@ -18,6 +18,7 @@ class NativeAnimeTitleIdentity private constructor(
     private val titles: Set<String> = Collections.unmodifiableSet(LinkedHashSet(normalizedTitles))
     private val searchTitles: List<String> = Collections.unmodifiableList(ArrayList(queryTitles))
     private val trustedYears: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(years))
+    internal val verifiedReleaseYear: Int? get() = trustedYears.singleOrNull()
     internal val fingerprint: String = MessageDigest.getInstance("SHA-256")
         .digest(("native-anime-title-v2|$malId|${trustedYears.sorted().joinToString(",")}|" + titles.sorted().joinToString("|") { "${it.length}:$it" })
             .toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
@@ -33,7 +34,7 @@ class NativeAnimeTitleIdentity private constructor(
     }
 
     /** Complete mode is reserved for the independently episode-bound parent title. */
-    internal fun matchRelease(value: String, complete: Boolean = false): Match {
+    internal fun matchRelease(value: String, complete: Boolean = false, strictEdition: Boolean = false): Match {
         if (value.isBlank() || value.length > MAX_RELEASE || value.any(Char::isISOControl)) return Match.NO_MATCH
         val normalized = Normalizer.normalize(value, Normalizer.Form.NFKC)
         if (normalized.length > MAX_RELEASE * 4) return Match.NO_MATCH
@@ -42,10 +43,7 @@ class NativeAnimeTitleIdentity private constructor(
         // Keep original positions while masking balanced groups. A leading release group may
         // contain an episode number, but a later episode label cannot make its appended subtitle
         // establish the franchise (including a parenthesized SxxEyy/E label).
-        val firstVisibleToken = visibleTitle.indexOfFirst(Char::isLetterOrDigit)
-        val boundary = episodeLabel.findAll(basename).firstOrNull { match ->
-            visibleTitle[match.range.first] != ' ' || (firstVisibleToken >= 0 && firstVisibleToken < match.range.first)
-        }?.range?.first
+        val boundary = episodeBoundary(basename, visibleTitle)
         val end = boundary ?: basename.length
         val tokens = positionedWords.findAll(visibleTitle.substring(0, end)).toList()
         val releaseWords = tokens.map { normalize(it.value) }
@@ -56,6 +54,9 @@ class NativeAnimeTitleIdentity private constructor(
                 if (releaseWords[start] != family.first()) continue
                 if (releaseWords.subList(start, start + family.size) != family) continue
                 var suffix = tokens[start + family.size - 1].range.last + 1
+                if (strictEdition && editionMarker.findAll(basename).any {
+                    it.range.first < tokens[start].range.first || it.range.last >= suffix
+                }) continue
                 val releaseYears = linkedSetOf<Int>()
                 while (suffix < end) {
                     val qualifier = adjoiningYear.find(basename.substring(suffix, end)) ?: break
@@ -72,6 +73,14 @@ class NativeAnimeTitleIdentity private constructor(
         return result
     }
 
+    internal fun scopedEpisodeSuffix(value: String, requireYear: Boolean): String? {
+        val match = matchRelease(value, complete = true, strictEdition = true)
+        if (!match.accepted || (requireYear && match != Match.SUPPORTED_YEAR)) return null
+        val basename = Normalizer.normalize(value, Normalizer.Form.NFKC).replace('\\', '/').substringAfterLast('/')
+        val visible = outsideBrackets(basename) ?: return null
+        return episodeBoundary(basename, visible)?.let(basename::substring)
+    }
+
     override fun toString(): String = "NativeAnimeTitleIdentity(validated=true)"
 
     companion object {
@@ -81,6 +90,7 @@ class NativeAnimeTitleIdentity private constructor(
         private val positionedWords = Regex("[\\p{L}\\p{N}]+(?:['\u2019\u02bc][\\p{L}\\p{N}]+)*")
         private val apostrophe = Regex("['\u2019\u02bc]")
         private val episodeLabel = Regex("(?<![a-z0-9])(?:s[0-9]{1,3}[ ._-]*e[0-9]{1,5}|[0-9]{1,3}x[0-9]{1,5}|e[0-9]{1,5}|-\\s*[0-9]{1,5})(?![a-z0-9])", RegexOption.IGNORE_CASE)
+        private val editionMarker = Regex("(?<![a-z0-9])(?:(?:season|part|cour|s)[ ._-]*[0-9]{1,3}|[0-9]{1,3}(?:st|nd|rd|th)?[ ._-]+(?:season|part|cour))(?![a-z0-9])", RegexOption.IGNORE_CASE)
         private val terminalYear = Regex("\\s*\\((?:19|20)[0-9]{2}\\)$")
         private val plainTerminalYear = Regex("[ ._-]+((?:19|20)[0-9]{2})$")
         // Match punctuation discarded by title tokenization, without crossing words or an
@@ -91,7 +101,8 @@ class NativeAnimeTitleIdentity private constructor(
             "anime", "animation", "show", "series", "season", "episode", "movie", "tv", "part", "ova", "ona", "special")
 
         /** Internal only: caller must supply titles from its validated exact-MAL metadata. */
-        internal fun create(malId: Long, canonical: String, aliases: List<String>): NativeAnimeTitleIdentity? {
+        internal fun create(malId: Long, canonical: String, aliases: List<String>,
+            preserveEdition: Boolean = false): NativeAnimeTitleIdentity? {
             if (malId !in 1..Int.MAX_VALUE.toLong() || aliases.size > 127) return null
             val variants = linkedSetOf<String>()
             val queryCandidates = linkedMapOf<String, String>()
@@ -104,13 +115,14 @@ class NativeAnimeTitleIdentity private constructor(
                 // Only explicit terminal season notation or a parenthesized release year
                 // is removed. No colon-prefix, arbitrary number/token subset or fuzzy match.
                 val withoutYear = terminalYear.replace(title, "").trim()
-                val searchTitle = terminalSeason.replace(withoutYear, "").trim()
+                val searchTitle = if (preserveEdition) withoutYear else terminalSeason.replace(withoutYear, "").trim()
                 if (meaningful(normalize(withoutYear))) {
                     validTitles += title
                     terminalYear.find(title)?.value?.filter(Char::isDigit)?.toIntOrNull()?.let(years::add)
                 }
-                for (variant in listOf(title, withoutYear, terminalSeason.replace(title, ""),
-                    terminalSeason.replace(withoutYear, ""))) {
+                val spellings = if (preserveEdition) listOf(title, withoutYear)
+                    else listOf(title, withoutYear, terminalSeason.replace(title, ""), searchTitle)
+                for (variant in spellings) {
                     val normalized = normalize(variant)
                     if (!meaningful(normalized)) continue
                     variants += normalized
@@ -153,6 +165,13 @@ class NativeAnimeTitleIdentity private constructor(
         private fun normalize(value: String): String = words.findAll(apostrophe.replace(
             Normalizer.normalize(value, Normalizer.Form.NFKC).lowercase(Locale.ROOT), ""))
             .joinToString(" ") { it.value }
+
+        private fun episodeBoundary(basename: String, visible: String): Int? {
+            val firstVisible = visible.indexOfFirst(Char::isLetterOrDigit)
+            return episodeLabel.findAll(basename).firstOrNull {
+                visible[it.range.first] != ' ' || (firstVisible >= 0 && firstVisible < it.range.first)
+            }?.range?.first
+        }
 
         private fun outsideBrackets(value: String): String? {
             val stack = ArrayDeque<Char>()

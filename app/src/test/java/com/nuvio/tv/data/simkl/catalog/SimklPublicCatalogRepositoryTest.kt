@@ -1,7 +1,9 @@
 package com.nuvio.tv.data.simkl.catalog
 
 import android.content.Context
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
 import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.data.mal.MalAnime
 import com.nuvio.tv.data.mal.MalMetadataService
 import com.nuvio.tv.data.remote.api.AddonApi
 import com.nuvio.tv.data.remote.dto.MetaResponseDto
@@ -27,6 +29,23 @@ import org.junit.Test
 import retrofit2.Response
 
 class SimklPublicCatalogRepositoryTest {
+    @Test fun `native MAL metadata reuses verified episode cache without doing a new lookup`() = runTest {
+        val id = "mal:100"
+        val meta = MalMetadataService.toMeta(MalAnime(100, "An airing title", mediaType = "tv"))
+        val mal = mockk<MalMetadataService>()
+        coEvery { mal.meta(id) } returns meta
+        every { mal.cachedMeta(id) } returns meta
+        val mappings = mockk<NativeAnimeEpisodeMappings> {
+            every { cachedEpisodeNumbers(id) } returns listOf(1, 3)
+        }
+        val repository = MetaRepositoryImpl(mockk<Context>(relaxed = true), mockk<AddonApi>(),
+            mockk(relaxed = true), mockk(relaxed = true), malMetadata = mal, animeMappings = mappings)
+        val loaded = repository.getMetaFromAllAddons("series", id).last() as NetworkResult.Success
+        assertEquals(listOf("$id:1", "$id:3"), loaded.data.videos.map { it.id })
+        assertEquals(loaded.data.videos, repository.getCachedMeta("series", id)?.videos)
+        coVerify(exactly = 0) { mappings.confirmedEpisodeNumbers(any()) }
+    }
+
     @Test fun `native MAL catalog detail stays exact MAL and never constructs a remote Simkl meta URL`() = runTest {
         val api = mockk<AddonApi>()
         val mal = mockk<MalMetadataService>()

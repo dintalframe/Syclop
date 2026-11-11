@@ -2,6 +2,8 @@ package com.nuvio.tv.core.debrid
 
 import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
 import com.nuvio.tv.core.anime.NativeAnimeMappingCodec
+import com.nuvio.tv.core.express.ExpressRow
+import com.nuvio.tv.core.express.toStream
 import com.nuvio.tv.core.streams.ServicePlaybackGrantRegistry
 import com.nuvio.tv.core.streams.ServicePlaybackOrigin
 import com.nuvio.tv.data.local.DebridSettingsDataStore
@@ -13,8 +15,11 @@ import io.mockk.*
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.*
 import org.junit.Test
 import retrofit2.Retrofit
@@ -264,7 +269,181 @@ class NativeMalDebridMappingIntegrationTest {
         }
     }
 
-    private class Harness : AutoCloseable {
+    @Test fun `verified Kitsu absolute file follows the exact episode through resolve cache and ready playback`() = runBlocking {
+        KitsuFixture().use { public ->
+            Harness(public.mappings).use { h ->
+                h.readyNamedPack(KITSU_FILE)
+                val selected = source().copy(title = KITSU_FILE)
+                val resolved = withTimeout(10_000) {
+                    h.resolver.resolveToPlayableStream(selected, 2, 10, nativeVideoId = KITSU, nativeMediaType = "anime")
+                }
+                assertTrue("Expected the verified Kitsu absolute file, got $resolved", resolved is DirectDebridPlayableResult.Success)
+                val ready = (resolved as DirectDebridPlayableResult.Success).stream
+                assertEquals(FILE, ready.url)
+                assertEquals(222L, ready.nativeFileMetadata?.selectedFileBytes)
+                assertTrue(h.resolver.isPlaybackAuthorized(FILE, 1, KITSU, 2, 10, "anime"))
+                assertFalse(h.resolver.isPlaybackAuthorized(FILE, 1))
+                assertEquals(DirectDebridPlayableResult.Stale, h.resolver.resolveToPlayableStream(ready, 2, 10))
+                assertFalse(h.resolver.isPlaybackAuthorized(FILE, 1, "kitsu:6448:67", 2, 9, "anime"))
+                assertFalse(h.resolver.isPlaybackAuthorized(FILE, 1, "mal:11061:68", 1, 68, "series"))
+                assertEquals(FILE, h.resolver.cachedPlayableStream(selected, 2, 10, KITSU, "anime")?.url)
+                assertNull(h.resolver.cachedPlayableStream(selected, 2, 10))
+                assertTrue(h.resolver.resolveToPlayableStream(ready, 2, 10, nativeVideoId = KITSU,
+                    nativeMediaType = "anime") is DirectDebridPlayableResult.Success)
+                assertEquals(5, h.rd.requestCount)
+                public.assertRequests()
+            }
+        }
+    }
+
+    @Test fun `Kitsu absolute resolution refuses wrong title episode and reboot in actual service file list`() = runBlocking {
+        val incorrect = listOf("Another Anime (2011) S02E10.mkv", "Hunter x Hunter (2011) - 67.mkv",
+            "Hunter x Hunter (1999) - 68.mkv")
+        for (filename in incorrect) KitsuFixture().use { public ->
+            Harness(public.mappings).use { h ->
+                h.readyNamedPack(filename)
+                val result = withTimeout(10_000) {
+                    h.resolver.resolve(source().copy(title = KITSU_FILE), 2, 10,
+                        nativeVideoId = KITSU, nativeMediaType = "anime")
+                }
+                assertEquals(filename, wrongDebridFile("realdebrid"), result)
+                assertEquals(2, h.rd.requestCount)
+                assertFalse(h.resolver.isPlaybackAuthorized(FILE, 1, KITSU, 2, 10, "anime"))
+                verify(exactly = 0) { h.grants.issue(FILE, "realdebrid", any()) }
+                public.assertRequests()
+            }
+        }
+    }
+
+    @Test fun `existing Kitsu S E release and scoped ready HTTPS keep ordinary resolution`() = runBlocking {
+        val filename = "Hunter x Hunter S02E10.mkv"
+        for (displayTitle in listOf(filename, KITSU_FILE)) Harness().use { h ->
+            h.readyNamedPack(filename)
+            val selected = source().copy(title = displayTitle, behaviorHints = source().behaviorHints!!.copy(filename = filename))
+            val result = withTimeout(10_000) {
+                h.resolver.resolveToPlayableStream(selected, 2, 10, nativeVideoId = KITSU, nativeMediaType = "anime")
+            } as DirectDebridPlayableResult.Success
+            assertEquals(FILE, result.stream.url)
+            assertTrue(h.resolver.isPlaybackAuthorized(FILE, 1, KITSU, 2, 10, "anime"))
+            assertTrue(h.resolver.resolveToPlayableStream(result.stream, 2, 10, nativeVideoId = KITSU,
+                nativeMediaType = "anime") is DirectDebridPlayableResult.Success)
+            assertEquals(5, h.rd.requestCount)
+            coVerify(exactly = 0) { h.mappings.proof(any(), any()) }
+        }
+    }
+
+    @Test fun `Express mapped Kitsu resolves the verified season episode and keeps its cache and grant bound`() = runBlocking {
+        KitsuFixture(mappedEpisode = true).use { public ->
+            Harness(public.mappings).use { h ->
+                val proof = requireNotNull(public.mappings.proof(KITSU))
+                assertEquals(2, proof.tvdbSeason)
+                assertEquals(10, proof.tvdbEpisode)
+                val selected = mappedExpressSource(proof.cacheKey)
+                val ordinary = selected.copy(nativeKitsuProofCacheKey = null)
+                assertNotEquals(selected.stableKey(), ordinary.stableKey())
+                val prepared = ordinary.copy(url = FILE)
+                val group = AddonStreams("Synthetic", null, listOf(selected, ordinary))
+                val replaced = DirectDebridStreamPreparer(h.store, h.resolver)
+                    .replacePreparedStream(listOf(group), ordinary, prepared)
+                assertEquals(listOf(selected, prepared), replaced.single().streams)
+                h.readyNamedPack(KITSU_MAPPED_FILE)
+
+                val result = withTimeout(10_000) {
+                    h.resolver.resolveToPlayableStream(selected, 2, 10, nativeVideoId = KITSU, nativeMediaType = "anime")
+                } as DirectDebridPlayableResult.Success
+                assertEquals(KITSU_MAPPED_FILE, result.stream.behaviorHints?.filename)
+                assertEquals(proof.cacheKey, result.stream.nativeKitsuProofCacheKey)
+                assertEquals(FILE, h.resolver.cachedPlayableStream(selected, 2, 10, KITSU, "anime")?.url)
+                assertTrue(h.resolver.isPlaybackAuthorized(FILE, 1, KITSU, 2, 10, "anime"))
+                assertFalse(h.resolver.isPlaybackAuthorized(FILE, 1, "kitsu:6448:67", 2, 9, "anime"))
+                assertEquals(DirectDebridPlayableResult.Stale, h.resolver.resolveToPlayableStream(result.stream, 2, 10))
+
+                val stale = selected.copy(nativeKitsuProofCacheKey = "0".repeat(64))
+                val facts = DebridBitrateMetadataService(h.resolver, h.store).enrichKnownFiles(listOf(selected, stale),
+                    1_000L, StreamDurationOrigin.CATALOG_EPISODE, 2, 10, 1, KITSU, "anime").single()
+                assertEquals(selected, facts.first)
+                assertEquals(222L, facts.second.nativeFileMetadata?.selectedFileBytes)
+                assertEquals(selected.url, facts.second.url)
+                assertNull(h.resolver.cachedPlayableStream(stale, 2, 10, KITSU, "anime"))
+                assertEquals(DirectDebridResolveResult.Stale,
+                    h.resolver.resolve(stale, 2, 10, nativeVideoId = KITSU, nativeMediaType = "anime"))
+                for (wrongId in listOf(null, "kitsu:6448:67", "mal:11061:68")) {
+                    assertNull(h.resolver.cachedPlayableStream(selected, 2, 10, wrongId, "anime"))
+                    assertEquals(DirectDebridResolveResult.Stale,
+                        h.resolver.resolve(selected, 2, 10, nativeVideoId = wrongId, nativeMediaType = "anime"))
+                }
+                assertEquals(5, h.rd.requestCount)
+                public.assertRequests()
+            }
+        }
+    }
+
+    @Test fun `Express mapped Kitsu refuses the wrong actual episode or final service filename`() = runBlocking {
+        val wrongEpisode = "Hunter x Hunter (2011) S02E09.mkv"
+        val wrongTitle = "Another Anime (2011) S02E10.mkv"
+        for ((listed, unlocked, requests) in listOf(
+            Triple(wrongEpisode, wrongEpisode, 2), Triple(wrongTitle, wrongTitle, 2),
+            Triple(KITSU_MAPPED_FILE, wrongTitle, 5)
+        )) KitsuFixture(mappedEpisode = true).use { public ->
+            Harness(public.mappings).use { h ->
+                val selected = mappedExpressSource(requireNotNull(public.mappings.proof(KITSU)).cacheKey)
+                h.readyNamedPack(listed, unlocked)
+
+                val result = withTimeout(10_000) {
+                    h.resolver.resolve(selected, 2, 10, nativeVideoId = KITSU, nativeMediaType = "anime")
+                }
+                assertEquals(wrongDebridFile("realdebrid"), result)
+                assertEquals(requests, h.rd.requestCount)
+                assertNull(h.resolver.cachedPlayableStream(selected, 2, 10, KITSU, "anime"))
+                assertFalse(h.resolver.isPlaybackAuthorized(FILE, 1, KITSU, 2, 10, "anime"))
+                verify(exactly = 0) { h.grants.issue(FILE, "realdebrid", any()) }
+                public.assertRequests()
+            }
+        }
+    }
+
+    private fun mappedExpressSource(proofCacheKey: String): Stream = requireNotNull(
+        ExpressRow(KITSU_MAPPED_FILE, null, null, HASH, filename = KITSU_MAPPED_FILE).toStream("Synthetic")
+    ).copy(nativeKitsuProofCacheKey = proofCacheKey)
+
+    private class KitsuFixture(mappedEpisode: Boolean = false) : AutoCloseable {
+        private val server = MockWebServer().apply {
+            dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse = when (request.requestUrl?.encodedPath) {
+                    "/api/edge/anime/6448" -> json(if (mappedEpisode) MAPPED_KITSU_METADATA else KITSU_METADATA)
+                    "/mappings" -> json(if (mappedEpisode) MAPPED_KITSU_CROSSWALK else KITSU_CROSSWALK)
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        private val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            check(request.url.host == "kitsu.io" || request.url.host == "api.ani.zip")
+            val local = server.url(request.url.encodedPath).newBuilder().encodedQuery(request.url.encodedQuery).build()
+            chain.proceed(request.newBuilder().url(local).build())
+        }.build()
+        val mappings = NativeAnimeEpisodeMappings(client, { System.nanoTime() / 1_000_000L })
+
+        fun assertRequests() {
+            assertEquals(2, server.requestCount)
+            val requests = List(2) { server.takeRequest() }
+            assertEquals(listOf("/api/edge/anime/6448", "/mappings"), requests.map { it.requestUrl?.encodedPath })
+            for (request in requests) {
+                assertEquals("GET", request.method)
+                assertNull(request.getHeader("Authorization"))
+                assertNull(request.getHeader("Cookie"))
+            }
+        }
+
+        override fun close() {
+            client.dispatcher.cancelAll()
+            client.connectionPool.evictAll()
+            client.dispatcher.executorService.shutdownNow()
+            server.close()
+        }
+    }
+
+    private class Harness(publicMappings: NativeAnimeEpisodeMappings? = null) : AutoCloseable {
         val rd = MockWebServer()
         val selection = AtomicLong(1L); val credentials = AtomicLong(1L)
         val profile = MutableStateFlow(1)
@@ -286,7 +465,7 @@ class NativeMalDebridMappingIntegrationTest {
             val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
             val api = Retrofit.Builder().baseUrl(rd.url("/")).addConverterFactory(MoshiConverterFactory.create(moshi)).build().create(RealDebridApi::class.java)
             resolver = DirectDebridResolver(store, mockk(), RealDebridDirectDebridResolver(store, api, RealDebridFileSelector()),
-                mockk(), mockk(), mockk(), CoroutineScope(job + Dispatchers.Unconfined), grants, mappings)
+                mockk(), mockk(), mockk(), CoroutineScope(job + Dispatchers.Unconfined), grants, publicMappings ?: mappings)
         }
         fun proof(id: Long) = NativeAnimeMappingCodec.parse("""{"titles":{"en":"Frieren"},"mappings":{"mal_id":$id,"thetvdb_id":424536},"episodeCount":10,"episodes":{"1":{"tvdbShowId":424536,"tvdbId":10719109,"seasonNumber":${if(id == 59978L) 2 else 1},"episodeNumber":1,"absoluteEpisodeNumber":${if(id == 59978L) 29 else 1},"episode":"1"}}}""", id)!!.episodes.getValue(1)
         fun bindYear(year: Int) {
@@ -325,6 +504,21 @@ class NativeMalDebridMappingIntegrationTest {
         StreamBehaviorHints(null, null, null, ProxyHeaders(mapOf("Authorization" to "provider-header"), null)), "Synthetic", null)
     private companion object {
         const val MAL = "mal:59978:1"
+        const val KITSU = "kitsu:6448:68"
+        const val KITSU_FILE = "Hunter x Hunter (2011) - 68.mkv"
+        const val KITSU_MAPPED_FILE = "Hunter x Hunter (2011) S02E10.mkv"
+        const val KITSU_METADATA = """{
+            "data":{"id":"6448","type":"anime","attributes":{"canonicalTitle":"Hunter x Hunter (2011)","startDate":"2011-10-02","subtype":"TV"},
+            "relationships":{"episodes":{"data":[{"id":"106287","type":"episodes"}]},"mappings":{"data":[{"id":"1234","type":"mappings"}]}}},
+            "included":[{"id":"106287","type":"episodes","attributes":{"number":68,"seasonNumber":1,"relativeNumber":68}},
+            {"id":"1234","type":"mappings","attributes":{"externalSite":"myanimelist/anime","externalId":"11061"}}]}"""
+        const val KITSU_CROSSWALK = """{"titles":{"en":"Hunter x Hunter (2011)"},
+            "mappings":{"mal_id":11061,"anilist_id":11061,"kitsu_id":6448,"thetvdb_id":252322},
+            "episodes":{"68":{"episode":"68","tvdbShowId":252322,"tvdbId":4504220,"seasonNumber":2,"episodeNumber":10,"absoluteEpisodeNumber":68}}}"""
+        val MAPPED_KITSU_METADATA = KITSU_METADATA.replace("\"relativeNumber\":68",
+            "\"relativeNumber\":68,\"canonicalTitle\":\"Pirates x and x Guesses\",\"airdate\":\"2013-02-24\"")
+        val MAPPED_KITSU_CROSSWALK = KITSU_CROSSWALK.replace("\"absoluteEpisodeNumber\":68",
+            "\"absoluteEpisodeNumber\":68,\"title\":{\"en\":\"Pirates x and x Guesses\"},\"airdate\":\"2013-02-24\"")
         const val HASH = "aabbccddeeff00112233445566778899aabbccdd"
         const val FILE = "https://cdn.example.test/selected.mkv"
         fun json(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)

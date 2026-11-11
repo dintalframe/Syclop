@@ -14,10 +14,12 @@ internal fun shouldArmSourceSelectionRestore(
 
 internal fun sourceSelectionRestoreTarget(
     focusedStreamIndex: Int,
-    streamCount: Int
+    selectedStreamKey: String?,
+    streamKeys: List<String>
 ): Int? {
-    if (streamCount <= 0) return null
-    return focusedStreamIndex.coerceIn(0, streamCount - 1)
+    if (streamKeys.isEmpty()) return null
+    val selectedIndex = selectedStreamKey?.let(streamKeys::indexOf)
+    return selectedIndex?.takeIf { it >= 0 } ?: focusedStreamIndex.coerceIn(0, streamKeys.lastIndex)
 }
 
 internal fun playerSourceSelectionOwner(arguments: Bundle?): PlayerProgressWriteOwner? {

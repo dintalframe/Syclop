@@ -37,7 +37,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -97,6 +96,7 @@ internal fun DiscoverSection(
     showBuiltInHeader: Boolean = true,
     firstItemFocusRequester: FocusRequester,
     focusedItemIndex: Int,
+    focusedItemKey: String?,
     shouldRestoreFocusedItem: Boolean,
     blockFilterFocus: Boolean = false,
     onRestoreFocusedItemHandled: () -> Unit,
@@ -115,6 +115,15 @@ internal fun DiscoverSection(
     var expandedPicker by remember { mutableStateOf<String?>(null) }
     val filterFocusRequester = remember { FocusRequester() }
     var gridHasFocus by remember { mutableStateOf(false) }
+    val restoreToFilters = shouldRestoreFocusedItem && uiState.discoverResults.isEmpty() &&
+        uiState.discoverInitialized && !uiState.discoverLoading
+
+    LaunchedEffect(restoreToFilters) {
+        if (restoreToFilters) {
+            filterFocusRequester.requestFocusAfterFrames()
+            onRestoreFocusedItemHandled()
+        }
+    }
 
     androidx.activity.compose.BackHandler(enabled = gridHasFocus) {
         try { filterFocusRequester.requestFocus() } catch (_: Exception) {}
@@ -164,7 +173,7 @@ internal fun DiscoverSection(
                     onSelectType(option.value)
                     expandedPicker = null
                 },
-                blockFocus = blockFilterFocus
+                blockFocus = blockFilterFocus && !restoreToFilters
             )
 
             DiscoverDropdownPicker(
@@ -244,6 +253,7 @@ internal fun DiscoverSection(
                     focusResults = focusResults,
                     firstItemFocusRequester = firstItemFocusRequester,
                     focusedItemIndex = focusedItemIndex,
+                    focusedItemKey = focusedItemKey,
                     shouldRestoreFocusedItem = shouldRestoreFocusedItem,
                     onRestoreFocusedItemHandled = onRestoreFocusedItemHandled,
                     onItemFocused = onDiscoverItemFocused,
@@ -488,6 +498,7 @@ internal fun DiscoverGrid(
     focusResults: Boolean,
     firstItemFocusRequester: FocusRequester,
     focusedItemIndex: Int,
+    focusedItemKey: String?,
     shouldRestoreFocusedItem: Boolean,
     onRestoreFocusedItemHandled: () -> Unit,
     onItemFocused: (Int) -> Unit,
@@ -501,6 +512,10 @@ internal fun DiscoverGrid(
 ) {
     val restoreFocusRequester = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
+    val itemKeys = remember(items) { items.map { it.discoverFocusKey() } }
+    val currentFocusedItemIndex = focusedItemKey?.let {
+        SearchItemFocus(it, focusedItemIndex).indexIn(itemKeys)
+    } ?: focusedItemIndex
     var pendingFocusOnNewItemIndex by remember { mutableStateOf<Int?>(null) }
 
     // Scroll to top only when the filter combination actually changes (not on initial composition / back navigation).
@@ -516,7 +531,7 @@ internal fun DiscoverGrid(
     val effectiveFocusedItemIndex = if (localShouldRestoreFocusedItem) {
         localRestoreFocusedItemIndex
     } else {
-        focusedItemIndex
+        currentFocusedItemIndex
     }
     val effectiveShouldRestoreFocusedItem = shouldRestoreFocusedItem || localShouldRestoreFocusedItem
     val actionType = when {
@@ -548,15 +563,10 @@ internal fun DiscoverGrid(
             }
             return@LaunchedEffect
         }
-        try {
-            restoreFocusRequester.requestFocus()
-        } catch (_: Exception) {
+        if (gridState.layoutInfo.visibleItemsInfo.none { it.index == effectiveFocusedItemIndex }) {
+            gridState.scrollToItem(effectiveFocusedItemIndex)
         }
-        repeat(2) { withFrameNanos { } }
-        try {
-            restoreFocusRequester.requestFocus()
-        } catch (_: Exception) {
-        }
+        restoreFocusRequester.requestFocusAfterFrames()
         if (localShouldRestoreFocusedItem) {
             localShouldRestoreFocusedItem = false
             localRestoreFocusedItemIndex = -1
@@ -586,10 +596,13 @@ internal fun DiscoverGrid(
     // Per-item FocusRequesters for focusRestorer on the grid.
     // Pre-create the requester for the focused item so focusRestorer can use it
     // even before the grid items are composed (first return from navigation).
-    val itemFocusRequesters = remember { mutableMapOf<Int, FocusRequester>() }
-    val focusedItemRequester = remember(focusedItemIndex) {
-        itemFocusRequesters.getOrPut(focusedItemIndex) { FocusRequester() }
+    val itemFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
+    LaunchedEffect(itemKeys) {
+        itemFocusRequesters.keys.retainAll(itemKeys.toSet())
     }
+    val focusedItemRequester = itemKeys.getOrNull(currentFocusedItemIndex)?.let {
+        itemFocusRequesters.getOrPut(it) { FocusRequester() }
+    } ?: FocusRequester.Default
 
     // Column the user was navigating in at the moment fast-scroll engaged.
     // Captured on drag-start (see onFastScrollingChanged below) because the
@@ -604,7 +617,7 @@ internal fun DiscoverGrid(
             minSize = if (globalLandscape) posterCardStyle.height else adaptiveStyle.width
         ),
         modifier = Modifier.fillMaxSize()
-            .focusRestorer { focusedItemRequester }
+            .focusRestorer(focusedItemRequester)
             .dpadVerticalFastScroll(
                 scrollableState = gridState,
                 onFastScrollingChanged = { active ->
@@ -615,7 +628,7 @@ internal fun DiscoverGrid(
                     if (active) {
                         fastScrollStartColumn = gridState.layoutInfo
                             .visibleItemsInfo
-                            .firstOrNull { it.index == focusedItemIndex }
+                            .firstOrNull { it.index == currentFocusedItemIndex }
                             ?.column
                     }
                 },
@@ -645,7 +658,7 @@ internal fun DiscoverGrid(
                             sign > 0 -> contentVisible.last()
                             else -> contentVisible.first()
                         }
-                        val requester = itemFocusRequesters[target.index]
+                        val requester = itemKeys.getOrNull(target.index)?.let { itemFocusRequesters[it] }
                         runCatching { requester?.requestFocus() }
                         null // Discover uses imperative requestFocus for now
                     }
@@ -657,10 +670,11 @@ internal fun DiscoverGrid(
     ) {
         itemsIndexed(
             items = items,
-            key = { index, item -> item.id.ifEmpty { "discover_$index" } },
+            key = { index, _ -> itemKeys[index] },
             contentType = { _, _ -> "content_card" }
         ) { index, item ->
-            val itemFocusReq = remember(index) { itemFocusRequesters.getOrPut(index) { FocusRequester() } }
+            val itemKey = itemKeys[index]
+            val itemFocusReq = remember(itemKey) { itemFocusRequesters.getOrPut(itemKey) { FocusRequester() } }
             val focusReq = when {
                 effectiveShouldRestoreFocusedItem && index == effectiveFocusedItemIndex -> restoreFocusRequester
                 focusResults && index == 0 -> firstItemFocusRequester
@@ -723,6 +737,8 @@ internal fun DiscoverGrid(
         }
     }
 }
+
+internal fun MetaPreview.discoverFocusKey(): String = "$apiType:$id"
 
 private sealed class DiscoverGridAction {
     object None : DiscoverGridAction()

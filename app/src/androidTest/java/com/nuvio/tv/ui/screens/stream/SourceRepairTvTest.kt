@@ -88,7 +88,7 @@ class SourceRepairTvTest {
                     selectedAddonFilter = null, showFileSizeBadges = false, showAddonLogo = false,
                     badgePlacement = StreamBadgePlacement.BOTTOM, onAddonFilterSelected = {}, onRefresh = {},
                     sharedStream = null, partySource = null, onSharedStreamSelected = {},
-                    onStreamSelected = { onSelected() }, focusedStreamIndex = 0, shouldRestoreFocusedStream = false,
+                    onStreamSelected = { _, _, _ -> onSelected() }, focusedStreamIndex = 0, shouldRestoreFocusedStream = false,
                     onRestoreFocusedStreamHandled = {}, onRetry = {}, hazeState = null,
                     sourceResolutionFailure = failure(), onChooseAnotherSource = onChoose, onOpenSettings = onSettings,
                     modifier = Modifier.fillMaxSize())

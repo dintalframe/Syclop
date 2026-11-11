@@ -10,6 +10,25 @@ import com.nuvio.tv.domain.model.Video
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private const val MAL_EPISODE_COUNT_UNAVAILABLE = "Episode count is not yet available from MyAnimeList."
+
+internal fun Meta.needsVerifiedMalEpisodes(): Boolean =
+    type == ContentType.SERIES && videos.isEmpty() && MalIdentity.id(id) != null && MalIdentity.episode(id) == null
+
+internal fun Meta.withVerifiedMalEpisodes(episodeNumbers: List<Int>): Meta {
+    if (!needsVerifiedMalEpisodes()) return this
+    val verified = episodeNumbers.asSequence().filter { it in 1..4000 }.distinct().sorted().take(3000).toList()
+    if (verified.isEmpty()) return this
+    val episodes = verified.map { number ->
+        Video(id = "$id:$number", title = "Episode $number", released = null, thumbnail = null,
+            season = 1, episode = number, overview = null, runtime = runtime?.toIntOrNull())
+    }
+    val synopsis = description?.takeUnless { it == MAL_EPISODE_COUNT_UNAVAILABLE }
+        ?.removeSuffix("\n\n$MAL_EPISODE_COUNT_UNAVAILABLE")
+    return copy(videos = episodes, description = synopsis,
+        behaviorHints = (behaviorHints ?: MetaBehaviorHints()).copy(defaultVideoId = episodes.first().id))
+}
+
 /** Verified MAL record identity. MAL v2 supplies no IMDb mapping, so imdbId is intentionally null. */
 data class MalSourceMetadata(
     val malId: Long,
@@ -18,7 +37,8 @@ data class MalSourceMetadata(
     val mediaType: String?,
     val episodeCount: Int,
     val imdbId: String? = null,
-    val alternativeTitles: List<String> = emptyList()
+    val alternativeTitles: List<String> = emptyList(),
+    val startDate: String? = null
 )
 
 object MalIdentity {
@@ -41,7 +61,7 @@ class MalMetadataService @Inject constructor(
 
     suspend fun sourceMetadata(malId: Long): MalSourceMetadata = detail(malId).let {
         MalSourceMetadata(it.id, it.title, MalIdentity.year(it.startDate), it.mediaType, it.totalEpisodes,
-            alternativeTitles = it.alternativeTitles)
+            alternativeTitles = it.alternativeTitles, startDate = it.startDate)
     }
 
     suspend fun meta(id: String): Meta = toMeta(detail(requireNotNull(MalIdentity.id(id))))
@@ -92,7 +112,7 @@ class MalMetadataService @Inject constructor(
                 ) }
             }
             val note = when {
-                !movie && anime.totalEpisodes <= 0 -> "Episode count is not yet available from MyAnimeList."
+                !movie && anime.totalEpisodes <= 0 -> MAL_EPISODE_COUNT_UNAVAILABLE
                 !movie && anime.totalEpisodes > 3000 -> "Showing the first 3,000 episodes of this MyAnimeList entry."
                 else -> null
             }

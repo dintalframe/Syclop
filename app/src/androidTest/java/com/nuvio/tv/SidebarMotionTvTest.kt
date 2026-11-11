@@ -3,6 +3,8 @@ package com.nuvio.tv
 import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.CompositionLocalProvider
@@ -132,16 +134,7 @@ class SidebarMotionTvTest {
     }
 
     @Test fun legacyRemoteFocusUsesTheSameSmallHighlightScale() {
-        compose.setContent {
-            NuvioTheme {
-                androidx.compose.foundation.layout.Column {
-                    items.forEach { item ->
-                        LegacySidebarButton(item.label, null, null, false, true,
-                            modifier = Modifier.size(260.dp, 48.dp), onClick = {})
-                    }
-                }
-            }
-        }
+        showLegacy()
         compose.onNodeWithContentDescription("Settings fixture").performSemanticsAction(SemanticsActions.RequestFocus)
         compose.waitForIdle()
         val resting = bounds().width
@@ -152,6 +145,46 @@ class SidebarMotionTvTest {
         assertTrue(bounds().width <= resting * 1.021f)
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
         compose.onNodeWithContentDescription("Settings fixture").assertIsFocused()
+    }
+
+    @Test fun modernFocusDrawsAnOutlineWithMotionDisabled() {
+        motion.factor.floatValue = 0f
+        show(LayoutDirection.Ltr, focusEnabled = true)
+        assertVisibleFocusOutline("panel-fixture")
+    }
+
+    @Test fun legacyFocusDrawsTheSameOutlineWithMotionDisabled() {
+        motion.factor.floatValue = 0f
+        showLegacy()
+        assertVisibleFocusOutline("legacy-panel-fixture")
+    }
+
+    private fun assertVisibleFocusOutline(panelTag: String) {
+        val focused = compose.onNodeWithContentDescription("Settings fixture")
+        focused.performSemanticsAction(SemanticsActions.RequestFocus)
+        focused.assertIsFocused()
+        val panel = compose.onNodeWithTag(panelTag)
+        val origin = panel.fetchSemanticsNode().boundsInRoot.topLeft
+        val bounds = focused.fetchSemanticsNode().boundsInRoot
+        val pixels = panel.captureToImage().toPixelMap()
+        val x = (bounds.center.x - origin.x).toInt()
+        val edge = (bounds.top - origin.y).toInt()
+        val rows = (edge - 1).coerceAtLeast(0)..(edge + 4).coerceAtMost(pixels.height - 1)
+        assertTrue("The focused item must have a bright outline along its top edge",
+            rows.any { y -> pixels[x, y].luminance() > 0.75f })
+    }
+
+    private fun showLegacy() {
+        compose.setContent {
+            NuvioTheme {
+                Column(Modifier.background(Color(0xFF161618)).testTag("legacy-panel-fixture").padding(12.dp)) {
+                    items.forEach { item ->
+                        LegacySidebarButton(item.label, null, null, false, true,
+                            modifier = Modifier.size(260.dp, 48.dp), onClick = {})
+                    }
+                }
+            }
+        }
     }
 
     private fun panelLight(): Float {

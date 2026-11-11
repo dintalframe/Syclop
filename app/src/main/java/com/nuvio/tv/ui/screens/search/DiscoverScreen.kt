@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
 import com.nuvio.tv.domain.model.DiscoverLocation
+import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.components.EmptyScreenState
 import com.nuvio.tv.ui.components.PosterCardDefaults
 import com.nuvio.tv.ui.components.PosterCardStyle
@@ -47,8 +48,20 @@ fun DiscoverScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val discoverFirstItemFocusRequester = remember { FocusRequester() }
     var discoverFocusedItemIndex by rememberSaveable { mutableStateOf(0) }
+    var discoverFocusedItemKey by rememberSaveable { mutableStateOf<String?>(null) }
     var restoreDiscoverFocus by rememberSaveable { mutableStateOf(false) }
     var pendingDiscoverRestoreOnResume by rememberSaveable { mutableStateOf(false) }
+
+    fun saveDiscoverFocus(id: String, type: String): MetaPreview? {
+        val index = uiState.discoverResults.indexOfFirst { it.id == id && it.apiType == type }
+        val item = uiState.discoverResults.getOrNull(index)
+        if (item != null) {
+            discoverFocusedItemIndex = index
+            discoverFocusedItemKey = item.discoverFocusKey()
+        }
+        pendingDiscoverRestoreOnResume = true
+        return item
+    }
 
     val posterCardStyle = remember(uiState.posterCardWidthDp, uiState.posterCardCornerRadiusDp) {
         val computedHeightDp = (uiState.posterCardWidthDp * 1.5f).roundToInt()
@@ -100,29 +113,35 @@ fun DiscoverScreen(
                 showBuiltInHeader = showBuiltInHeader,
                 firstItemFocusRequester = discoverFirstItemFocusRequester,
                 focusedItemIndex = discoverFocusedItemIndex,
+                focusedItemKey = discoverFocusedItemKey,
                 shouldRestoreFocusedItem = restoreDiscoverFocus,
                 blockFilterFocus = restoreDiscoverFocus || pendingDiscoverRestoreOnResume,
                 onRestoreFocusedItemHandled = { restoreDiscoverFocus = false },
                 onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
-                    pendingDiscoverRestoreOnResume = true
+                    saveDiscoverFocus(itemId, itemType)
                     onNavigateToDetail(itemId, itemType, addonBaseUrl)
                 },
                 onDiscoverItemFocused = { index ->
                     discoverFocusedItemIndex = index
-                    uiState.discoverResults.getOrNull(index)?.let { item ->
+                    val item = uiState.discoverResults.getOrNull(index)
+                    discoverFocusedItemKey = item?.discoverFocusKey()
+                    if (item != null) {
                         viewModel.prefetchMetaOnFocus(item.id, item.rawType)
                     }
                 },
                 onSelectType = {
                     discoverFocusedItemIndex = 0
+                    discoverFocusedItemKey = null
                     viewModel.onEvent(SearchEvent.SelectDiscoverType(it))
                 },
                 onSelectCatalog = {
                     discoverFocusedItemIndex = 0
+                    discoverFocusedItemKey = null
                     viewModel.onEvent(SearchEvent.SelectDiscoverCatalog(it))
                 },
                 onSelectGenre = {
                     discoverFocusedItemIndex = 0
+                    discoverFocusedItemKey = null
                     viewModel.onEvent(SearchEvent.SelectDiscoverGenre(it))
                 },
                 onLoadMore = { viewModel.onEvent(SearchEvent.LoadNextDiscoverResults) },
@@ -138,8 +157,7 @@ fun DiscoverScreen(
             state = posterOptionsState,
             controller = viewModel.posterOptions,
             onNavigateToDetail = { id, type, addonBaseUrl ->
-                pendingDiscoverRestoreOnResume = true
-                val clickedItem = uiState.discoverResults.firstOrNull { it.id == id }
+                val clickedItem = saveDiscoverFocus(id, type)
                 HeroBackdropState.update(clickedItem?.backdropUrl)
                 onNavigateToDetail(id, type, addonBaseUrl)
             }

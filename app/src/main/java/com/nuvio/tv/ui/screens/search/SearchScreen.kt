@@ -109,7 +109,9 @@ import com.nuvio.tv.ui.components.LoadingIndicator
 import com.nuvio.tv.ui.components.PosterCardDefaults
 import com.nuvio.tv.ui.components.PosterCardStyle
 import com.nuvio.tv.domain.model.DiscoverLocation
+import com.nuvio.tv.domain.model.stableItemKeys
 import com.nuvio.tv.domain.model.stableKey
+import com.nuvio.tv.ui.screens.detail.requestFocusAfterFrames
 import android.view.inputmethod.CompletionInfo
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.ui.platform.LocalView
@@ -168,7 +170,7 @@ fun SearchScreen(
     var discoverFocusedItemIndex by rememberSaveable { mutableStateOf(0) }
     var restoreDiscoverFocus by rememberSaveable { mutableStateOf(false) }
     var pendingDiscoverRestoreOnResume by rememberSaveable { mutableStateOf(false) }
-    val restoringSearchFocus = remember { mutableStateOf(viewModel.hasSavedSearchFocus) }
+    val restoringSearchFocus = remember { mutableStateOf(viewModel.savedResultFocus != null) }
     val didRestoreSearchFocus = remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
@@ -324,24 +326,22 @@ fun SearchScreen(
     val searchRowStates = remember { mutableMapOf<String, LazyListState>() }
     val searchRowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val searchRowEntryFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
-    val searchRowFocusedItemIndex = remember { mutableMapOf<String, Int>() }
+    val searchRowFocusedItems = remember { mutableMapOf<String, SearchItemFocus>() }
     // Clears the row-local focus index so the row's entry requester moves to the first card.
     // Scoped to one row so a Back in one does not reset what the others remember.
     var focusResetCounter by remember { mutableIntStateOf(0) }
     var focusResetRowKey by remember { mutableStateOf<String?>(null) }
     // Mirrors the focused index for the active row. The map above is a plain MutableMap,
     // so its values cannot drive recomposition of the Back handler.
-    val focusedResultItemIndex = remember { mutableIntStateOf(viewModel.savedFocusItemIndex.coerceAtLeast(0)) }
-    var lastFocusedRowKey by remember { mutableStateOf(viewModel.savedFocusRowKey) }
-    var posterOptionsRowKey by remember { mutableStateOf<String?>(null) }
+    val focusedResultItemIndex = remember { mutableIntStateOf(viewModel.savedResultFocus?.item?.index ?: 0) }
+    var lastFocusedRowKey by remember { mutableStateOf(viewModel.savedResultFocus?.rowKey) }
+    var posterOptionsFocus by remember { mutableStateOf<SearchResultFocus?>(null) }
 
-    val saveSearchFocusForDetail: (String) -> Unit = { rowKey ->
-        viewModel.savedFocusRowKey = rowKey
-        viewModel.savedFocusItemIndex = searchRowFocusedItemIndex[rowKey] ?: 0
+    fun saveSearchFocusForDetail(focus: SearchResultFocus?) {
+        viewModel.savedResultFocus = focus
         viewModel.savedRowScrollPositions = searchRowStates.mapValues {
             it.value.firstVisibleItemIndex to it.value.firstVisibleItemScrollOffset
         }
-        viewModel.hasSavedSearchFocus = true
     }
 
     // Clean up stale keys when the catalog rows change.
@@ -353,13 +353,13 @@ fun SearchScreen(
     // Stable list of non-empty catalog rows — mirrors ClassicHomeContent's
     // visibleHomeRows pattern so the LazyColumn receives a remember'd list.
     val visibleCatalogRows = remember(uiState.catalogRows) {
-        uiState.catalogRows.filter { it.items.isNotEmpty() }
+        uiState.catalogRows.filter { it.items.isNotEmpty() }.distinctBy { it.stableKey() }
     }
     LaunchedEffect(visibleRowKeys) {
         searchRowStates.keys.retainAll(visibleRowKeys)
         searchRowFocusRequesters.keys.retainAll(visibleRowKeys)
         searchRowEntryFocusRequesters.keys.retainAll(visibleRowKeys)
-        searchRowFocusedItemIndex.keys.retainAll(visibleRowKeys)
+        searchRowFocusedItems.keys.retainAll(visibleRowKeys)
     }
 
     val isDiscoverMode = remember(uiState.discoverLocation, trimmedQuery, trimmedSubmittedQuery) {
@@ -492,7 +492,7 @@ fun SearchScreen(
     val initialFocusRequester = topInputFocusRequester
 
     LaunchedEffect(Unit) {
-        if (viewModel.hasSavedSearchFocus) return@LaunchedEffect
+        if (viewModel.savedResultFocus != null) return@LaunchedEffect
         if (pendingDiscoverRestoreOnResume || restoreDiscoverFocus) return@LaunchedEffect
         repeat(2) { withFrameNanos { } }
         runCatching { initialFocusRequester.requestFocus() }
@@ -531,9 +531,8 @@ fun SearchScreen(
                 if (latestPendingDiscoverRestore) {
                     restoreDiscoverFocus = true
                     pendingDiscoverRestoreOnResume = false
-                } else if (viewModel.hasSavedSearchFocus || didRestoreSearchFocus.value) {
-                    // Returning from details — don't steal focus, CatalogRowSection
-                    // already restored it or will restore it via focusedItemIndex.
+                } else if (viewModel.savedResultFocus != null || didRestoreSearchFocus.value) {
+                    restoringSearchFocus.value = viewModel.savedResultFocus != null
                     didRestoreSearchFocus.value = false
                 } else if (!latestShouldKeepSearchFocus) {
                     // Keep resume and entry consistent; ON_RESUME also fires on entry.
@@ -568,6 +567,33 @@ fun SearchScreen(
         contentAlignment = Alignment.TopCenter
     ) {
         val listState = rememberLazyListState()
+        val pendingSearchFocus = viewModel.savedResultFocus.takeIf {
+            restoringSearchFocus.value && isScreenActive
+        }
+        val showingResultRows = !isDiscoverMode &&
+            (trimmedSubmittedQuery.length >= MIN_SEARCH_QUERY_LENGTH || hasPendingUnsubmittedQuery)
+        val restoreRowIndex = if (pendingSearchFocus != null && showingResultRows) {
+            visibleCatalogRows.indexOfFirst { it.stableKey() == pendingSearchFocus.rowKey }
+        } else -1
+        val restoreRow = visibleCatalogRows.getOrNull(restoreRowIndex)
+        val restoreRowReady = restoreRow != null &&
+            restoreRow.items.firstOrNull()?.id?.startsWith("__placeholder_") != true
+        LaunchedEffect(pendingSearchFocus, restoreRowIndex, restoreRowReady, uiState.isSearching) {
+            if (pendingSearchFocus == null) return@LaunchedEffect
+            if (restoreRowReady) {
+                if (listState.layoutInfo.visibleItemsInfo.none { it.key == pendingSearchFocus.rowKey }) {
+                    listState.scrollToItem(restoreRowIndex + 1) // The input is the first item.
+                }
+            } else if (!uiState.isSearching) {
+                listState.scrollToItem(0)
+                if (searchFocusRequester.requestFocusAfterFrames()) {
+                    viewModel.savedResultFocus = null
+                    restoringSearchFocus.value = false
+                    lastFocusedRowKey = null
+                }
+                keyboardController?.hide()
+            }
+        }
 
         // Step back within Search before falling through to the root handler.
         val focusedRowKey = lastFocusedRowKey
@@ -577,7 +603,7 @@ fun SearchScreen(
                 (isRecentSearchSectionFocused || (!isDiscoverMode && focusedRowKey != null))
         ) {
             if (!isRecentSearchSectionFocused && focusedItemIndex > 0 && focusedRowKey != null) {
-                searchRowFocusedItemIndex[focusedRowKey] = 0
+                searchRowFocusedItems.remove(focusedRowKey)
                 focusedResultItemIndex.intValue = 0
                 focusResetRowKey = focusedRowKey
                 focusResetCounter++
@@ -605,7 +631,9 @@ fun SearchScreen(
             if (uiState.query == lastScrollResetQuery) return@LaunchedEffect
             lastScrollResetQuery = uiState.query
             // Clear stale focus so the restorer cannot return to an item from the previous query.
-            searchRowFocusedItemIndex.clear()
+            searchRowFocusedItems.clear()
+            viewModel.savedResultFocus = null
+            restoringSearchFocus.value = false
             focusedResultItemIndex.intValue = 0
             // Clear saved offsets too; rebuilt rows can otherwise inherit the old query's position.
             viewModel.savedRowScrollPositions = emptyMap()
@@ -793,15 +821,31 @@ fun SearchScreen(
                     else -> {
                         itemsIndexed(
                             items = visibleCatalogRows,
-                            key = { index, item ->
-                                "${item.stableKey()}_$index"
-                            },
+                            key = { _, item -> item.stableKey() },
                             contentType = { _, _ -> "catalog_row" }
                         ) { index, catalogRow ->
                             val catalogKey = catalogRow.stableKey()
                             val isPlaceholder = catalogRow.isLoading &&
                                 catalogRow.items.firstOrNull()?.id?.startsWith("__placeholder_") == true
                             val hasEnoughForSeeAll = !isPlaceholder && catalogRow.items.size >= 15
+                            val itemKeys = remember(catalogKey, catalogRow.items) { catalogRow.stableItemKeys() }
+                            val rememberedItemIndex = searchRowFocusedItems[catalogKey]?.indexIn(itemKeys) ?: -1
+                            val restoreItem = pendingSearchFocus?.item?.takeIf {
+                                pendingSearchFocus.rowKey == catalogKey && !isPlaceholder &&
+                                    (!uiState.isSearching || it.key in itemKeys)
+                            }
+                            val restoredItemIndex = restoreItem?.indexIn(itemKeys) ?: -1
+
+                            fun focusForItem(id: String, type: String): SearchResultFocus? {
+                                val focusedIndex = searchRowFocusedItems[catalogKey]?.indexIn(itemKeys) ?: -1
+                                val focusedItem = catalogRow.items.getOrNull(focusedIndex)
+                                val clickedIndex = if (focusedItem?.id == id && focusedItem.apiType == type) {
+                                    focusedIndex
+                                } else catalogRow.items.indexOfFirst { it.id == id && it.apiType == type }
+                                return itemKeys.getOrNull(clickedIndex)?.let {
+                                    SearchResultFocus(catalogKey, SearchItemFocus(it, clickedIndex))
+                                }
+                            }
 
                             val listState = searchRowStates.getOrPut(catalogKey) {
                                 val saved = viewModel.savedRowScrollPositions[catalogKey]
@@ -826,11 +870,7 @@ fun SearchScreen(
                                 // Anchor Up to the field; geometric focus varies with the card.
                                 upFocusRequester = if (index == 0) searchFocusRequester else null,
                                 listState = listState,
-                                restorerFocusedIndex = if (restoringSearchFocus.value && catalogKey == viewModel.savedFocusRowKey) {
-                                    viewModel.savedFocusItemIndex
-                                } else {
-                                    searchRowFocusedItemIndex[catalogKey] ?: -1
-                                },
+                                restorerFocusedIndex = if (restoredItemIndex >= 0) restoredItemIndex else rememberedItemIndex,
                                 focusResetToken = if (catalogKey == focusResetRowKey) {
                                     "${uiState.query}#$focusResetCounter"
                                 } else {
@@ -841,27 +881,28 @@ fun SearchScreen(
                                     if (isSeries) item.id in watchedSeriesIds else item.id in watchedMovieIds
                                 },
                                 focusedItemIndex = when {
-                                    restoringSearchFocus.value && catalogKey == viewModel.savedFocusRowKey ->
-                                        viewModel.savedFocusItemIndex
+                                    restoredItemIndex >= 0 -> restoredItemIndex
                                     // The remembered card, not item 0. A query change clears
                                     // the map, so a new search still lands on the first item.
                                     focusResults && index == 0 ->
-                                        searchRowFocusedItemIndex[catalogKey] ?: 0
+                                        rememberedItemIndex.coerceAtLeast(0)
                                     else -> -1
                                 },
                                 onItemFocused = { itemIndex ->
                                     if (focusResults) {
                                         focusResults = false
                                     }
-                                    if (restoringSearchFocus.value) {
+                                    if (restoredItemIndex == itemIndex) {
                                         restoringSearchFocus.value = false
                                         didRestoreSearchFocus.value = true
-                                        viewModel.hasSavedSearchFocus = false
+                                        viewModel.savedResultFocus = null
                                     }
                                     // User manually navigated to a row — cancel any
                                     // pending auto-focus so it doesn't steal focus later.
                                     pendingFocusMoveToResultsQuery = null
-                                    searchRowFocusedItemIndex[catalogKey] = itemIndex
+                                    itemKeys.getOrNull(itemIndex)?.let {
+                                        searchRowFocusedItems[catalogKey] = SearchItemFocus(it, itemIndex)
+                                    }
                                     focusedResultItemIndex.intValue = itemIndex
                                     // Prefetch meta for the focused item to warm cache for detail screen.
                                     catalogRow.items.getOrNull(itemIndex)?.let { item ->
@@ -871,7 +912,7 @@ fun SearchScreen(
                                 },
                                 onItemClick = { id, type, addonBaseUrl ->
                                     lastFocusedRowKey = catalogKey
-                                    saveSearchFocusForDetail(catalogKey)
+                                    saveSearchFocusForDetail(focusForItem(id, type))
                                     val clickedItem = catalogRow.items.firstOrNull { it.id == id }
                                     val backdrop = viewModel.getCachedBackdrop(id, type)
                                         ?: clickedItem?.backdropUrl
@@ -879,7 +920,7 @@ fun SearchScreen(
                                     onNavigateToDetail(id, type, addonBaseUrl)
                                 },
                                 onItemLongPress = { item, addonBaseUrl ->
-                                    posterOptionsRowKey = catalogKey
+                                    posterOptionsFocus = focusForItem(item.id, item.apiType)
                                     viewModel.posterOptions.show(item, addonBaseUrl)
                                 },
                                 onSeeAll = {
@@ -942,8 +983,8 @@ fun SearchScreen(
         controller = viewModel.posterOptions,
         onNavigateToDetail = { id, type, addonBaseUrl ->
             // Consume it, so a later navigation cannot reuse this row.
-            posterOptionsRowKey?.let(saveSearchFocusForDetail)
-            posterOptionsRowKey = null
+            saveSearchFocusForDetail(posterOptionsFocus)
+            posterOptionsFocus = null
             val clickedItem = uiState.catalogRows
                 .flatMap { it.items }
                 .firstOrNull { it.id == id }

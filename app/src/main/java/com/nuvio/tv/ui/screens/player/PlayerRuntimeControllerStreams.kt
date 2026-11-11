@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.media3.common.util.UnstableApi
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
 import com.nuvio.tv.core.debrid.DirectDebridPlayableResult
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.player.StreamAutoPlaySelector
@@ -99,13 +100,13 @@ internal fun PlayerRuntimeController.scheduleEpisodeBadgeApplication() {
     }
 }
 
-private fun Stream.sourceBadgeMergeKey(): String {
-    infoHash?.lowercase()?.let { return "$addonName|$it:${fileIdx ?: ""}" }
+private fun Stream.sourceBadgeMergeKey(): Pair<String, String?> {
+    infoHash?.lowercase()?.let { return "$addonName|$it:${fileIdx ?: ""}" to nativeKitsuProofCacheKey }
     val playableUrl = url ?: clientResolve?.let { resolve ->
         resolve.stream?.raw?.filename ?: resolve.infoHash
     }
-    if (playableUrl != null) return "$addonName|$playableUrl"
-    return "$addonName|${name}:${title}:${description?.hashCode() ?: 0}"
+    if (playableUrl != null) return "$addonName|$playableUrl" to nativeKitsuProofCacheKey
+    return "$addonName|${name}:${title}:${description?.hashCode() ?: 0}" to nativeKitsuProofCacheKey
 }
 
 internal fun PlayerRuntimeController.showEpisodesPanel() {
@@ -163,22 +164,28 @@ internal data class SourceStreamsRequest(
     val episode: Int?
 )
 
-internal fun PlayerRuntimeController.currentSourceStreamsRequest(): SourceStreamsRequest? =
-    if (contentType in listOf("series", "tv") && currentSeason != null && currentEpisode != null) {
+internal fun PlayerRuntimeController.currentSourceStreamsRequest(): SourceStreamsRequest? {
+    val type = contentType
+    val videoId = currentVideoId
+    if (type != null && type != "movie" && videoId != null && NativeAnimeEpisodeMappings.kitsuIdentity(videoId) != null) {
+        return SourceStreamsRequest(type, videoId, currentSeason, currentEpisode)
+    }
+    return if (type in listOf("series", "tv") && currentSeason != null && currentEpisode != null) {
         SourceStreamsRequest(
-            type = contentType ?: return null,
-            videoId = currentVideoId ?: contentId ?: return null,
+            type = type ?: return null,
+            videoId = videoId ?: contentId ?: return null,
             season = currentSeason,
             episode = currentEpisode
         )
     } else {
         SourceStreamsRequest(
-            type = contentType ?: "movie",
+            type = type ?: "movie",
             videoId = contentId ?: return null,
             season = null,
             episode = null
         )
     }
+}
 
 internal fun PlayerRuntimeController.loadSourceStreams(forceRefresh: Boolean) {
     streamRepository.setLocalPluginSearchPaused(false)
@@ -329,15 +336,17 @@ internal fun PlayerRuntimeController.loadSourceStreams(forceRefresh: Boolean) {
  * Newer entries for the same stream (matched by addon + url/infoHash) replace older ones.
  */
 private fun mergeSourceStreams(cached: List<Stream>, fresh: List<Stream>): List<Stream> {
-    val merged = LinkedHashMap<String, Stream>()
+    val merged = LinkedHashMap<Pair<String, Boolean>, Stream>()
     cached.forEach { stream -> merged[stream.mergeKey()] = stream }
     fresh.forEach { stream -> merged[stream.mergeKey()] = stream }
     return merged.values.toList()
 }
 
-private fun Stream.mergeKey(): String =
-    infoHash?.lowercase()?.let { hash -> "$addonName|$hash:${fileIdx ?: ""}" }
+private fun Stream.mergeKey(): Pair<String, Boolean> {
+    val source = infoHash?.lowercase()?.let { hash -> "$addonName|$hash:${fileIdx ?: ""}" }
         ?: "$addonName|${getStreamUrl() ?: externalUrl ?: ytId ?: "${name}:${title}"}"
+    return source to (nativeKitsuProofCacheKey != null)
+}
 
 private fun PlayerRuntimeController.launchSourceDebridPreparationIfNeeded(
     launched: Boolean,

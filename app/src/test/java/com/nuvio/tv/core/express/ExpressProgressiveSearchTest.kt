@@ -4,6 +4,7 @@ import com.google.gson.JsonObject
 import com.nuvio.tv.core.anime.NativeAnimeTitleIdentity
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.domain.model.SourceSearchReason
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
@@ -120,13 +121,67 @@ class ExpressProgressiveSearchTest {
     @Test fun `missing native mapping terminates with structured diagnostic before provider requests`() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(json(config(server, listOf("example"))))
-            val adapter = adapter(metadata = ExpressMetadataSource { throw ExpressException("A confirmed anime episode mapping is unavailable.") })
+            val adapter = adapter(metadata = ExpressMetadataSource { throw ExpressAnimeMappingUnavailable() })
             val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
             val last = adapter.searchProgressively(addon, ExpressMediaRequest("series", "mal:1:1", 1, 1)).toList().last()
             assertEquals(1, server.requestCount)
             assertTrue(last.report.complete)
             assertEquals(1, last.report.reasons[SourceSearchReason.MISSING_MAPPING])
+            assertNull(last.report.reasons[SourceSearchReason.ANIME_METADATA_FAILED])
             assertNotNull(last.error)
+        }
+    }
+
+    @Test fun `MAL catalog request failure does not claim an episode mapping is missing`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(json(config(server, listOf("example"))))
+            val adapter = adapter(metadata = ExpressMetadataSource { throw IOException("private request details") })
+            val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
+            val last = adapter.searchProgressively(addon, ExpressMediaRequest("series", "mal:1:1", 1, 1)).toList().last()
+
+            assertEquals(1, server.requestCount)
+            assertTrue(last.report.complete)
+            assertEquals(0, last.report.completed)
+            assertNull(last.report.reasons[SourceSearchReason.MISSING_MAPPING])
+            assertEquals(1, last.report.reasons[SourceSearchReason.ANIME_METADATA_FAILED])
+            assertEquals("MyAnimeList details could not be verified.", last.error)
+        }
+    }
+
+    @Test fun `request limit is visible even when a provider responded without a usable source`() = runBlocking {
+        MockWebServer().use { server ->
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse = when {
+                    request.path == "/config" -> json(config(server, listOf("example"), subpages = true))
+                    request.path!!.contains("/search") -> json("""{"streams":[${(1..9).joinToString { """{"title":"Show.S01E04.$it","url":"/detail/$it"}""" }}]}""")
+                    else -> MockResponse().setBody("<html>No source here</html>")
+                }
+            }
+            val adapter = adapter()
+            val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
+            val last = withTimeout(10_000) { adapter.searchProgressively(addon, request()).toList().last() }
+
+            assertEquals(10, server.requestCount)
+            assertEquals(1, last.report.completed)
+            assertEquals(1, last.report.reasons[SourceSearchReason.REQUEST_BUDGET])
+            assertTrue(last.streams.isEmpty())
+            assertEquals(last.report.summary(), last.error)
+        }
+    }
+
+    @Test fun `successful empty provider response remains a completed search without an error`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(json(config(server, listOf("example"))))
+            server.enqueue(json("""{"streams":[]}"""))
+            val adapter = adapter()
+            val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
+            val last = withTimeout(10_000) { adapter.searchProgressively(addon, request()).toList().last() }
+
+            assertEquals(2, server.requestCount)
+            assertEquals(1, last.report.completed)
+            assertTrue(last.report.reasons.isEmpty())
+            assertTrue(last.streams.isEmpty())
+            assertNull(last.error)
         }
     }
 

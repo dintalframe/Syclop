@@ -253,6 +253,7 @@ fun GridHomeContent(
         gridFocusState.focusedItemKey == "hero"
     val firstGridItemFocusRequester = remember { FocusRequester() }
     val hasContinueWatching = continueWatchingItems.isNotEmpty()
+    val enterFromHomeTab = LocalHomeBrowseTabFocusRequester.current != null && hasContinueWatching
     val hasStandaloneFocusableGridItem = remember(gridItems) {
         gridItems.any { it is GridItem.Content || it is GridItem.SeeAll }
     }
@@ -277,15 +278,16 @@ fun GridHomeContent(
         delay(2000)
         heroDeferTimedOut = true
     }
-    val deferGridContent = shouldRequestInitialFocus && !heroResolved && !heroDeferTimedOut
+    val deferGridContent = shouldRequestInitialFocus && !enterFromHomeTab && !heroResolved && !heroDeferTimedOut
 
     LaunchedEffect(
         shouldRequestInitialFocus,
         hasHero,
         hasContinueWatching,
+        enterFromHomeTab,
         hasStandaloneFocusableGridItem
     ) {
-        if (!shouldRequestInitialFocus || userScrolledGrid) return@LaunchedEffect
+        if (!shouldRequestInitialFocus || userScrolledGrid || enterFromHomeTab) return@LaunchedEffect
         if (hasContinueWatching && !hasHero) return@LaunchedEffect
         val targetRequester = when {
             hasHero -> heroFocusRequester
@@ -354,6 +356,20 @@ fun GridHomeContent(
         if (firstSectionIndex >= 0) gridItemsWithKeys.subList(firstSectionIndex, gridItemsWithKeys.size)
         else emptyList()
     }
+    BindInitialContinueWatchingEntry(
+        isInitial = {
+            shouldRequestInitialFocus && lastFocusedGridItemKey.value == null && activeCwRowKey.value == null
+        },
+        isAvailable = hasContinueWatching,
+        prepare = {
+            if (gridState.layoutInfo.visibleItemsInfo.none { it.key == "continue_watching" }) {
+                gridState.scrollToItem(preItems.size)
+            }
+        },
+        isVisible = { gridState.layoutInfo.visibleItemsInfo.any { it.key == "continue_watching" } },
+        requester = cwRowFocusRequester,
+        hasFocus = { contentHasFocus.value && activeCwRowKey.value == "continue_watching" }
+    )
 
     if (deferGridContent) {
         HomeStartupIndicator()

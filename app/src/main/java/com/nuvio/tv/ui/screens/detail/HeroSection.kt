@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -139,10 +140,9 @@ fun HeroContentSection(
                 .build()
         }
     }
-    var logoLoadFailed by remember(meta.logo) { mutableStateOf(false) }
+    var logoLoaded by remember(meta.logo) { mutableStateOf(false) }
     val shouldShowLogo =
         !meta.logo.isNullOrBlank() &&
-            !logoLoadFailed &&
             !(isTrailerPlaying && hideLogoDuringTrailer)
     val libraryAddPainter = rememberRawSvgPainter(rawIconRes = com.nuvio.tv.R.raw.library_add_plus)
     val trailerPainter = rememberRawSvgPainter(rawIconRes = com.nuvio.tv.R.raw.trailer_play_button)
@@ -200,19 +200,30 @@ fun HeroContentSection(
                 .padding(start = NuvioTheme.spacing.xxxl, end = NuvioTheme.spacing.xxxl, bottom = NuvioTheme.spacing.lg),
             verticalArrangement = Arrangement.Bottom
         ) {
-            // Logo/Title — always visible during trailer, animates size
             if (shouldShowLogo) {
-                AsyncImage(
-                    model = logoModel,
-                    contentDescription = meta.name,
-                    onError = { logoLoadFailed = true },
-                    modifier = Modifier
-                        .height(logoHeight)
-                        .fillMaxWidth(logoMaxWidth)
-                        .padding(bottom = logoBottomPadding),
-                    contentScale = ContentScale.Fit,
-                    alignment = Alignment.CenterStart
-                )
+                Box(Modifier.fillMaxWidth().height(logoHeight), contentAlignment = Alignment.CenterStart) {
+                    AsyncImage(
+                        model = logoModel,
+                        contentDescription = meta.name.takeIf { logoLoaded },
+                        onSuccess = { logoLoaded = true },
+                        onError = { logoLoaded = false },
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(logoMaxWidth)
+                            .padding(bottom = logoBottomPadding),
+                        contentScale = ContentScale.Fit,
+                        alignment = Alignment.CenterStart
+                    )
+                    if (!logoLoaded && !isTrailerPlaying) {
+                        Text(
+                            text = meta.name,
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = NuvioTheme.colors.TextPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             } else {
                 // Text title hides entirely during trailer
                 AnimatedVisibility(

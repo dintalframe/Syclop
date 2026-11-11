@@ -17,6 +17,8 @@ import com.nuvio.tv.data.local.PlayerSettingsDataStore
 import com.nuvio.tv.data.local.TraktAuthDataStore
 import com.nuvio.tv.data.local.TraktSettingsDataStore
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
+import com.nuvio.tv.data.mal.needsVerifiedMalEpisodes
+import com.nuvio.tv.data.mal.withVerifiedMalEpisodes
 import com.nuvio.tv.data.repository.ImdbEpisodeRatingsRepository
 import com.nuvio.tv.data.repository.MDBListRepository
 import com.nuvio.tv.data.repository.TraktCommentsService
@@ -107,6 +109,7 @@ class MetaDetailsViewModel @Inject constructor(
     private val profileManager: ProfileManager,
     private val metaDetailsSessionState: MetaDetailsSessionState,
     private val watchedSeriesStateHolder: com.nuvio.tv.data.local.WatchedSeriesStateHolder,
+    private val animeMappings: com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings,
     val posterOptions: com.nuvio.tv.ui.components.posteroptions.PosterOptionsController,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -1135,7 +1138,11 @@ class MetaDetailsViewModel @Inject constructor(
 
     private suspend fun applyMetaWithEnrichment(meta: Meta) {
         if (!isServerItem) loadMoreLikeThisAsync(meta)
-        val enriched = if (isServerItem) meta else enrichMeta(meta)
+        val base = if (isServerItem) meta else enrichMeta(meta)
+        val enriched = if (base.needsVerifiedMalEpisodes()) {
+            val verified = withTimeoutOrNull(6_000L) { animeMappings.confirmedEpisodeNumbers(base.id) }.orEmpty()
+            base.withVerifiedMalEpisodes(verified)
+        } else base
 
         syncEffectiveContentId(enriched)
         val cachedNextToWatch = metaDetailsSessionState.getNextToWatch(

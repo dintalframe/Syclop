@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -418,13 +419,14 @@ private fun HeroTitleContent(
         verticalArrangement = Arrangement.spacedBy(titleSpacing)
     ) {
         var logoLoadFailed by remember(preview.logo) { mutableStateOf(false) }
-        val showLogo = !preview.logo.isNullOrBlank() && !logoLoadFailed
-        if (showLogo) {
+        val hasLogo = !preview.logo.isNullOrBlank()
+        val logoHeight = 100.dp
+        if (hasLogo && !logoLoadFailed) {
             // Provider artwork can decode successfully yet be dark or transparent. Keep a
             // readable title while the logo loads and after success, within the same title area.
             Column(
                 modifier = Modifier
-                    .height(100.dp)
+                    .height(logoHeight)
                     .widthIn(min = 100.dp, max = 220.dp)
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -456,7 +458,8 @@ private fun HeroTitleContent(
                 style = scaledTitleStyle,
                 color = NuvioTheme.colors.TextPrimary,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = if (hasLogo) Modifier.height(logoHeight).wrapContentHeight() else Modifier
             )
         }
 

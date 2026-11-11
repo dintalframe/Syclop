@@ -10,6 +10,8 @@ import com.nuvio.tv.data.mediaserver.ServerItemRef
 import com.nuvio.tv.data.mediaserver.messageRes
 import com.nuvio.tv.data.mediaserver.serverFailure
 import com.nuvio.tv.data.mal.MalMetadataService
+import com.nuvio.tv.data.mal.needsVerifiedMalEpisodes
+import com.nuvio.tv.data.mal.withVerifiedMalEpisodes
 import com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog
 import com.nuvio.tv.data.catalog.RatedKidsCatalog
 import com.nuvio.tv.data.remote.api.AddonApi
@@ -47,7 +49,8 @@ class MetaRepositoryImpl @Inject constructor(
     private val addonRepository: AddonRepository,
     private val serverCatalog: ServerCatalog,
     private val malMetadata: MalMetadataService? = null,
-    private val simklCatalog: SimklPublicCatalog? = null
+    private val simklCatalog: SimklPublicCatalog? = null,
+    private val animeMappings: com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings? = null
 ) : MetaRepository {
     companion object {
         private const val TAG = "MetaRepository"
@@ -828,10 +831,16 @@ class MetaRepositoryImpl @Inject constructor(
 
     private fun withPublicAttribution(meta: Meta): Meta = simklCatalog?.withAttribution(meta) ?: meta
 
+    private fun withCachedMalEpisodes(meta: Meta): Meta {
+        val mappings = animeMappings ?: return meta
+        return if (meta.needsVerifiedMalEpisodes()) meta.withVerifiedMalEpisodes(mappings.cachedEpisodeNumbers(meta.id))
+        else meta
+    }
+
     private fun malMeta(id: String): Flow<NetworkResult<Meta>> = flow {
         emit(NetworkResult.Loading)
         try {
-            emit(NetworkResult.Success(withPublicAttribution(requireNotNull(malMetadata).meta(id))))
+            emit(NetworkResult.Success(withPublicAttribution(withCachedMalEpisodes(requireNotNull(malMetadata).meta(id)))))
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
@@ -859,7 +868,7 @@ class MetaRepositoryImpl @Inject constructor(
     }
 
     override fun getCachedMeta(type: String, id: String): Meta? {
-        if (id.startsWith("mal:")) return malMetadata?.cachedMeta(id)
+        if (id.startsWith("mal:")) return malMetadata?.cachedMeta(id)?.let(::withCachedMalEpisodes)
         if (ServerItemRef.isServerId(id)) return serverMetaCache[id]?.takeIf { !it.isExpired() }?.meta
         val cacheKey = metaLookupCacheKey(type, id)
         return addonMetaCache[cacheKey]?.takeIf { !it.isExpired() }?.meta

@@ -308,6 +308,20 @@ fun ClassicHomeContent(
     }
 
     val heroVisible = uiState.heroSectionEnabled && uiState.heroItems.isNotEmpty()
+    val hasContinueWatching = uiState.continueWatchingEnabled && uiState.continueWatchingItems.isNotEmpty()
+    val enterFromHomeTab = LocalHomeBrowseTabFocusRequester.current != null && hasContinueWatching
+    BindInitialContinueWatchingEntry(
+        isInitial = { shouldRequestInitialFocus && currentFocusSnapshot.rowKey == null },
+        isAvailable = hasContinueWatching,
+        prepare = {
+            if (columnListState.layoutInfo.visibleItemsInfo.none { it.key == "continue_watching" }) {
+                columnListState.scrollToItem(if (heroVisible) 1 else 0)
+            }
+        },
+        isVisible = { columnListState.layoutInfo.visibleItemsInfo.any { it.key == "continue_watching" } },
+        requester = cwRowFocusRequester,
+        hasFocus = { contentHasFocus.value && currentFocusSnapshot.rowKey == "continue_watching" }
+    )
 
     val heroExpected = uiState.heroSectionEnabled
     val heroResolved = !heroExpected || heroVisible
@@ -317,10 +331,12 @@ fun ClassicHomeContent(
         delay(2000)
         heroDeferTimedOut = true
     }
-    val deferContentFocus = shouldRequestInitialFocus && !heroResolved && !heroDeferTimedOut
+    val deferContentFocus = shouldRequestInitialFocus && !enterFromHomeTab && !heroResolved && !heroDeferTimedOut
 
-    LaunchedEffect(shouldRequestInitialFocus, heroVisible) {
-        if (!shouldRequestInitialFocus || !heroVisible) return@LaunchedEffect
+    LaunchedEffect(shouldRequestInitialFocus, heroVisible, enterFromHomeTab) {
+        if (!shouldRequestInitialFocus || !heroVisible || enterFromHomeTab ||
+            currentFocusSnapshot.rowKey != null
+        ) return@LaunchedEffect
         columnListState.scrollToItem(0)
         repeat(8) {
             withFrameNanos { }
@@ -612,7 +628,7 @@ fun ClassicHomeContent(
             }
         }
 
-        if (uiState.continueWatchingEnabled && uiState.continueWatchingItems.isNotEmpty()) {
+        if (hasContinueWatching) {
             item(key = "continue_watching", contentType = "continue_watching") {
                 LaunchedEffect(cwPendingScrollToStart.intValue) {
                     if (cwPendingScrollToStart.intValue > 0) {

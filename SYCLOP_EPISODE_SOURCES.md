@@ -16,6 +16,18 @@ When resolving an ordinary episode, the shared Debrid selector requires one actu
 
 The existing native MyAnimeList proof path keeps its separately validated relative, absolute and TVDB coordinates. This change does not derive anime offsets from filenames or titles. Filename checks establish declared coordinates; connected-service authorization and selected-file metadata checks remain separate steps.
 
+## Anime catalog fallback
+
+Syclop prefers an exact MAL-to-TVDB episode mapping. Missing translations, bonus entries, and unrelated episodes without mappings leave verified regular episodes available.
+
+When the requested mapping is missing, Syclop can use a Kitsu episode linked back to the same MAL or AniList record. When a Kitsu episode cannot be confirmed, the exact public MAL record can establish a catalog episode from its published count and release date. Catalog numbering can narrow a text query. TVDB, IMDb, and absolute-number provider requests still require the corresponding verified coordinate. The app confirms the declared edition and episode again before selecting the connected service's actual file.
+
+Active MAL searches can recheck a cached fallback for a newly published primary mapping after five minutes. A failed refresh keeps the verified fallback available until its expiry. Separately cataloged anime specials with published episode counts use the same MAL fallback.
+
+For an episode opened with a Kitsu ID, Syclop confirms the exact Kitsu record and linked episode before using its catalog number. When Kitsu and Ani.zip also agree on the episode title and air date, Express can search using the verified TVDB season and episode. The catalog number stays available for text queries when release-absolute numbering is unavailable. File selection checks the declared edition and episode, and the connected-service link stays tied to the original Kitsu episode and active viewer.
+
+Sources reports missing episode data, failed catalog lookups, and incomplete provider searches separately. Retry repeats the bounded search after visible providers settle.
+
 ## Verification
 
 Host regressions cover the Big Bang Theory case, all-pack empty results, single-season markers, anime batches, native MAL coordinates, movie bypass and filtering before limits. Resolver tests exercise the actual AllDebrid and Real-Debrid code with synthetic service responses, checking that wrong-episode and archive files never reach unlock/download calls. Shared selector tests also cover Premiumize and TorBox.

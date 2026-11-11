@@ -102,9 +102,12 @@ class ExpressAddonAdapter internal constructor(
             providerCount = config.packages.sumOf { it.providers.size }
             stage = "metadata"
             val media = metadata.resolve(request)
-            val episodeRequest = EpisodeSourcePolicy.isEpisodeRequest(media.type, media.episode)
-            if (request.videoId.startsWith("mal:") && media.nativeAnimeIdentity == null)
+            val episodeRequest = EpisodeSourcePolicy.isEpisodeRequest(media.type, media.catalogEpisode)
+            if ((request.videoId.startsWith("mal:") || request.videoId.startsWith("kitsu:")) && media.nativeAnimeIdentity == null)
                 throw ExpressException("A confirmed anime title identity is unavailable.")
+            val kitsuProofKey = media.nativeAnimeEpisode?.takeIf {
+                request.videoId.startsWith("kitsu:") && !it.catalogOnly
+            }?.cacheKey
             stage = "provider search"
             val all = config.packages.flatMap { it.providers }
             providerCount = all.size
@@ -128,7 +131,10 @@ class ExpressAddonAdapter internal constructor(
                 resultMutex.withLock {
                     val key = listOf(stream.infoHash, stream.fileIdx, stream.behaviorHints?.filename).joinToString("|")
                     if (streams.containsKey(key)) count(SourceSearchReason.DUPLICATE)
-                    else if (streams.size < MAX_RESULTS) streams[key] = stream
+                    else if (streams.size < MAX_RESULTS) {
+                        streams[key] = if (kitsuProofKey == null) stream
+                            else stream.copy(nativeKitsuProofCacheKey = kitsuProofKey)
+                    }
                 }
             }
             data class Task(val url: String, val row: ExpressRow? = null)
@@ -263,20 +269,27 @@ class ExpressAddonAdapter internal constructor(
             resultMutex.withLock {
                 val finalReport = report(complete = true, timedOut = !finished)
                 reports[addon.id] = finalReport // Compatibility diagnostics only, never consumed by the repository.
-                val error = if (streams.isEmpty() && (finalReport.failed > 0 || finalReport.unsupported > 0 ||
-                        finalReport.missingMetadata > 0 || finalReport.timedOut)) finalReport.summary() else null
+                val error = if (streams.isEmpty() && finalReport.diagnostics().hasProviderSearchIssue) {
+                    finalReport.summary()
+                } else null
                 send(ExpressSearchUpdate(streams.values.toList(), finalReport, error))
             }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            count(if (stage == "metadata" && request.videoId.startsWith("mal:")) SourceSearchReason.MISSING_MAPPING
-                else SourceSearchReason.REQUEST_FAILED)
+            val reason = when {
+                stage == "metadata" && error is ExpressAnimeMappingUnavailable -> SourceSearchReason.MISSING_MAPPING
+                stage == "metadata" && request.videoId.startsWith("mal:") -> SourceSearchReason.ANIME_METADATA_FAILED
+                else -> SourceSearchReason.REQUEST_FAILED
+            }
+            count(reason)
             Log.w("SyclopExpress", "Source search failed stage=$stage class=${error.javaClass.simpleName}")
             val report = ExpressSearchReport(providerCount, 0, 0, 0, 0, 0, false,
                 counts.mapValues { it.value.get() }, complete = true)
             reports[addon.id] = report
-            send(ExpressSearchUpdate(emptyList(), report,
-                (error as? ExpressException)?.message ?: "Express source search failed."))
+            val message = if (reason == SourceSearchReason.ANIME_METADATA_FAILED) {
+                "MyAnimeList details could not be verified."
+            } else (error as? ExpressException)?.message ?: "Express source search failed."
+            send(ExpressSearchUpdate(emptyList(), report, message))
         }
     }
 
@@ -441,7 +454,14 @@ class ExpressAddonAdapter internal constructor(
             keywords.take(3).flatMap { keyword ->
                 media.queryTitles().mapNotNull { title ->
                     val variables = media.variables(title)
-                    val search = expressTemplate(keyword, variables) ?: return@mapNotNull null
+                    // A verified catalog ordinal can narrow a text query. Provider URLs still
+                    // require the exact coordinates they declare.
+                    val textKeyword = if (scope == "anime" && media.nativeAnimeEpisode?.usesCatalogOrdinalForSearch == true &&
+                        "{title}" in keyword && "{query}" in query) keyword.replace("{absoluteNumber}", "{catalogEpisode}")
+                    else keyword
+                    val searchVariables = if (media.nativeAnimeEpisode?.needsCatalogYear == true && media.year != null)
+                        variables + ("title" to "$title ${media.year}") else variables
+                    val search = expressTemplate(textKeyword, searchVariables) ?: return@mapNotNull null
                     val path = expressTemplate(query, variables.mapValues { expressEncode(it.value) } + ("query" to expressEncode(search))) ?: return@mapNotNull null
                     val base = provider.string("base_url") ?: return@mapNotNull null
                     // Query fragments are relative to the provider's configured path, not the host root.

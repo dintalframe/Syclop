@@ -32,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.*
 import com.nuvio.tv.LocalContentFocusRequester
 import com.nuvio.tv.LocalOpenSidebar
+import com.nuvio.tv.LocalSidebarExpanded
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.components.CatalogRowSection
 import com.nuvio.tv.ui.components.SyclopBrandAnimation
@@ -41,8 +42,63 @@ import com.nuvio.tv.ui.theme.NuvioTheme
 import kotlinx.coroutines.launch
 
 internal val LocalHomeBrowseTabFocusRequester = compositionLocalOf<FocusRequester?> { null }
+private val LocalHomeBrowseEntry = compositionLocalOf<HomeBrowseEntry?> { null }
 
-internal class HomeBrowseEntry { var enter: () -> Unit = {}; var pending = false }
+internal class HomeBrowseEntry(val canEnterContent: () -> Boolean) {
+    var enter: () -> Unit = {}
+    var preferContinueWatching: () -> Boolean = { false }
+    var pending = false
+}
+
+@Composable
+internal fun BindInitialContinueWatchingEntry(
+    isInitial: () -> Boolean,
+    isAvailable: Boolean,
+    prepare: suspend () -> Unit,
+    isVisible: () -> Boolean,
+    requester: FocusRequester,
+    hasFocus: () -> Boolean
+) {
+    val entry = LocalHomeBrowseEntry.current ?: return
+    val scope = rememberCoroutineScope()
+    val available by rememberUpdatedState(isAvailable)
+    val sidebarExpanded by rememberUpdatedState(LocalSidebarExpanded.current)
+    val currentInitial by rememberUpdatedState(isInitial)
+    val currentPrepare by rememberUpdatedState(prepare)
+    val currentVisible by rememberUpdatedState(isVisible)
+    val currentHasFocus by rememberUpdatedState(hasFocus)
+
+    DisposableEffect(entry, requester) {
+        entry.preferContinueWatching = {
+            when {
+                entry.pending -> true
+                !available || !currentInitial() -> false
+                else -> {
+                    entry.pending = true
+                    scope.launch {
+                        try {
+                            val result = HomeBrowseFocusTransfer.transfer(
+                                isCurrent = { available && entry.canEnterContent() && !sidebarExpanded },
+                                prepare = { currentPrepare() },
+                                awaitFrame = { withFrameNanos { } },
+                                ready = { currentVisible() },
+                                request = { requester.requestFocus(FocusDirection.Enter) },
+                                hasFocus = { currentHasFocus() }
+                            )
+                            if (result != HomeBrowseFocusTransfer.Result.FOCUSED &&
+                                entry.canEnterContent() && !sidebarExpanded
+                            ) entry.enter()
+                        } finally {
+                            entry.pending = false
+                        }
+                    }
+                    true
+                }
+            }
+        }
+        onDispose { entry.preferContinueWatching = { false } }
+    }
+}
 
 /** The sidebar enters the selected tab; Down enters content, Up never falls through to a tile. */
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -56,7 +112,11 @@ internal fun HomeBrowseScaffold(section: HomeBrowseSection, onSelect: (HomeBrows
     // that has actually received focus; Down explicitly grants entry before requesting it.
     val headerOwnsFocus = remember { mutableStateOf(false) }
     val bodyEntry = remember(section) { FocusRequester() }
-    val entry = remember(section) { HomeBrowseEntry().apply { enter = { runCatching { bodyEntry.requestFocus() }; Unit } } }
+    val entry = remember(section) {
+        HomeBrowseEntry(canEnterContent = { !headerOwnsFocus.value }).apply {
+            enter = { runCatching { bodyEntry.requestFocus() }; Unit }
+        }
+    }
     val saved = rememberSaveableStateHolder()
     Column(Modifier.fillMaxSize().background(Color.Black)) {
         Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 24.dp)
@@ -81,16 +141,25 @@ internal fun HomeBrowseScaffold(section: HomeBrowseSection, onSelect: (HomeBrows
                     .then(if (isSelected && sidebarEntry != FocusRequester.Default) Modifier.focusRequester(sidebarEntry) else Modifier)
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) false else when (event.key) {
-                            Key.DirectionUp -> true
-                            Key.DirectionDown -> { headerOwnsFocus.value = false; entry.enter(); true }
+                            Key.DirectionUp -> { headerOwnsFocus.value = true; true }
+                            Key.DirectionDown -> {
+                                headerOwnsFocus.value = false
+                                if (!entry.preferContinueWatching()) entry.enter()
+                                true
+                            }
                             Key.DirectionLeft -> {
+                                headerOwnsFocus.value = true
                                 if (index > 0) tabs.getValue(HomeBrowseSection.entries[index - 1]).requestFocus()
                                 else openSidebar?.invoke()
                                 // Home is the left boundary: never let geometric search land
                                 // in a scrolled body row instead of opening root navigation.
                                 true
                             }
-                            Key.DirectionRight -> { if (index < HomeBrowseSection.entries.lastIndex) tabs.getValue(HomeBrowseSection.entries[index + 1]).requestFocus(); true }
+                            Key.DirectionRight -> {
+                                headerOwnsFocus.value = true
+                                if (index < HomeBrowseSection.entries.lastIndex) tabs.getValue(HomeBrowseSection.entries[index + 1]).requestFocus()
+                                true
+                            }
                             else -> false
                         }
                     }, colors = ButtonDefaults.colors(
@@ -109,7 +178,8 @@ internal fun HomeBrowseScaffold(section: HomeBrowseSection, onSelect: (HomeBrows
             saved.SaveableStateProvider(section.name) {
                 CompositionLocalProvider(
                     LocalContentFocusRequester provides bodyEntry,
-                    LocalHomeBrowseTabFocusRequester provides tabs.getValue(section)
+                    LocalHomeBrowseTabFocusRequester provides tabs.getValue(section),
+                    LocalHomeBrowseEntry provides entry
                 ) { content(tabs.getValue(section), entry) }
             }
         }
