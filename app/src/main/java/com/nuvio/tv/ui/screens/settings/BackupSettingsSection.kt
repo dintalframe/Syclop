@@ -12,14 +12,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import com.nuvio.tv.ui.components.NuvioDialog
 import com.nuvio.tv.core.backup.LocalBackupFileNames
+import com.nuvio.tv.ui.screens.detail.requestFocusAfterFrames
 import com.nuvio.tv.ui.theme.NuvioTheme
 
 @Composable
@@ -82,23 +87,37 @@ internal fun BackupSettingsSection(viewModel: BackupSettingsViewModel = hiltView
         }
     }
     val backup = state.preview
-    if (backup != null) NuvioDialog(onDismiss = viewModel::dismissPreview, title = "Replace local data?", subtitle = "No changes have been made yet.", width = 760.dp, suppressFirstKeyUp = false) {
-        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 370.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item { Text("Backup: ${backup.createdAt}\nProfiles: ${backup.profiles.joinToString { it.name }}\n${backup.stores.size} supported settings/data stores.", style = NuvioTheme.textStyles.bodyCompact) }
-            item { Text("This replaces all current local profiles, local settings, Library and progress. All service accounts are disconnected, and private providers and plug-ins must be added again. Public application registrations stay on this TV. A private Undo snapshot retains the previous state and encrypted account connections on this installation; it is never included in portable exports.",
-                style = NuvioTheme.textStyles.bodyCompact, color = NuvioTheme.colors.TextSecondary) }
-            item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SettingsDialogActionButton("Queue restore", viewModel::confirmRestore, primary = true, enabled = !state.busy)
-                SettingsDialogActionButton("Cancel", viewModel::dismissPreview, enabled = !state.busy)
-            } }
+    if (backup != null) {
+        val cancelFocus = remember { FocusRequester() }
+        NuvioDialog(onDismiss = viewModel::dismissPreview, title = "Replace local data?",
+            subtitle = "No changes have been made yet.", width = 760.dp) {
+            LaunchedEffect(state.busy) { if (!state.busy) cancelFocus.requestFocusAfterFrames() }
+            Column(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 370.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text("Backup: ${backup.createdAt}\nProfiles: ${backup.profiles.joinToString { it.name }}\n${backup.stores.size} supported settings/data stores.",
+                    style = NuvioTheme.textStyles.bodyCompact)
+                Text("This replaces all current local profiles, local settings, Library and progress. All service accounts are disconnected, and private providers and plug-ins must be added again. Public application registrations stay on this TV. A private Undo snapshot retains the previous state and encrypted account connections on this installation; it is never included in portable exports.",
+                    style = NuvioTheme.textStyles.bodyCompact, color = NuvioTheme.colors.TextSecondary)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SettingsDialogActionButton("Cancel", viewModel::dismissPreview, enabled = !state.busy,
+                        modifier = Modifier.focusRequester(cancelFocus))
+                    SettingsDialogActionButton("Queue restore", viewModel::confirmRestore, primary = true, enabled = !state.busy)
+                }
+            }
         }
     }
-    if (confirmUndo) NuvioDialog(onDismiss = { confirmUndo = false }, title = "Undo previous restore?", width = 720.dp, suppressFirstKeyUp = false) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("The private snapshot replaces current local data and restores the account connections from before the previous restore. This runs on the next cold app start. It cannot restore data after uninstalling Syclop or clearing app storage.", style = NuvioTheme.textStyles.bodyCompact)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SettingsDialogActionButton("Queue Undo", { confirmUndo = false; viewModel.queueUndo() }, enabled = !state.busy)
-                SettingsDialogActionButton("Cancel", { confirmUndo = false })
+    if (confirmUndo) {
+        val cancelFocus = remember { FocusRequester() }
+        NuvioDialog(onDismiss = { confirmUndo = false }, title = "Undo previous restore?", width = 720.dp) {
+            LaunchedEffect(Unit) { cancelFocus.requestFocusAfterFrames() }
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("The private snapshot replaces current local data and restores the account connections from before the previous restore. This runs on the next cold app start. It cannot restore data after uninstalling Syclop or clearing app storage.", style = NuvioTheme.textStyles.bodyCompact)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SettingsDialogActionButton("Cancel", { confirmUndo = false }, modifier = Modifier.focusRequester(cancelFocus))
+                    SettingsDialogActionButton("Queue Undo", { confirmUndo = false; viewModel.queueUndo() }, enabled = !state.busy)
+                }
             }
         }
     }

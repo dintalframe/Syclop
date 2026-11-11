@@ -2,15 +2,19 @@ package com.nuvio.tv.core.sync
 
 import android.os.SystemClock
 import android.util.Log
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.core.profile.ProfileManager
+import com.nuvio.tv.data.local.ProfileLockStateDataStore
 import com.nuvio.tv.data.remote.supabase.SupabaseProfileLockState
 import com.nuvio.tv.data.remote.supabase.SupabaseProfile
 import com.nuvio.tv.data.remote.supabase.SupabaseProfilePinVerifyResult
 import com.nuvio.tv.domain.model.UserProfile
 import com.nuvio.tv.domain.model.AuthState
 import io.github.jan.supabase.postgrest.Postgrest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -47,7 +51,8 @@ class ProfileSyncService @Inject constructor(
     private val authManager: AuthManager,
     private val postgrest: Postgrest,
     private val profileManager: ProfileManager,
-    private val syncClientIdentity: SyncClientIdentity
+    private val syncClientIdentity: SyncClientIdentity,
+    private val profileLockStateDataStore: ProfileLockStateDataStore
 ) {
     private val pullMutex = Mutex()
     private var pullFreshness = ProfilePullFreshness()
@@ -167,6 +172,9 @@ class ProfileSyncService @Inject constructor(
 
     suspend fun pullProfileLockStates(): Result<Map<Int, Boolean>> = withContext(Dispatchers.IO) {
         try {
+            if (BuildConfig.LOCAL_ONLY_BUILD) {
+                return@withContext Result.success(profileLockStateDataStore.pinEnabled.first())
+            }
             val response = withJwtRefreshRetry {
                 postgrest.rpc("sync_pull_profile_locks")
             }
@@ -181,6 +189,15 @@ class ProfileSyncService @Inject constructor(
 
     suspend fun setProfilePin(profileId: Int, pin: String, currentPin: String? = null): SetProfilePinResult = withContext(Dispatchers.IO) {
         try {
+            if (BuildConfig.LOCAL_ONLY_BUILD) {
+                return@withContext if (profileLockStateDataStore.setLocalPin(profileId, pin, currentPin)) {
+                    SetProfilePinResult.Success
+                } else if (currentPin == null) {
+                    SetProfilePinResult.CurrentPinRequired
+                } else {
+                    SetProfilePinResult.Failure(IllegalArgumentException("Current PIN could not be verified"))
+                }
+            }
             val params = buildJsonObject {
                 put("p_profile_id", profileId)
                 put("p_pin", pin)
@@ -193,6 +210,7 @@ class ProfileSyncService @Inject constructor(
             }
             SetProfilePinResult.Success
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "Failed to set profile PIN", e)
             if (isCurrentPinRequiredError(e)) {
                 SetProfilePinResult.CurrentPinRequired
@@ -207,6 +225,10 @@ class ProfileSyncService @Inject constructor(
 
     suspend fun clearProfilePin(profileId: Int, currentPin: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            if (BuildConfig.LOCAL_ONLY_BUILD) {
+                require(profileLockStateDataStore.clearLocalPin(profileId, currentPin)) { "Current PIN could not be verified" }
+                return@withContext Result.success(Unit)
+            }
             val params = buildJsonObject {
                 put("p_profile_id", profileId)
                 if (!currentPin.isNullOrBlank()) {
@@ -218,6 +240,7 @@ class ProfileSyncService @Inject constructor(
             }
             Result.success(Unit)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "Failed to clear profile PIN", e)
             Result.failure(e)
         }
@@ -225,6 +248,9 @@ class ProfileSyncService @Inject constructor(
 
     suspend fun verifyProfilePin(profileId: Int, pin: String): Result<SupabaseProfilePinVerifyResult> = withContext(Dispatchers.IO) {
         try {
+            if (BuildConfig.LOCAL_ONLY_BUILD) {
+                return@withContext Result.success(profileLockStateDataStore.verifyLocalPin(profileId, pin))
+            }
             val params = buildJsonObject {
                 put("p_profile_id", profileId)
                 put("p_pin", pin)
@@ -236,6 +262,7 @@ class ProfileSyncService @Inject constructor(
                 ?: SupabaseProfilePinVerifyResult(unlocked = false, retryAfterSeconds = 0)
             Result.success(decoded)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "Failed to verify profile PIN", e)
             Result.failure(e)
         }

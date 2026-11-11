@@ -1,9 +1,11 @@
 package com.nuvio.tv.core.profile
 
 import android.content.Context
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
 import com.nuvio.tv.data.local.ProfileDataStore
 import com.nuvio.tv.data.local.ProfileDataStoreFactory
+import com.nuvio.tv.data.local.ProfileLockStateDataStore
 import com.nuvio.tv.domain.model.UserProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -12,6 +14,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -25,6 +29,7 @@ class ProfileManager @Inject constructor(
     private val profileDataStore: ProfileDataStore,
     private val factory: ProfileDataStoreFactory,
     private val credentialStores: Set<@JvmSuppressWildcards ProfileScopedCredentialStore>,
+    private val profileLockStateDataStore: ProfileLockStateDataStore,
     @ApplicationContext private val context: Context
 ) {
     companion object {
@@ -35,6 +40,21 @@ class ProfileManager @Inject constructor(
 
     val activeProfileId: StateFlow<Int> = profileDataStore.activeProfileId
         .stateIn(scope, SharingStarted.Eagerly, 1)
+
+    internal val storedActiveProfileId get() = profileDataStore.activeProfileId
+    internal val storedProfiles get() = profileDataStore.profilesList
+
+    internal data class LauncherPrivacy(val publicProfileId: Int?, val lockedProfiles: Set<Int>)
+
+    internal val launcherPrivacy = combine(storedActiveProfileId, profileLockStateDataStore.pinEnabled) { id, locks ->
+        LauncherPrivacy(id.takeUnless { locks[id] == true }, locks.filterValues { it }.keys)
+    }.catch { emit(LauncherPrivacy(null, emptySet())) }
+
+    internal suspend fun canPublishLauncherHistory(profileId: Int, selectionRevision: Long): Boolean =
+        !BuildConfig.LOCAL_ONLY_BUILD || (
+            launcherPrivacy.first().publicProfileId == profileId &&
+                activeProfileId.value == profileId && activeProfileSelectionRevision == selectionRevision
+        )
 
     val activeProfileReady: StateFlow<Boolean> = profileDataStore.activeProfileId
         .map { true }
@@ -145,6 +165,7 @@ class ProfileManager @Inject constructor(
         if (id == 1) return
         credentialStores.forEach { store -> store.removeProfile(id) }
         deleteProfileDataAsync(id)
+        if (BuildConfig.LOCAL_ONLY_BUILD) profileLockStateDataStore.removeProfile(id)
     }
 
     suspend fun updateProfile(profile: UserProfile): Boolean {

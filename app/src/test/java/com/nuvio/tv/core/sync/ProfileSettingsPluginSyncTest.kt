@@ -8,6 +8,7 @@ import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.data.local.PluginDataStore
 import com.nuvio.tv.data.local.ProfileDataStoreFactory
+import com.nuvio.tv.data.local.ProfileLockStateDataStore
 import com.nuvio.tv.domain.model.UserProfile
 import com.squareup.moshi.Moshi
 import io.github.jan.supabase.postgrest.Postgrest
@@ -290,7 +291,40 @@ class ProfileSettingsPluginSyncTest {
         assertTrue(harness.remote[2] == null)
     }
 
-    private fun harness(profileId: Int = 1, authenticated: Boolean = false): Harness {
+    @Test
+    fun `PIN locks block both sides of a local copy before settings or keys change`() = runTest(dispatcher) {
+        val pinStates = MutableStateFlow(mapOf(2 to true))
+        val harness = harness(pinStates = pinStates)
+        val theme = stringPreferencesKey("theme")
+        val apiKey = stringPreferencesKey("animeskip_client_id")
+        val primaryTheme = harness.store(1, "theme_settings")
+        val secondaryTheme = harness.store(2, "theme_settings")
+        val primaryKeys = harness.store(1, "animeskip_settings")
+        val secondaryKeys = harness.store(2, "animeskip_settings")
+        primaryTheme.edit { it[theme] = "primary-theme" }
+        secondaryTheme.edit { it[theme] = "secondary-theme" }
+        secondaryKeys.edit { it[apiKey] = "synthetic-profile-two-key" }
+
+        for ((source, target) in listOf(2 to 1, 1 to 2)) {
+            val result = harness.service.copyProfileSetup(source, target, copyProviderCredentials = true)
+            assertTrue(result.exceptionOrNull() is ProfileSetupCopyLockedException)
+        }
+        assertEquals("primary-theme", primaryTheme.value[theme])
+        assertEquals("secondary-theme", secondaryTheme.value[theme])
+        assertEquals(null, primaryKeys.value[apiKey])
+        assertEquals("synthetic-profile-two-key", secondaryKeys.value[apiKey])
+
+        pinStates.value = emptyMap()
+        harness.service.copyProfileSetup(2, 1, copyProviderCredentials = true).getOrThrow()
+        assertEquals("secondary-theme", primaryTheme.value[theme])
+        assertEquals("synthetic-profile-two-key", primaryKeys.value[apiKey])
+    }
+
+    private fun harness(
+        profileId: Int = 1,
+        authenticated: Boolean = false,
+        pinStates: MutableStateFlow<Map<Int, Boolean>> = MutableStateFlow(emptyMap())
+    ): Harness {
         val stores = mutableMapOf<Pair<Int, String>, TestPreferencesStore>()
         val factory = mockk<ProfileDataStoreFactory>()
         every { factory.get(any(), any()) } answers {
@@ -337,9 +371,12 @@ class ProfileSettingsPluginSyncTest {
             }
             PostgrestResult(response, Headers.Empty, postgrest)
         }
+        val profileLocks = mockk<ProfileLockStateDataStore>()
+        every { profileLocks.pinEnabled } returns pinStates
         val service = ProfileSettingsSyncService(
             authManager, postgrest, profileManager, factory, identity,
-            mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true)
+            mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
+            profileLocks
         )
         services += service
         val plugins = PluginDataStore(mockk(relaxed = true), Moshi.Builder().build(), factory, profileManager)

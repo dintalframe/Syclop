@@ -952,6 +952,7 @@ internal fun PlayerRuntimeController.saveWatchProgressInternal(position: Long, d
     val origin = playbackOrigin
     val completedWhenCaptured = hasMarkedCurrentEpisodeCompleted
     val request = progressWriteCoordinator.capture(owner, completedWhenCaptured) ?: return
+    val launcherSelectionRevision = tvRecommendationManager.activeProfileSelectionRevision
 
     scope.launch(kotlinx.coroutines.NonCancellable) {
         try {
@@ -987,7 +988,9 @@ internal fun PlayerRuntimeController.saveWatchProgressInternal(position: Long, d
                         normalizedProgress, owner.profileId, origin.await(), syncRemote = syncRemote
                     )
                     if (owner == currentProgressWriteOwner() && progressWriteCoordinator.mayPublish(request)) {
-                        runCatching { tvRecommendationManager.updateSingleWatchNextProgram(normalizedProgress) }
+                        runCatching {
+                            tvRecommendationManager.updateSingleWatchNextProgram(normalizedProgress, owner.profileId, launcherSelectionRevision)
+                        }
                     }
                 }
             }

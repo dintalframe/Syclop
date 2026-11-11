@@ -12,12 +12,14 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.data.local.ContinueWatchingEnrichmentCache
 import com.nuvio.tv.data.local.ExperienceModeDataStore
 import com.nuvio.tv.data.local.PluginDataStore
 import com.nuvio.tv.data.local.ProfileDataStoreFactory
+import com.nuvio.tv.data.local.ProfileLockStateDataStore
 import com.nuvio.tv.data.local.StreamBadgeSettingsDataStore
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
 import com.nuvio.tv.data.remote.supabase.SupabaseProfileSetupCopyResult
@@ -175,6 +177,8 @@ internal fun shouldExcludePreferenceFromProfileSettingsSync(feature: String, key
     }
 }
 
+internal class ProfileSetupCopyLockedException : IllegalStateException("Profile setup copy requires both PIN locks to be off")
+
 @Singleton
 class ProfileSettingsSyncService @Inject constructor(
     private val authManager: AuthManager,
@@ -186,7 +190,8 @@ class ProfileSettingsSyncService @Inject constructor(
     private val mediaServerSyncService: MediaServerSyncService,
     private val tmdbSettingsDataStore: TmdbSettingsDataStore,
     private val metaRepository: MetaRepository,
-    private val cwEnrichmentCache: ContinueWatchingEnrichmentCache
+    private val cwEnrichmentCache: ContinueWatchingEnrichmentCache,
+    private val profileLockStateDataStore: ProfileLockStateDataStore
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val syncMutex = Mutex()
@@ -286,6 +291,12 @@ class ProfileSettingsSyncService @Inject constructor(
                     require(sourceProfileId != targetProfileId)
                     require(profileManager.profiles.value.any { it.id == sourceProfileId })
                     require(profileManager.profiles.value.any { it.id == targetProfileId })
+                    if (BuildConfig.LOCAL_ONLY_BUILD) {
+                        val locks = profileLockStateDataStore.pinEnabled.first()
+                        if (locks[sourceProfileId] == true || locks[targetProfileId] == true) {
+                            throw ProfileSetupCopyLockedException()
+                        }
+                    }
 
                     val targetFeatures = if (authManager.isAuthenticated) {
                         if (

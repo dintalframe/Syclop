@@ -2,6 +2,7 @@ package com.nuvio.tv.ui.screens.addon
 
 import android.view.KeyEvent
 import android.os.Build
+import android.os.SystemClock
 import android.graphics.Bitmap
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -18,7 +19,6 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -38,6 +38,7 @@ import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicInteger
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeFalse
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -53,34 +54,36 @@ class EssentialAddonSetupScreenTvTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
     @Test
-    fun manualEntryBackRestoresItsActionAndSkipContinues() {
-        val skipCalls = AtomicInteger()
-        withSetup(onSkip = { skipCalls.incrementAndGet() }) { scenario ->
+    fun skipContinuesFromSetup() {
+        withSetup {
             press(KeyEvent.KEYCODE_DPAD_DOWN)
             compose.onNodeWithText(label(R.string.essential_addon_enter_link_on_tv)).assertIsFocused()
-            press(KeyEvent.KEYCODE_DPAD_CENTER)
-            compose.onNodeWithText(label(R.string.essential_addon_link_title)).assertIsDisplayed()
-            compose.onNode(hasSetTextAction()).assertIsDisplayed().assertIsFocused()
-            assertEquals(0, skipCalls.get())
-
-            // The keyboard can receive Back before the screen does. Close it first
-            // so the key event below tests the setup screen's own Back handler.
-            scenario.onActivity { activity ->
-                WindowCompat.getInsetsController(activity.window, activity.window.decorView)
-                    .hide(WindowInsetsCompat.Type.ime())
-            }
-            compose.waitUntil(timeoutMillis = 5_000) { !isImeVisible(scenario) }
-            press(KeyEvent.KEYCODE_BACK)
-            compose.waitUntil(timeoutMillis = 5_000) {
-                !hasText(R.string.essential_addon_link_title)
-            }
-            compose.onNodeWithText(label(R.string.essential_addon_enter_link_on_tv)).assertIsFocused()
-            assertEquals(0, skipCalls.get())
-
             press(KeyEvent.KEYCODE_DPAD_DOWN)
             compose.onNodeWithText(label(R.string.essential_addon_continue_for_now)).assertIsFocused()
+            assertEquals(0, skipCalls.get())
             press(KeyEvent.KEYCODE_DPAD_CENTER)
             compose.waitUntil(timeoutMillis = 5_000) { skipCalls.get() == 1 }
+        }
+    }
+
+    @Test
+    fun keyboardBackKeepsManualEntryUntilTheNextBack() {
+        withSetup { scenario ->
+            press(KeyEvent.KEYCODE_DPAD_DOWN)
+            compose.onNodeWithText(label(R.string.essential_addon_enter_link_on_tv)).assertIsFocused()
+            press(KeyEvent.KEYCODE_DPAD_CENTER)
+            val editor = compose.onNode(hasSetTextAction())
+            editor.assertIsFocused()
+            compose.waitUntil(timeoutMillis = 5_000) { isImeVisible(scenario) }
+
+            pressSystemBack()
+            compose.waitUntil(timeoutMillis = 5_000) { !isImeVisible(scenario) }
+            compose.onNodeWithText(label(R.string.essential_addon_link_title)).assertIsDisplayed()
+            editor.assertIsFocused()
+
+            press(KeyEvent.KEYCODE_BACK)
+            compose.waitUntil(timeoutMillis = 5_000) { !hasText(R.string.essential_addon_link_title) }
+            compose.onNodeWithText(label(R.string.essential_addon_enter_link_on_tv)).assertIsFocused()
         }
     }
 
@@ -169,12 +172,6 @@ class EssentialAddonSetupScreenTvTest {
                     } }
                 } }
                 compose.waitForIdle()
-                instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
-                    File(instrumentation.targetContext.cacheDir, "first-watch-layout-fixture.png").outputStream().use {
-                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
-                    }
-                    bitmap.recycle()
-                }
                 compose.onNodeWithText("Owned demonstration selection", substring = true).assertIsDisplayed()
                 providers.forEach { id -> compose.onNodeWithText("${DebridProviders.displayName(id)}: Saved", substring = true).assertIsDisplayed() }
                 for (action in listOf(R.string.essential_addon_show_qr, R.string.essential_addon_enter_link_on_tv,
@@ -197,6 +194,12 @@ class EssentialAddonSetupScreenTvTest {
                 press(KeyEvent.KEYCODE_DPAD_LEFT)
                 compose.onNodeWithText(label(R.string.first_watch_check_accounts)).assertIsFocused()
                 assertEquals(0, continues.get())
+                instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
+                    File(instrumentation.targetContext.cacheDir, "first-watch-layout-fixture.png").outputStream().use {
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                    bitmap.recycle()
+                }
             } finally {
                 viewModel.cancelAccountCheck()
                 runBlocking {
@@ -237,6 +240,16 @@ class EssentialAddonSetupScreenTvTest {
 
     private fun hasQr(description: String) =
         compose.onAllNodesWithContentDescription(description).fetchSemanticsNodes().isNotEmpty()
+
+    private fun pressSystemBack() {
+        val downTime = SystemClock.uptimeMillis()
+        for (action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+            // The platform IME owns the first Back and can be in another process.
+            assertTrue(instrumentation.uiAutomation.injectInputEvent(
+                KeyEvent(downTime, SystemClock.uptimeMillis(), action, KeyEvent.KEYCODE_BACK, 0), true
+            ))
+        }
+    }
 
     private fun press(keyCode: Int) {
         instrumentation.sendKeyDownUpSync(keyCode)

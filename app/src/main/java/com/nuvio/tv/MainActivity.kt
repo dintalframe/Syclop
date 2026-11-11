@@ -319,6 +319,9 @@ open class MainActivity : ComponentActivity() {
     lateinit var profileManager: ProfileManager
 
     @Inject
+    lateinit var profileLockStateDataStore: com.nuvio.tv.data.local.ProfileLockStateDataStore
+
+    @Inject
     lateinit var authManager: AuthManager
 
     @Inject
@@ -360,6 +363,7 @@ open class MainActivity : ComponentActivity() {
     private var isFirstResumeAfterCreate = false
     /** Mirrors the committed visible gate; hidden overlays must not intercept its remote input. */
     private var startupInitializationGateVisible = false
+    private var visibleAutoNextOverlayProfileId: Int? = null
 
     @OptIn(ExperimentalTvMaterial3Api::class, ExperimentalFoundationApi::class)
     override fun attachBaseContext(newBase: Context) {
@@ -400,7 +404,10 @@ open class MainActivity : ComponentActivity() {
         captureLaunchIntent(intent)
 
         setContent {
-            var hasSelectedProfileThisSession by rememberSaveable { mutableStateOf(false) }
+            var selectedProfileThisSession by key("selected-profile-id") {
+                rememberSaveable { mutableStateOf<Int?>(null) }
+            }
+            var unlockedProfileThisActivity by remember { mutableStateOf<Int?>(null) }
             var startupSession by remember { mutableIntStateOf(0) }
             // Triggered immediately on profile click (before system confirms selection).
             var splashTriggered by remember { mutableStateOf(false) }
@@ -452,29 +459,37 @@ open class MainActivity : ComponentActivity() {
             val activeProfile = remember(activeProfileId, profiles) {
                 profiles.firstOrNull { it.id == activeProfileId }
             }
-            var profilePinStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
+            val localProfilePinStates by profileLockStateDataStore.pinEnabled.collectAsState(initial = null)
+            val storedActiveProfileId by profileManager.storedActiveProfileId.collectAsState(initial = null)
+            val storedProfiles by profileManager.storedProfiles.collectAsState(initial = null)
+            var profileEntryReady by remember { mutableStateOf(!BuildConfig.LOCAL_ONLY_BUILD) }
+            if (!profileEntryReady && localProfilePinStates != null &&
+                storedActiveProfileId == activeProfileId && storedProfiles == profiles
+            ) profileEntryReady = true
+            var remoteProfilePinStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
 
             LaunchedEffect(authState, profiles) {
-                if (authState is AuthState.FullAccount) {
+                if (!BuildConfig.LOCAL_ONLY_BUILD && authState is AuthState.FullAccount) {
                     profileSyncService.pullProfileLockStates()
-                        .onSuccess { profilePinStates = it }
-                        .onFailure { profilePinStates = emptyMap() }
+                        .onSuccess { remoteProfilePinStates = it }
+                        .onFailure { remoteProfilePinStates = emptyMap() }
                 } else {
-                    profilePinStates = emptyMap()
+                    remoteProfilePinStates = emptyMap()
                 }
             }
 
-            val activeProfileHasPin = remember(activeProfileId, profilePinStates) {
-                profilePinStates[activeProfileId] == true
-            }
+            val profilePinStates = if (BuildConfig.LOCAL_ONLY_BUILD) localProfilePinStates.orEmpty() else remoteProfilePinStates
+            val activeProfileHasPin = profilePinStates[activeProfileId] == true
+            val hasSelectedProfileThisSession = selectedProfileThisSession == activeProfileId &&
+                (!activeProfileHasPin || unlockedProfileThisActivity == activeProfileId)
 
             var profileSwitchedManually by remember { mutableStateOf(false) }
-            val shouldAutoSelectProfile = rememberLastProfileEnabled &&
+            val shouldAutoSelectProfile = profileEntryReady && rememberLastProfileEnabled &&
                 hasEverSelectedProfile && !activeProfileHasPin &&
                 !hasSelectedProfileThisSession && !profileSwitchedManually
             if (shouldAutoSelectProfile && !splashTriggered) {
                 splashTriggered = true
-                hasSelectedProfileThisSession = true
+                selectedProfileThisSession = activeProfileId
             }
             LaunchedEffect(shouldAutoSelectProfile) {
                 if (shouldAutoSelectProfile) {
@@ -743,7 +758,7 @@ open class MainActivity : ComponentActivity() {
 
                     var startupDestination = StartupDestination.Loading
                     var initializationHomeEntry = false
-                    val surfaceContentReady = hasSeenAuthQrOnFirstLaunch != null &&
+                    val surfaceContentReady = profileEntryReady && hasSeenAuthQrOnFirstLaunch != null &&
                         authState !is AuthState.Loading
 
                     if (!surfaceContentReady) {
@@ -818,8 +833,9 @@ open class MainActivity : ComponentActivity() {
                                     focusedSplashTheme = theme
                                 }
                             },
-                            onProfileSelected = {
-                                hasSelectedProfileThisSession = true
+                            onProfileSelected = { profileId, pinVerified ->
+                                selectedProfileThisSession = profileId
+                                unlockedProfileThisActivity = profileId.takeIf { pinVerified }
                                 if (authManager.authState.value is AuthState.FullAccount) {
                                     startupSyncService.requestSyncNow()
                                 }
@@ -911,7 +927,7 @@ open class MainActivity : ComponentActivity() {
                         layoutChosen -> Screen.Home.route
                         else -> Screen.LayoutSelection.route
                     }
-                    val navController = rememberNavController()
+                    val navController = key("profile-navigation", activeProfileId) { rememberNavController() }
                     val navViewModelStoreOwner = rememberNavSessionViewModelStoreOwner(navController)
                     var optimisticRoute by remember { mutableStateOf<String?>(null) }
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -932,7 +948,7 @@ open class MainActivity : ComponentActivity() {
                     // recovered from disk and the event replayed).
                     LaunchedEffect(navController) {
                         externalPlaybackTracker.autoPlayNext.collect { next ->
-                            if (!externalPlaybackTracker.claimAutoPlayNextNavigation(next)) {
+                            if (!externalPlaybackTracker.claimAutoPlayNextNavigation(next, activeProfileId)) {
                                 return@collect
                             }
                             Log.d(
@@ -1195,7 +1211,8 @@ open class MainActivity : ComponentActivity() {
                             focusedSplashBgUrl = null
                             focusedSplashCacheKey = null
                             focusedSplashTheme = null
-                            hasSelectedProfileThisSession = false
+                            selectedProfileThisSession = null
+                            unlockedProfileThisActivity = null
                         }
                         Box(modifier = Modifier.fillMaxSize()) {
                             CompositionLocalProvider(LocalNavViewModelStoreOwner provides navViewModelStoreOwner) {
@@ -1242,7 +1259,12 @@ open class MainActivity : ComponentActivity() {
                                 }
                             }
 
-                            val autoNextOverlay by externalPlaybackTracker.autoNextOverlay.collectAsState()
+                            val trackedAutoNextOverlay by externalPlaybackTracker.autoNextOverlay.collectAsState()
+                            val autoNextOverlay = trackedAutoNextOverlay?.takeIf { it.profileId == activeProfileId }
+                            SideEffect { visibleAutoNextOverlayProfileId = autoNextOverlay?.profileId }
+                            DisposableEffect(Unit) {
+                                onDispose { visibleAutoNextOverlayProfileId = null }
+                            }
                             autoNextOverlay?.let { ov ->
                                 com.nuvio.tv.ui.screens.player.LoadingOverlay(
                                     visible = true,
@@ -1419,7 +1441,8 @@ open class MainActivity : ComponentActivity() {
             }
         }
         if (event.keyCode == KeyEvent.KEYCODE_BACK &&
-            externalPlaybackTracker.autoNextOverlay.value != null
+            visibleAutoNextOverlayProfileId == profileManager.activeProfileId.value &&
+            externalPlaybackTracker.autoNextOverlay.value?.profileId == visibleAutoNextOverlayProfileId
         ) {
             if (event.action == KeyEvent.ACTION_UP) {
                 Log.d("ExtAutoNext", "dispatchKeyEvent BACK -> dismissAutoNextOverlay (loader showing)")

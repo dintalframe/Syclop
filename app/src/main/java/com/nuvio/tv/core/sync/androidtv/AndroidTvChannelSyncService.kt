@@ -2,9 +2,11 @@ package com.nuvio.tv.core.sync.androidtv
 
 import android.content.Context
 import android.util.Log
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.poster.CustomPosterScreen
 import com.nuvio.tv.core.poster.patternForScreen
 import com.nuvio.tv.core.poster.withCustomPosterArt
+import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.recommendations.TvRecommendationManager
 import com.nuvio.tv.data.local.CachedInProgressItem
 import com.nuvio.tv.data.local.CachedNextUpItem
@@ -20,9 +22,12 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,9 +53,11 @@ class AndroidTvChannelSyncService @Inject constructor(
     private val cwEnrichmentCache: ContinueWatchingEnrichmentCache,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
     private val traktSettingsDataStore: TraktSettingsDataStore,
-    private val tvRecommendationManager: TvRecommendationManager
+    private val tvRecommendationManager: TvRecommendationManager,
+    private val profileManager: ProfileManager
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val reconcileMutex = Mutex()
 
     // The launcher channel is only visible while the app is in the background. Reconciling on
     // every in-playback cache bump (~10s) thrashes the TvProvider and stops launchers like
@@ -75,6 +82,18 @@ class AndroidTvChannelSyncService @Inject constructor(
             return
         }
         TvChannelRefreshJobService.schedulePeriodic(context)
+        if (BuildConfig.LOCAL_ONLY_BUILD) {
+            scope.launch {
+                var previousLocks = emptySet<Int>()
+                profileManager.launcherPrivacy.distinctUntilChanged().collect { privacy ->
+                    val pinAdded = !previousLocks.containsAll(privacy.lockedProfiles)
+                    previousLocks = privacy.lockedProfiles
+                    if (pinAdded || privacy.publicProfileId == null) {
+                        reconcileFromCache(settings = null, clearStalePrivateRows = pinAdded)
+                    }
+                }
+            }
+        }
 
         scope.launch {
             // Observe cache snapshot updates and settings changes to trigger reconciliation.
@@ -106,7 +125,20 @@ class AndroidTvChannelSyncService @Inject constructor(
      * Reads the CW enrichment cache and reconciles the launcher channel.
      * Called both from the live observer and from [TvChannelRefreshJobService].
      */
-    suspend fun reconcileFromCache(settings: ChannelSettingsSnapshot? = null) {
+    suspend fun reconcileFromCache(settings: ChannelSettingsSnapshot? = null) =
+        reconcileFromCache(settings, clearStalePrivateRows = false)
+
+    private suspend fun reconcileFromCache(settings: ChannelSettingsSnapshot?, clearStalePrivateRows: Boolean) = reconcileMutex.withLock {
+        val profileId = profileManager.activeProfileId.value
+        val revision = profileManager.activeProfileSelectionRevision
+        suspend fun canPublish() = profileManager.canPublishLauncherHistory(profileId, revision)
+        val profileIsPrivate = BuildConfig.LOCAL_ONLY_BUILD && profileManager.launcherPrivacy.first().publicProfileId == null
+        if (clearStalePrivateRows || profileIsPrivate) {
+            manager.reconcile(emptyList())
+            tvRecommendationManager.updateWatchNext(emptyList())
+        }
+        if (profileIsPrivate || !canPublish()) return@withLock
+
         val resolvedSettings = settings ?: run {
             val daysCap = traktSettingsDataStore.continueWatchingDaysCap.first()
             val dismissed = traktSettingsDataStore.dismissedNextUpKeys.first()
@@ -132,11 +164,12 @@ class AndroidTvChannelSyncService @Inject constructor(
             "Reconciling from cache: ${channelItems.size} items " +
                 "(${inProgressItems.size} in-progress, ${nextUpItems.size} next-up raw)"
         )
-        manager.reconcile(channelItems)
+        manager.reconcile(channelItems, ::canPublish)
 
         runCatching {
-            tvRecommendationManager.updateWatchNext(channelItems)
+            tvRecommendationManager.updateWatchNext(channelItems, profileId, revision)
         }
+        Unit
     }
 
     /**

@@ -6,6 +6,7 @@ import android.util.Log
 import com.nuvio.tv.core.poster.CustomPosterScreen
 import com.nuvio.tv.core.poster.patternForScreen
 import com.nuvio.tv.core.poster.withCustomPosterArt
+import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.ui.screens.home.ContinueWatchingItem
@@ -29,7 +30,8 @@ import kotlin.math.abs
 class TvRecommendationManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val programBuilder: ProgramBuilder,
-    private val layoutPreferenceDataStore: LayoutPreferenceDataStore
+    private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
+    private val profileManager: ProfileManager
 ) {
 
     private val mutex = Mutex()
@@ -38,7 +40,10 @@ class TvRecommendationManager @Inject constructor(
 
     // Latest progress seen while frames are on screen. Leanback IPC is deferred until playback
     // stops so the provider write does not hitch the player, and so the position is not dropped.
-    private var pendingWatchNext: WatchProgress? = null
+    private data class PendingWatchNext(val progress: WatchProgress, val profileId: Int, val selectionRevision: Long)
+
+    private var pendingWatchNext: PendingWatchNext? = null
+    internal val activeProfileSelectionRevision get() = profileManager.activeProfileSelectionRevision
 
     init {
         deferScope.launch {
@@ -87,15 +92,24 @@ class TvRecommendationManager @Inject constructor(
         updateWatchNext(progressList)
     }
 
-    suspend fun updateWatchNext(items: List<WatchProgress>) {
+    suspend fun updateWatchNext(
+        items: List<WatchProgress>,
+        profileId: Int = profileManager.activeProfileId.value,
+        selectionRevision: Long = activeProfileSelectionRevision
+    ) {
         if (!isTvDevice()) return
         mutex.withLock {
             withContext(Dispatchers.IO) {
                 try {
-                    val posterPattern = recommendationPosterPattern()
-                    val decorated = items.withCustomPosterArt(posterPattern)
+                    if (items.isEmpty()) {
+                        programBuilder.clearAllWatchNextPrograms()
+                        syncedFingerprints.clear()
+                        return@withContext
+                    }
+                    val decorated = items.withCustomPosterArt(recommendationPosterPattern())
                     val currentInternalIds = decorated.map { programBuilder.watchNextId(it) }.toSet()
                     val existingInternalIds = programBuilder.getAllWatchNextInternalIds()
+                    if (!profileManager.canPublishLauncherHistory(profileId, selectionRevision)) return@withContext
 
                     // Remove only stale programs that are no longer in CW
                     (existingInternalIds - currentInternalIds).forEach { staleId ->
@@ -140,13 +154,15 @@ class TvRecommendationManager @Inject constructor(
         }
     }
 
-    suspend fun updateSingleWatchNextProgram(progress: WatchProgress) {
+    suspend fun updateSingleWatchNextProgram(progress: WatchProgress, profileId: Int, selectionRevision: Long) {
         if (!isTvDevice()) return
         mutex.withLock {
-            pendingWatchNext = progress
+            if (!profileManager.canPublishLauncherHistory(profileId, selectionRevision)) return@withLock
+            val pending = PendingWatchNext(progress, profileId, selectionRevision)
+            pendingWatchNext = pending
             if (isPlaybackActive.value) return@withLock
             pendingWatchNext = null
-            upsertSingleWatchNextLocked(progress)
+            upsertSingleWatchNextLocked(pending)
         }
     }
 
@@ -154,20 +170,20 @@ class TvRecommendationManager @Inject constructor(
         if (!isTvDevice()) return
         mutex.withLock {
             if (isPlaybackActive.value) return@withLock
-            val progress = pendingWatchNext ?: return@withLock
+            val pending = pendingWatchNext ?: return@withLock
             pendingWatchNext = null
-            upsertSingleWatchNextLocked(progress)
+            upsertSingleWatchNextLocked(pending)
         }
     }
 
-    private suspend fun upsertSingleWatchNextLocked(progress: WatchProgress) {
+    private suspend fun upsertSingleWatchNextLocked(pending: PendingWatchNext) {
         withContext(Dispatchers.IO) {
             if (isPlaybackActive.value) {
-                pendingWatchNext = progress
+                pendingWatchNext = pending
                 return@withContext
             }
             try {
-                val decorated = progress.withCustomPosterArt(recommendationPosterPattern())
+                val decorated = pending.progress.withCustomPosterArt(recommendationPosterPattern())
                 val id = programBuilder.watchNextId(decorated)
                 val newFingerprint = ProgramFingerprint(
                     title = decorated.name,
@@ -192,6 +208,7 @@ class TvRecommendationManager @Inject constructor(
                 }
 
                 val program = programBuilder.buildWatchNextProgram(decorated)
+                if (!profileManager.canPublishLauncherHistory(pending.profileId, pending.selectionRevision)) return@withContext
                 programBuilder.upsertWatchNextProgram(program, id)
                 syncedFingerprints[id] = newFingerprint
             } catch (e: Exception) {
@@ -210,7 +227,7 @@ class TvRecommendationManager @Inject constructor(
         if (!isTvDevice()) return
         mutex.withLock {
             pendingWatchNext?.let { pending ->
-                if (watchNextIdMatchesContentId(programBuilder.watchNextId(pending), contentId)) {
+                if (watchNextIdMatchesContentId(programBuilder.watchNextId(pending.progress), contentId)) {
                     pendingWatchNext = null
                 }
             }

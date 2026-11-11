@@ -124,6 +124,7 @@ data class ExternalAutoNextEpisode(
 
 /** Visuals for the loader shown while an external episode auto-advances. */
 data class ExternalAutoNextOverlay(
+    val profileId: Int,
     val backdrop: String?,
     val logo: String?,
     val title: String?,
@@ -329,8 +330,9 @@ class ExternalPlaybackTracker @Inject constructor(
     )
     val autoPlayNext = autoPlayNextNavigationEvents.events
 
-    fun claimAutoPlayNextNavigation(event: ExternalAutoNextEpisode): Boolean =
-        autoPlayNextNavigationEvents.claim(event)
+    fun claimAutoPlayNextNavigation(event: ExternalAutoNextEpisode, viewerProfileId: Int): Boolean =
+        autoPlayNextNavigationEvents.claim(event, viewerProfileId) &&
+            profileManager.activeProfileId.value == viewerProfileId
 
     // Non-null while auto-advancing: MainActivity shows a loader covering the
     // cold-start/source-resolution window. Cleared on the next launch, failure, or timeout.
@@ -1293,7 +1295,8 @@ class ExternalPlaybackTracker @Inject constructor(
         }
 
         // Reuse the overlay raised in onStart so ownership remains stable through navigation.
-        val overlay = _autoNextOverlay.value ?: ExternalAutoNextOverlay(
+        val overlay = _autoNextOverlay.value?.takeIf { it.profileId == metadata.profileId } ?: ExternalAutoNextOverlay(
+            profileId = metadata.profileId,
             backdrop = metadata.backdrop ?: metadata.poster,
             logo = metadata.logo,
             title = metadata.contentName
@@ -1425,6 +1428,11 @@ class ExternalPlaybackTracker @Inject constructor(
     ) {
         if (!generationIsCurrent(session)) return
         val metadata = session.metadata
+        fun ownerIsCurrent() = profileManager.activeProfileId.value == metadata.profileId
+        if (!ownerIsCurrent()) {
+            _autoNextOverlay.value = null
+            return
+        }
         val playbackContext = cloudPlaybackSessionStore.load(sessionToken)
         val nextFile = playbackContext?.nextFile
         if (playbackContext == null || nextFile == null || autoNextCancelled || autoNextChainAborted) {
@@ -1442,7 +1450,7 @@ class ExternalPlaybackTracker @Inject constructor(
                 ?: playerSettingsDataStore.playerSettings.first()
                     .streamAutoPlayNextEpisodeEnabled
             if (!generationIsCurrent(session)) return@launch
-            if (!enabled) {
+            if (!enabled || !ownerIsCurrent()) {
                 _autoNextOverlay.value = null
                 return@launch
             }
@@ -1451,6 +1459,10 @@ class ExternalPlaybackTracker @Inject constructor(
                 cloudLibraryRepository.resolvePlayback(playbackContext.item, nextFile)
             }
             if (!generationIsCurrent(session)) return@launch
+            if (!ownerIsCurrent()) {
+                _autoNextOverlay.value = null
+                return@launch
+            }
             if (result !is CloudLibraryPlaybackResult.Success) {
                 Log.d(AUTO_NEXT_TAG, "Cloud auto-next could not resolve ${nextFile.stableKey}")
                 _autoNextOverlay.value = null
@@ -1471,8 +1483,10 @@ class ExternalPlaybackTracker @Inject constructor(
                 episodeTitle = filename
             )
             val continuationGeneration = session.generation + 1L
-            fun continuationIsCurrent(): Boolean = generationIsCurrent(session) ||
-                (trackingGeneration == continuationGeneration && pendingMetadata === nextMetadata)
+            fun continuationIsCurrent(): Boolean = ownerIsCurrent() && (
+                generationIsCurrent(session) ||
+                    (trackingGeneration == continuationGeneration && pendingMetadata === nextMetadata)
+                )
 
             lastAutoNextEmitMs = System.currentTimeMillis()
             autoNextNavigationPending = true
@@ -1643,6 +1657,7 @@ class ExternalPlaybackTracker @Inject constructor(
                 nextFile != null
             ) {
                 _autoNextOverlay.value = ExternalAutoNextOverlay(
+                    profileId = metadata.profileId,
                     backdrop = metadata.backdrop ?: metadata.poster,
                     logo = metadata.logo,
                     title = nextFile.name.takeIf { it.isNotBlank() } ?: metadata.contentName
@@ -1669,6 +1684,7 @@ class ExternalPlaybackTracker @Inject constructor(
             return
         }
         _autoNextOverlay.value = ExternalAutoNextOverlay(
+            profileId = metadata.profileId,
             backdrop = metadata.backdrop ?: metadata.poster,
             logo = metadata.logo,
             title = metadata.contentName

@@ -87,11 +87,13 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -106,7 +108,9 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.Text
 import androidx.compose.ui.res.stringResource
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
+import com.nuvio.tv.core.sync.ProfileSetupCopyLockedException
 import com.nuvio.tv.core.sync.SetProfilePinResult
 import com.nuvio.tv.data.remote.supabase.AvatarCatalogItem
 import com.nuvio.tv.data.remote.supabase.ProfileBackgroundCatalogItem
@@ -199,7 +203,7 @@ private data class KeyboardVisibilityState(
 
 @Composable
 fun ProfileSelectionScreen(
-    onProfileSelected: () -> Unit,
+    onProfileSelected: (Int, Boolean) -> Unit,
     onProfileClicked: () -> Unit = {},
     onProfileSelectionFailed: () -> Unit = {},
     onProfileFocusChanged: ((colorHex: String?, backgroundUrl: String?, memoryCacheKey: String?) -> Unit)? = null,
@@ -218,7 +222,8 @@ fun ProfileSelectionScreen(
     val isCreating by viewModel.isCreating.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
     val isCopyingSettings by viewModel.isCopyingSettings.collectAsState()
-    val profilePinEnabled by viewModel.profilePinEnabled.collectAsState()
+    val profilePinStates by viewModel.profilePinEnabled.collectAsState()
+    val profilePinEnabled = profilePinStates.orEmpty()
     val isPinOperationInProgress by viewModel.isPinOperationInProgress.collectAsState()
     val avatarImageUrlsById = remember(avatarCatalog, profiles) {
         buildMap {
@@ -243,6 +248,7 @@ fun ProfileSelectionScreen(
     var settingsCopyError by remember { mutableStateOf<String?>(null) }
     var pinOverlayState by remember { mutableStateOf<ProfilePinOverlayState?>(null) }
     var pinOverlayError by remember { mutableStateOf<String?>(null) }
+    var restoreProfileId by remember { mutableStateOf<Int?>(null) }
     var profileActionMessage by remember { mutableStateOf<String?>(null) }
     val onProfileFocusedChange = remember(onProfileFocusChanged, onProfileThemeFocused) {
         { profile: UserProfile? ->
@@ -258,12 +264,13 @@ fun ProfileSelectionScreen(
         val theme = profileThemes[pid]
         theme?.brandWordmarkResource
     }
-    val selectProfile: (Int) -> Unit = { profileId ->
+    val selectProfile: (Int, Boolean) -> Unit = { profileId, pinVerified ->
         if (!viewModel.isSelectingProfile) {
             onProfileClicked()
             viewModel.selectProfile(
                 id = profileId,
-                onComplete = onProfileSelected,
+                pinVerified = pinVerified,
+                onComplete = { onProfileSelected(profileId, pinVerified) },
                 onFailure = {
                     onProfileSelectionFailed()
                     profileActionMessage = resources.getString(R.string.account_error_generic_retry)
@@ -394,13 +401,17 @@ fun ProfileSelectionScreen(
                     isManagementMode = isManagementMode,
                     profiles = profiles,
                     activeProfileId = activeProfileId,
+                    restoreProfileId = restoreProfileId,
                     canAddProfile = viewModel.canAddProfile,
                     profilePinEnabled = profilePinEnabled,
                     avatarImageUrlsById = avatarImageUrlsById,
                     brandWordmarkRes = focusedBrandWordmarkRes,
                     profileThemes = profileThemes,
                     onProfileFocused = onProfileFocusedChange,
-                    onProfileSelected = { profile ->
+                    onProfileSelected = onProfileSelected@{ profile ->
+                        if (pinOverlayState != null || (BuildConfig.LOCAL_ONLY_BUILD && profilePinStates == null)) {
+                            return@onProfileSelected
+                        }
                         if (isManagementMode) {
                             suppressOptionsDialogFirstKeyUp = false
                             longPressedProfile = profile
@@ -409,15 +420,17 @@ fun ProfileSelectionScreen(
                                 pinOverlayError = null
                                 pinOverlayState = ProfilePinOverlayState.Unlock(profile)
                             } else {
-                                selectProfile(profile.id)
+                                selectProfile(profile.id, false)
                             }
                         }
                     },
                     onProfileLongPress = { profile ->
-                        suppressOptionsDialogFirstKeyUp = true
-                        longPressedProfile = profile
+                        if (pinOverlayState == null) {
+                            suppressOptionsDialogFirstKeyUp = true
+                            longPressedProfile = profile
+                        }
                     },
-                    onAddProfileClick = { showCreateProfile = true }
+                    onAddProfileClick = { if (pinOverlayState == null) showCreateProfile = true }
                 )
             } else {
                 ProfilePinOverlay(
@@ -426,10 +439,14 @@ fun ProfileSelectionScreen(
                     errorMessage = pinOverlayError,
                     onClearError = { pinOverlayError = null },
                     onDismiss = {
-                        pinOverlayState = null
-                        pinOverlayError = null
+                        if (pinOverlayState === activePinOverlay) {
+                            restoreProfileId = activePinOverlay.profile.id
+                            pinOverlayState = null
+                            pinOverlayError = null
+                        }
                     },
-                    onSubmit = { pin ->
+                    onSubmit = onSubmit@{ pin ->
+                        if (pinOverlayState !== activePinOverlay) return@onSubmit
                         when (activePinOverlay) {
                             is ProfilePinOverlayState.Set -> {
                                 viewModel.setProfilePin(
@@ -437,8 +454,10 @@ fun ProfileSelectionScreen(
                                     pin,
                                     activePinOverlay.currentPin
                                 ) { result ->
+                                    if (pinOverlayState !== activePinOverlay) return@setProfilePin
                                     when (result) {
                                         is SetProfilePinResult.Success -> {
+                                            restoreProfileId = activePinOverlay.profile.id
                                             pinOverlayState = null
                                             pinOverlayError = null
                                             profileActionMessage = resources.getString(R.string.profile_pin_saved_for_profile, activePinOverlay.profile.name)
@@ -458,11 +477,12 @@ fun ProfileSelectionScreen(
 
                             is ProfilePinOverlayState.Unlock -> {
                                 viewModel.verifyProfilePin(activePinOverlay.profile.id, pin) { result ->
+                                    if (pinOverlayState !== activePinOverlay) return@verifyProfilePin
                                     result.onSuccess { verify ->
                                         if (verify.unlocked) {
                                             pinOverlayError = null
                                             pinOverlayState = null
-                                            selectProfile(activePinOverlay.profile.id)
+                                            selectProfile(activePinOverlay.profile.id, true)
                                         } else {
                                             pinOverlayError = if (verify.retryAfterSeconds > 0) {
                                                 resources.getString(R.string.profile_pin_locked, verify.retryAfterSeconds)
@@ -478,6 +498,7 @@ fun ProfileSelectionScreen(
 
                             is ProfilePinOverlayState.VerifyCurrentForChange -> {
                                 viewModel.verifyProfilePin(activePinOverlay.profile.id, pin) { result ->
+                                    if (pinOverlayState !== activePinOverlay) return@verifyProfilePin
                                     result.onSuccess { verify ->
                                         if (verify.unlocked) {
                                             pinOverlayError = null
@@ -503,7 +524,9 @@ fun ProfileSelectionScreen(
                                     profileId = activePinOverlay.profile.id,
                                     currentPin = pin
                                 ) { success ->
+                                    if (pinOverlayState !== activePinOverlay) return@clearProfilePin
                                     if (success) {
+                                        restoreProfileId = activePinOverlay.profile.id
                                         pinOverlayError = null
                                         pinOverlayState = null
                                         profileActionMessage = resources.getString(R.string.profile_pin_lock_removed_for_profile, activePinOverlay.profile.name)
@@ -515,8 +538,10 @@ fun ProfileSelectionScreen(
 
                             is ProfilePinOverlayState.VerifyCurrentForDelete -> {
                                 viewModel.verifyProfilePin(activePinOverlay.profile.id, pin) { result ->
+                                    if (pinOverlayState !== activePinOverlay) return@verifyProfilePin
                                     result.onSuccess { verify ->
                                         if (verify.unlocked) {
+                                            restoreProfileId = activePinOverlay.profile.id
                                             pinOverlayError = null
                                             pinOverlayState = null
                                             profileToDelete = activePinOverlay.profile
@@ -568,7 +593,9 @@ fun ProfileSelectionScreen(
                                     )
                                 } else if (result.settingsCopyResult?.isFailure == true) {
                                     profileActionMessage = resources.getString(
-                                        R.string.profile_copy_settings_created_error
+                                        if (result.settingsCopyResult.exceptionOrNull() is ProfileSetupCopyLockedException)
+                                            R.string.profile_copy_settings_locked
+                                        else R.string.profile_copy_settings_created_error
                                     )
                                 }
                             }
@@ -771,7 +798,11 @@ fun ProfileSelectionScreen(
                                 targetProfile.name
                             )
                         } else {
-                            settingsCopyError = resources.getString(R.string.profile_copy_settings_error)
+                            settingsCopyError = resources.getString(
+                                if (result.exceptionOrNull() is ProfileSetupCopyLockedException)
+                                    R.string.profile_copy_settings_locked
+                                else R.string.profile_copy_settings_error
+                            )
                         }
                     }
                 }
@@ -780,10 +811,10 @@ fun ProfileSelectionScreen(
 
         // Delete confirmation dialog
         profileToDelete?.let { profile ->
-            val primaryDialogFocusRequester = remember(profile.id) { FocusRequester() }
+            val cancelFocusRequester = remember(profile.id) { FocusRequester() }
             LaunchedEffect(profile.id) {
                 repeat(2) { withFrameNanos { } }
-                runCatching { primaryDialogFocusRequester.requestFocus() }
+                runCatching { cancelFocusRequester.requestFocus() }
             }
             NuvioDialog(
                 onDismiss = { profileToDelete = null },
@@ -793,15 +824,19 @@ fun ProfileSelectionScreen(
                 suppressFirstKeyUp = false
             ) {
                 Button(
+                    onClick = { profileToDelete = null },
+                    modifier = Modifier.fillMaxWidth().focusRequester(cancelFocusRequester)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+                Button(
                     onClick = {
                         viewModel.deleteProfile(profile.id) { deleted ->
                             if (!deleted) profileActionMessage = resources.getString(R.string.profile_delete_error)
                         }
                         profileToDelete = null
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(primaryDialogFocusRequester),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.colors(
                         containerColor = Color(0xFF4A2323),
                         contentColor = NuvioTheme.colors.TextPrimary
@@ -897,6 +932,7 @@ private fun ProfileSelectionMainContent(
     isManagementMode: Boolean,
     profiles: List<UserProfile>,
     activeProfileId: Int,
+    restoreProfileId: Int?,
     canAddProfile: Boolean,
     profilePinEnabled: Map<Int, Boolean>,
     avatarImageUrlsById: Map<String, String>,
@@ -946,6 +982,7 @@ private fun ProfileSelectionMainContent(
         ProfileGrid(
             profiles = profiles,
             activeProfileId = activeProfileId,
+            restoreProfileId = restoreProfileId,
             isManagementMode = isManagementMode,
             canAddProfile = canAddProfile,
             profilePinEnabled = profilePinEnabled,
@@ -972,6 +1009,7 @@ private fun ProfileSelectionMainContent(
 private fun ProfileGrid(
     profiles: List<UserProfile>,
     activeProfileId: Int,
+    restoreProfileId: Int?,
     isManagementMode: Boolean,
     canAddProfile: Boolean,
     profilePinEnabled: Map<Int, Boolean>,
@@ -983,8 +1021,9 @@ private fun ProfileGrid(
     onAddProfileClick: () -> Unit
 ) {
     val totalItems = profiles.size + if (canAddProfile) 1 else 0
-    val initialFocusIndex = remember(profiles, activeProfileId, canAddProfile) {
-        profiles.indexOfFirst { it.id == activeProfileId }
+    val initialFocusIndex = remember(profiles, activeProfileId, restoreProfileId, canAddProfile) {
+        profiles.indexOfFirst { it.id == restoreProfileId }.takeIf { it >= 0 }
+            ?: profiles.indexOfFirst { it.id == activeProfileId }
             .takeIf { it >= 0 }
             ?: if (profiles.isNotEmpty()) 0 else if (canAddProfile) 0 else -1
     }
@@ -2070,7 +2109,7 @@ private fun ProfilePinOverlay(
 ) {
     val density = LocalDensity.current
     val keyboardState = rememberKeyboardVisibilityState()
-    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember(state) { FocusRequester() }
     val isSingleEntryMode = state !is ProfilePinOverlayState.Set
     var pin by remember(state) { mutableStateOf("") }
@@ -2078,7 +2117,6 @@ private fun ProfilePinOverlay(
     var entryStage by remember(state) { mutableStateOf(ProfilePinEntryStage.Create) }
     var internalErrorMessage by remember(state) { mutableStateOf<String?>(null) }
     var isInputFocused by remember(state) { mutableStateOf(false) }
-    var keyboardWasVisible by remember(state) { mutableStateOf(false) }
     val shakeOffset = remember(state) { androidx.compose.animation.core.Animatable(0f) }
     val cursorAlpha by rememberInfiniteTransition(label = "pinCursor").animateFloat(
         initialValue = 0.25f,
@@ -2139,11 +2177,11 @@ private fun ProfilePinOverlay(
         28.dp
     }
 
-    BackHandler(enabled = isInputFocused && keyboardState.isVisible) {
-        focusManager.clearFocus(force = true)
+    val handleBack = {
+        if (keyboardState.isVisible) keyboardController?.hide() else onDismiss()
+        Unit
     }
-
-    BackHandler(onBack = onDismiss)
+    BackHandler(onBack = handleBack)
 
     suspend fun playErrorAnimation() {
         shakeOffset.snapTo(0f)
@@ -2155,15 +2193,6 @@ private fun ProfilePinOverlay(
     LaunchedEffect(state) {
         repeat(2) { withFrameNanos { } }
         runCatching { focusRequester.requestFocus() }
-    }
-
-    LaunchedEffect(keyboardState.isVisible, isInputFocused) {
-        if (keyboardState.isVisible) {
-            keyboardWasVisible = true
-        } else if (keyboardWasVisible && isInputFocused) {
-            keyboardWasVisible = false
-            focusManager.clearFocus(force = true)
-        }
     }
 
     LaunchedEffect(errorMessage) {
@@ -2207,7 +2236,10 @@ private fun ProfilePinOverlay(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = { runCatching { focusRequester.requestFocus() } }
+                onClick = {
+                    runCatching { focusRequester.requestFocus() }
+                    keyboardController?.show()
+                }
             )
             .onPreviewKeyEvent { event ->
                 val native = event.nativeKeyEvent
@@ -2217,12 +2249,15 @@ private fun ProfilePinOverlay(
                 when (native.keyCode) {
                     AndroidKeyEvent.KEYCODE_BACK,
                     AndroidKeyEvent.KEYCODE_ESCAPE -> {
-                        if (isInputFocused) {
-                            focusManager.clearFocus(force = true)
-                        } else {
-                            onDismiss()
-                        }
+                        if (native.repeatCount == 0) handleBack()
                         true
+                    }
+
+                    AndroidKeyEvent.KEYCODE_DPAD_CENTER -> {
+                        if (keyboardState.isVisible) false else {
+                            if (native.repeatCount == 0 && !isWorking) keyboardController?.show()
+                            true
+                        }
                     }
 
                     AndroidKeyEvent.KEYCODE_DEL,
@@ -2350,6 +2385,7 @@ private fun ProfilePinOverlay(
                     isInputFocused = state.isFocused
                 },
             singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
             textStyle = TextStyle(color = Color.Transparent),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.NumberPassword,

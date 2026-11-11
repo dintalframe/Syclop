@@ -128,11 +128,15 @@ class AndroidTvChannelManager @Inject constructor(
      */
     // tvprovider 1.0 exposes these documented public APIs through restricted base classes.
     @android.annotation.SuppressLint("RestrictedApi")
-    suspend fun reconcile(items: List<WatchProgress>) = withContext(Dispatchers.IO) {
+    suspend fun reconcile(
+        items: List<WatchProgress>,
+        canPublish: suspend () -> Boolean = { true }
+    ) = withContext(Dispatchers.IO) {
         if (!isSupported()) return@withContext
         runCatching {
             val channelId = ensureChannel() ?: return@runCatching
             val existing = queryExistingPrograms(channelId)
+            if (!canPublish()) return@runCatching
             val desiredKeys = items.map { progressKey(it) }.toSet()
 
             for ((key, rowIds) in existing) {

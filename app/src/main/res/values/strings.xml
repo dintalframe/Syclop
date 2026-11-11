@@ -1668,6 +1668,7 @@
     <string name="profile_copy_settings_exclusions">OAuth, addons, plugins, home layout, PIN, history, library, downloads, and device-specific settings stay unchanged.</string>
     <string name="profile_copy_settings_success">Settings copied from %1$s to %2$s.</string>
     <string name="profile_copy_settings_error">Could not copy settings. Check your connection and try again.</string>
+    <string name="profile_copy_settings_locked">Turn off the PIN locks on both profiles before copying settings.</string>
     <string name="profile_copy_settings_created_success">Profile created with settings from %1$s.</string>
     <string name="profile_copy_settings_created_error">Profile created, but settings could not be copied. You can retry from Profile Options.</string>
     <string name="profile_create_error">Could not create profile. Try again.</string>

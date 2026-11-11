@@ -51,6 +51,7 @@ import com.nuvio.tv.core.tracking.TrackingProviderRegistry
 import com.nuvio.tv.core.util.findCause
 import com.nuvio.tv.core.tracking.TrackingScrobbleCoordinator
 import com.nuvio.tv.data.local.*
+import com.nuvio.tv.data.mal.MalCatalog
 import com.nuvio.tv.data.remote.api.RealDebridApi
 import com.nuvio.tv.data.remote.dto.RealDebridAddTorrentDto
 import com.nuvio.tv.data.remote.dto.RealDebridTorrentInfoDto
@@ -182,11 +183,23 @@ class OwnedPlaybackControllerAndroidTest {
                 runBlocking { withTimeout(10_000L) { profiles.activeProfileReady.first { it } } }
                 val profile = profiles.activeProfileId.value
                 require(!runBlocking { store.settings.first().hasAnyApiKey }) { "Connected service found; fixture refused." }
-                require(runBlocking { template.addonRepository.getInstalledAddons().first().isEmpty() }) { "Installed addons found; fixture refused." }
+                val addonPreferences = field<AddonPreferences>(template.addonRepository, "preferences")
+                val knownDefaults = mapOf("https://v3-cinemeta.strem.io" to "com.linvo.cinemeta",
+                    "https://opensubtitles-v3.strem.io" to "org.stremio.opensubtitlesv3")
+                fun publicMal(addon: Addon) = addon.id == MalCatalog.ADDON_ID && addon.baseUrl == MalCatalog.BASE_URL &&
+                    addon.resources.all { it.name in setOf("catalog", "meta") } &&
+                    addon.catalogs.all { it.id in setOf("popular", "ranking", "search") }
+                require(runBlocking {
+                    addonPreferences.installedAddonConfiguration.first().ownerProfileId == profile &&
+                        addonPreferences.installedUrlsForProfiles(listOf(profile)).all { it in knownDefaults } &&
+                        template.addonRepository.getInstalledAddons().first().all {
+                            publicMal(it) || knownDefaults[it.baseUrl] == it.id
+                        }
+                }) { "Unexpected installed addons or owner; fixture refused." }
                 require(!template.tmdbSettingsDataStore.settings.value.enabled) { "TMDB must be disabled on the owned guest." }
                 val factory = field<ProfileDataStoreFactory>(template.playerSettingsDataStore, "factory")
                 val snapshots = runBlocking {
-                    listOf("player_settings", "debrid_settings", "track_preference", "binge_group_cache").associateWith {
+                    listOf("player_settings", "debrid_settings", "track_preference", "binge_group_cache", "addon_preferences").associateWith {
                         factory.get(profile, it).data.first()
                     }
                 }
@@ -199,6 +212,13 @@ class OwnedPlaybackControllerAndroidTest {
                 var controller: PlayerRuntimeController? = null
                 try {
                     runBlocking {
+                        template.addonRepository.setAddonOrder(emptyList())
+                        withTimeout(10_000L) {
+                            addonPreferences.installedAddonConfiguration.first {
+                                it.ownerProfileId == profile && !it.hasAddons
+                            }
+                            template.addonRepository.getInstalledAddons().first { it.all(::publicMal) }
+                        }
                         store.setCloudLibraryEnabled(false)
                         store.setConnectedServiceFallbackEnabled(false)
                         template.playerSettingsDataStore.apply {

@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -64,7 +65,13 @@ internal fun FirstWatchChecklist(snapshot: FirstWatchSnapshot, checkingAccounts:
             else R.string.first_watch_playback_failed, playback.title, firstWatchAge(readiness?.playbackAgeMs ?: 0L))
         else stringResource(R.string.first_watch_playback_unknown) +
             (readiness?.playbackAgeMs?.let { " · ${firstWatchAge(it)}" } ?: "")
-        Text(playbackText, style = MaterialTheme.typography.bodySmall, color = NuvioTheme.colors.TextSecondary)
+        Text(
+            playbackText,
+            style = MaterialTheme.typography.bodySmall,
+            color = NuvioTheme.colors.TextSecondary,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
         if (readiness?.accounts?.isNotEmpty() == true) {
             Button(onClick = if (checkingAccounts) onCancelCheck else onCheckAccounts) {
                 Text(stringResource(if (checkingAccounts) R.string.first_watch_cancel_check else R.string.first_watch_check_accounts))

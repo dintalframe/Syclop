@@ -1283,7 +1283,7 @@ private fun PlaybackNavHost(
 
         composable(Screen.ManageProfiles.route) {
             ProfileSelectionScreen(
-                onProfileSelected = {},
+                onProfileSelected = { _, _ -> },
                 screenMode = ProfileSelectionMode.Management,
                 onBackPress = { navController.popBackStack() }
             )

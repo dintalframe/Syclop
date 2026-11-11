@@ -95,6 +95,7 @@ class ExternalPlayerTrackerContinuationTest {
         h.tracker.raiseAutoNextOverlayOnReturn()
         val overlay = h.tracker.autoNextOverlay.value
         assertNotNull(overlay)
+        assertEquals(current.profileId, overlay?.profileId)
         val persistedCurrent = h.values.toMap()
         backfill.release.complete(progress(old, 1_000_000L))
         runCurrent()

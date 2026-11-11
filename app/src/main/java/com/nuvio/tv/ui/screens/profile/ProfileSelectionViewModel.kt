@@ -3,6 +3,7 @@ package com.nuvio.tv.ui.screens.profile
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.sync.ProfileSettingsSyncService
 import com.nuvio.tv.core.sync.ProfileSyncService
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -87,8 +89,8 @@ class ProfileSelectionViewModel @Inject constructor(
     private val _isCopyingSettings = MutableStateFlow(false)
     val isCopyingSettings: StateFlow<Boolean> = _isCopyingSettings.asStateFlow()
 
-    val profilePinEnabled: StateFlow<Map<Int, Boolean>> = profileLockStateDataStore.pinEnabled
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    val profilePinEnabled: StateFlow<Map<Int, Boolean>?> = profileLockStateDataStore.pinEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _isPinOperationInProgress = MutableStateFlow(false)
     val isPinOperationInProgress: StateFlow<Boolean> = _isPinOperationInProgress.asStateFlow()
@@ -164,11 +166,17 @@ class ProfileSelectionViewModel @Inject constructor(
     var isSelectingProfile = false
         private set
 
-    fun selectProfile(id: Int, onComplete: () -> Unit, onFailure: () -> Unit) {
+    fun selectProfile(id: Int, pinVerified: Boolean, onComplete: () -> Unit, onFailure: () -> Unit) {
         if (isSelectingProfile) return
         isSelectingProfile = true
         viewModelScope.launch {
             try {
+                if (profiles.value.none { it.id == id } ||
+                    (BuildConfig.LOCAL_ONLY_BUILD && !pinVerified && profileLockStateDataStore.pinEnabled.first()[id] == true)
+                ) {
+                    onFailure()
+                    return@launch
+                }
                 profileManager.setActiveProfile(id)
                 onComplete()
             } catch (error: CancellationException) {
@@ -284,6 +292,7 @@ class ProfileSelectionViewModel @Inject constructor(
     }
 
     fun refreshProfilePinStates() {
+        if (BuildConfig.LOCAL_ONLY_BUILD) return
         viewModelScope.launch {
             var attempt = 0
             while (attempt < 4) {
@@ -304,7 +313,7 @@ class ProfileSelectionViewModel @Inject constructor(
     }
 
     fun isProfilePinEnabled(profileId: Int): Boolean {
-        return profilePinEnabled.value[profileId] == true
+        return profilePinEnabled.value?.get(profileId) == true
     }
 
     fun setProfilePin(
@@ -319,7 +328,9 @@ class ProfileSelectionViewModel @Inject constructor(
             val result = profileSyncService.setProfilePin(profileId, pin, currentPin)
             // Server reporting CurrentPinRequired means a PIN exists remotely —
             // reconcile local cache so we never forget it again.
-            if (result is SetProfilePinResult.Success || result is SetProfilePinResult.CurrentPinRequired) {
+            if (!BuildConfig.LOCAL_ONLY_BUILD &&
+                (result is SetProfilePinResult.Success || result is SetProfilePinResult.CurrentPinRequired)
+            ) {
                 profileLockStateDataStore.setPinEnabled(profileId, true)
             }
             _isPinOperationInProgress.value = false
@@ -332,7 +343,7 @@ class ProfileSelectionViewModel @Inject constructor(
         viewModelScope.launch {
             _isPinOperationInProgress.value = true
             val success = profileSyncService.clearProfilePin(profileId, currentPin).isSuccess
-            if (success) {
+            if (success && !BuildConfig.LOCAL_ONLY_BUILD) {
                 profileLockStateDataStore.setPinEnabled(profileId, false)
             }
             _isPinOperationInProgress.value = false

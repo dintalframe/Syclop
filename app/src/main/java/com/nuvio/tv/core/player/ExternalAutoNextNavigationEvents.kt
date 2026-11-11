@@ -18,10 +18,10 @@ internal class ExternalAutoNextNavigationEvents(
     }
 
     @Synchronized
-    fun claim(event: ExternalAutoNextEpisode): Boolean {
+    fun claim(event: ExternalAutoNextEpisode, activeProfileId: Int): Boolean {
         if (pending.value !== event) return false
         pending.value = null
         val ageMs = nowMs() - event.requestedAtMs
-        return ageMs in 0..maxAgeMs
+        return event.profileId == activeProfileId && ageMs in 0..maxAgeMs
     }
 }
