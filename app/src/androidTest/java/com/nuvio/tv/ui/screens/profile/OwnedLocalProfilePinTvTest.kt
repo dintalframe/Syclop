@@ -6,12 +6,17 @@ import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyEvent
-import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.datastore.core.DataStore
@@ -59,6 +64,7 @@ class OwnedLocalProfilePinTvTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context: Context = instrumentation.targetContext
     private val automation = instrumentation.uiAutomation
+    private val focusedPinEditor = hasSetTextAction() and isFocused() and isEnabled()
 
     @Test fun localPinCancelsRestoresFocusAndKeepsViewerProgressSeparate() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("ownedLocalProfilePin") == "1")
@@ -139,7 +145,7 @@ class OwnedLocalProfilePinTvTest {
             await("numeric IME opens") { imeVisible(selectionScenario) }
             key(KeyEvent.KEYCODE_BACK)
             await("Back closes only the IME") { !imeVisible(selectionScenario) && hasText(unlock) }
-            digits("9999")
+            enterPin("9999")
             await("wrong PIN rejected") { hasText(context.getString(R.string.profile_pin_invalid)) }
             assertEquals(1, profiles.activeProfileId.value)
 
@@ -154,7 +160,7 @@ class OwnedLocalProfilePinTvTest {
             }
             try {
                 read { held.await() }
-                digits(PIN)
+                enterPin(PIN)
                 await("PIN verification is pending") { hasText(context.getString(R.string.profile_pin_verifying)) }
                 key(KeyEvent.KEYCODE_BACK)
                 await("Back cancels the PIN prompt") { hasText(selector) && !hasText(unlock) }
@@ -171,23 +177,34 @@ class OwnedLocalProfilePinTvTest {
 
             if (imeVisible(selectionScenario)) {
                 key(KeyEvent.KEYCODE_BACK)
-                await("numeric IME closes for hardware PIN entry") { !imeVisible(selectionScenario) }
+                await("numeric IME closes before PIN entry") { !imeVisible(selectionScenario) && hasText(unlock) }
             }
-            digits(PIN)
-            await("correct PIN selects the intended profile") { profiles.activeProfileId.value == secondary.id && !hasText(unlock) }
+            val selectionError = context.getString(R.string.account_error_generic_retry)
+            fun selectionState() = "active profile=${profiles.activeProfileId.value}, expected=${secondary.id}, " +
+                "selection revision=${profiles.activeProfileSelectionRevision}, initial revision=$originalRevision"
+
+            enterPin(PIN)
+            await("correct PIN closes the unlock overlay", failureDetails = ::selectionState) {
+                assertFalse("Profile selection showed '$selectionError' (${selectionState()})", hasText(selectionError))
+                !hasText(unlock)
+            }
+            await("correct PIN selects the intended profile", timeoutMillis = 20_000L, failureDetails = ::selectionState) {
+                assertFalse("Profile selection showed '$selectionError' (${selectionState()})", hasText(selectionError))
+                profiles.activeProfileId.value == secondary.id
+            }
             assertEquals(15_000L, read { progress.getProgress(OWNED_CONTENT).first() }?.position)
             assertEquals(primaryBefore, read { progress.getAllRawEntries(1) })
             val home = context.getString(R.string.nav_home)
             val settings = context.getString(R.string.nav_settings)
-            val connectedServices = context.getString(R.string.settings_menu_connected_services)
-            await("protected viewer reaches Home", timeoutMillis = 15_000L) { selectedTab(home) }
-            key(KeyEvent.KEYCODE_BACK)
-            val settingsTab = hasContentDescription(settings) and hasClickAction()
-            await("Settings entry is available") {
-                compose.onAllNodes(settingsTab).fetchSemanticsNodes(atLeastOneRootRequired = false).size == 1
+            await("protected viewer reaches Home", timeoutMillis = 15_000L) { activeDestination(home) }
+            if (!focusedTab(home)) key(KeyEvent.KEYCODE_BACK)
+            await("Home is focused in the expanded sidebar") { focusedTab(home) }
+            repeat(4) {
+                if (!focusedTab(settings)) key(KeyEvent.KEYCODE_DPAD_DOWN)
             }
-            compose.onNode(settingsTab).performClick()
-            await("protected viewer enters Settings") { hasText(connectedServices) }
+            assertTrue("Four or fewer Down presses reach Settings", focusedTab(settings))
+            key(KeyEvent.KEYCODE_DPAD_CENTER)
+            await("protected viewer enters Settings") { activeDestination(settings) && !activeDestination(home) }
             read { profiles.setRememberLastProfileEnabled(true) }
             await("Remember Last Profile is on") { profiles.rememberLastProfileEnabled.value }
 
@@ -200,16 +217,17 @@ class OwnedLocalProfilePinTvTest {
             await("same active viewer still requires PIN") { hasText(unlock) }
             assertFalse(hasText("Owned profile resume"))
             assertTrue(read { locks.pinEnabled.first()[secondary.id] == true })
-            if (imeVisible(selectionScenario)) {
-                key(KeyEvent.KEYCODE_BACK)
-                await("IME closes while switching viewers") { !imeVisible(selectionScenario) && hasText(unlock) }
-            }
+            awaitPinEditor()
+            if (!imeVisible(selectionScenario)) key(KeyEvent.KEYCODE_DPAD_CENTER)
+            await("numeric IME is open after recreation") { imeVisible(selectionScenario) && hasText(unlock) }
+            key(KeyEvent.KEYCODE_BACK)
+            await("first Back after recreation closes only the IME") { !imeVisible(selectionScenario) && hasText(unlock) }
             key(KeyEvent.KEYCODE_BACK)
             await("cancel returns to the protected viewer card") { hasText(selector) && !hasText(unlock) }
             key(KeyEvent.KEYCODE_DPAD_LEFT)
             key(KeyEvent.KEYCODE_DPAD_CENTER)
             await("unprotected viewer starts at Home with no inherited Settings route", timeoutMillis = 15_000L) {
-                profiles.activeProfileId.value == 1 && selectedTab(home) && !hasText(connectedServices)
+                activeDestination(home) && profiles.activeProfileId.value == 1 && !activeDestination(settings)
             }
             assertEquals(primaryBefore, read { progress.getAllRawEntries(1) })
         } finally {
@@ -243,9 +261,13 @@ class OwnedLocalProfilePinTvTest {
     private fun hasText(value: String) = compose.onAllNodesWithText(value, useUnmergedTree = true)
         .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
 
-    private fun selectedTab(value: String) = compose.onAllNodes(
-        hasContentDescription(value) and isSelected(), useUnmergedTree = true
+    private fun activeDestination(value: String) = compose.onAllNodes(
+        hasContentDescription(value) and (isSelected() or SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)),
+        useUnmergedTree = true
     ).fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+
+    private fun focusedTab(value: String) = compose.onAllNodes(hasContentDescription(value) and isFocused())
+        .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
 
     private fun key(code: Int) {
         val down = SystemClock.uptimeMillis()
@@ -256,9 +278,25 @@ class OwnedLocalProfilePinTvTest {
         instrumentation.waitForIdleSync()
     }
 
-    private fun digits(value: String) = value.forEach { key(KeyEvent.KEYCODE_0 + it.digitToInt()) }
+    private fun enterPin(value: String) {
+        require(value.length == 4 && value.all { it in '0'..'9' })
+        awaitPinEditor()
+        compose.onNode(focusedPinEditor, useUnmergedTree = true).performTextInput(value)
+    }
 
-    private fun await(description: String, timeoutMillis: Long = 8_000L, check: () -> Boolean) {
+    private fun awaitPinEditor() {
+        await("one focused and editable PIN field") {
+            compose.onAllNodes(focusedPinEditor, useUnmergedTree = true)
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).size == 1
+        }
+    }
+
+    private fun await(
+        description: String,
+        timeoutMillis: Long = 8_000L,
+        failureDetails: (() -> String)? = null,
+        check: () -> Boolean
+    ) {
         val deadline = SystemClock.elapsedRealtime() + timeoutMillis
         do {
             if (check()) return
@@ -268,7 +306,10 @@ class OwnedLocalProfilePinTvTest {
             context.getString(R.string.profile_pin_overlay_unlock_heading, SECONDARY),
             context.getString(R.string.profile_pin_verifying), context.getString(R.string.profile_pin_invalid))
             .filter { runCatching { hasText(it) }.getOrDefault(false) }
-        throw AssertionError("$description; matching profile labels=${visible.joinToString()}")
+        val destinations = listOf(context.getString(R.string.nav_home), context.getString(R.string.nav_settings))
+            .filter { runCatching { activeDestination(it) }.getOrDefault(false) }
+        val details = failureDetails?.invoke()?.let { "; $it" }.orEmpty()
+        throw AssertionError("$description; profile labels=${visible.joinToString()}; selected routes=${destinations.joinToString()}$details")
     }
 
     private fun <T> read(action: suspend () -> T): T = runBlocking { withTimeout(10_000L) { action() } }

@@ -167,6 +167,7 @@ class PlayerPlaybackActionControllerTest {
         val fixture = fixture(PlayerUiState())
         val repository = fixture.controller.watchProgressRepository
         val recommendations = fixture.controller.tvRecommendationManager
+        every { recommendations.activeProfileSelectionRevision } returns 42L
         val normalizationEntered = CompletableDeferred<Unit>()
         val releaseNormalization = CompletableDeferred<Unit>()
         val completed = mutableListOf<WatchProgress>()
@@ -198,7 +199,9 @@ class PlayerPlaybackActionControllerTest {
         assertEquals(listOf(60_000L), saved.map { it.position })
         assertFalse(fixture.controller.hasMarkedCurrentEpisodeCompleted)
         coVerify(exactly = 0) { recommendations.onProgressRemoved(any()) }
-        coVerify(exactly = 1) { recommendations.updateSingleWatchNextProgram(match { it.videoId == "tt-fixture:1:2" }) }
+        coVerify(exactly = 1) {
+            recommendations.updateSingleWatchNextProgram(match { it.videoId == "tt-fixture:1:2" }, 1, 42L)
+        }
     }
 
     @Test

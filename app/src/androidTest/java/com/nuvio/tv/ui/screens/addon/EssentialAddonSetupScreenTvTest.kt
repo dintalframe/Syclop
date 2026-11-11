@@ -55,7 +55,8 @@ class EssentialAddonSetupScreenTvTest {
 
     @Test
     fun skipContinuesFromSetup() {
-        withSetup {
+        val skipCalls = AtomicInteger(0)
+        withSetup(onSkip = { skipCalls.incrementAndGet() }) {
             press(KeyEvent.KEYCODE_DPAD_DOWN)
             compose.onNodeWithText(label(R.string.essential_addon_enter_link_on_tv)).assertIsFocused()
             press(KeyEvent.KEYCODE_DPAD_DOWN)
