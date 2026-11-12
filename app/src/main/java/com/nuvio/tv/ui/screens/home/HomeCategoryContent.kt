@@ -45,7 +45,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.first
 import com.nuvio.tv.core.network.NetworkResult
 
-/** Category data is separate; presentation uses the same hero, cards and rows as Modern Home. */
+/** Category data is scoped before choosing a Home renderer. */
 @Composable
 internal fun HomeCategoryContent(
     section: HomeBrowseSection,
@@ -81,10 +81,17 @@ internal fun HomeCategoryContent(
 
     val currentState = state ?: return
     key(section, currentState.originRevision, currentState.requestRevision) {
-        HomeCategoryModernContent(section, viewModel, homeViewModel, categoryState,
-            entry, currentState, rows, onDetail, isWatched, onLongPress,
-            onContinueWatchingClick, onContinueWatchingStartFromBeginning,
-            onContinueWatchingPlayManually, showContinueWatchingManualPlayOption)
+        if (homeUiState.homeLayout == HomeLayout.GRID) {
+            HomeCategoryGridContent(section, viewModel, homeViewModel, categoryState, entry,
+                currentState, posterStyle, onDetail, isWatched, onLongPress,
+                onContinueWatchingClick, onContinueWatchingStartFromBeginning,
+                onContinueWatchingPlayManually, showContinueWatchingManualPlayOption)
+        } else {
+            HomeCategoryModernContent(section, viewModel, homeViewModel, categoryState,
+                entry, currentState, rows, onDetail, isWatched, onLongPress,
+                onContinueWatchingClick, onContinueWatchingStartFromBeginning,
+                onContinueWatchingPlayManually, showContinueWatchingManualPlayOption)
+        }
     }
 }
 

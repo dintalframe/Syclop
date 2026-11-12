@@ -10,6 +10,8 @@ import com.nuvio.tv.domain.model.*
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import io.mockk.*
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +26,120 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 
 /** Actual router, cache, operation guards, provider resolvers and intercepted HTTP contracts. */
 class NativeDebridFallbackIntegrationTest {
+    @Test fun `library ready selection bypasses preferred unknown account and rechecks before granting`() = runBlocking {
+        Harness().use { h ->
+            val detail = """{"id":"existing","hash":"$HASH","status":"downloaded","files":[{"id":1,"path":"/movie.mkv","bytes":123,"selected":1}],"links":["https://real-debrid.example.test/selected"]}"""
+            h.ad.enqueue(json("""{"status":"success","data":{"magnets":[]}}"""))
+            h.rd.enqueue(json("""[{"id":"existing","hash":"$HASH","status":"downloaded"}]"""))
+            h.rd.enqueue(json(detail))
+            val request = NativeDebridLibraryRequest("movie", "tt1234", null, null)
+            val ready = h.availability.annotateCachedAvailability(listOf(AddonStreams("Synthetic", null, listOf(source()))),
+                h.settings.value, request).single().streams.single()
+            assertNotNull(ready.debridCacheStatus?.libraryFile)
+            assertEquals(2, h.rd.requestCount)
+            assertEquals(1, h.ad.requestCount)
+
+            h.rd.enqueue(json(detail))
+            h.rd.enqueue(json("""{"download":"$FILE","filename":"movie.mkv","filesize":123}"""))
+            assertEquals(DirectDebridResolveResult.Success(FILE, "movie.mkv", 123L, providerId = "realdebrid"),
+                h.resolver.resolve(ready, null, null, nativeVideoId = request.videoId, nativeMediaType = "movie"))
+            assertTrue(h.resolver.isPlaybackAuthorized(FILE, 1))
+            assertNull(h.resolver.cachedPlayableStream(ready, null, null))
+            assertEquals(1, h.ad.requestCount)
+            assertTrue(h.rd.takeRequest().path.orEmpty().startsWith("/torrents?page=1&limit="))
+            assertEquals("/torrents/info/existing", h.rd.takeRequest().path)
+            assertEquals("/torrents/info/existing", h.rd.takeRequest().path)
+            assertEquals("/unrestrict/link", h.rd.takeRequest().path)
+
+            h.rd.enqueue(json(detail.replace(HASH, "a".repeat(40))))
+            val failure = h.resolver.resolve(ready, null, null)
+            assertEquals(DirectDebridFailureReason.UNAVAILABLE, (failure as DirectDebridResolveResult.Failure).detail.reason)
+            assertEquals(5, h.rd.requestCount)
+            assertEquals(1, h.ad.requestCount)
+            h.credentials.incrementAndGet()
+            assertEquals(DirectDebridResolveResult.Stale, h.resolver.resolve(ready, null, null))
+            assertEquals(5, h.rd.requestCount)
+            assertEquals(1, h.ad.requestCount)
+        }
+    }
+
+    @Test fun `two verified libraries fall back sequentially when the preferred item is lost or rate limited`() = runBlocking {
+        for (status in listOf(404, 429)) Harness().use { h ->
+            val rdDetail = """{"id":"existing","hash":"$HASH","status":"downloaded","files":[{"id":1,"path":"/movie.mkv","bytes":123,"selected":1}],"links":["https://real-debrid.example.test/selected"]}"""
+            val adFiles = """[{"n":"movie.mkv","s":123,"l":"https://alldebrid.example.test/selected"}]"""
+            h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"hash":"$HASH","statusCode":4}]}}"""))
+            h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"files":$adFiles}]}}"""))
+            h.rd.enqueue(json("""[{"id":"existing","hash":"$HASH","status":"downloaded"}]"""))
+            h.rd.enqueue(json(rdDetail))
+            val request = NativeDebridLibraryRequest("movie", "tt1234", null, null)
+            val ready = h.availability.annotateCachedAvailability(listOf(AddonStreams("Synthetic", null, listOf(source()))),
+                h.settings.value, request).single().streams.single()
+            assertEquals(setOf("realdebrid", "alldebrid"), ready.nativeDebridAvailability
+                .filter { it.libraryFile != null }.map { it.providerId }.toSet())
+
+            val entered = CompletableDeferred<Unit>()
+            val release = CountDownLatch(1)
+            h.ad.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    entered.complete(Unit)
+                    release.await(4, TimeUnit.SECONDS)
+                    return json("{}", status).setHeader("Retry-After", "60")
+                }
+            }
+            h.rd.enqueue(json(rdDetail))
+            h.rd.enqueue(json("""{"download":"$FILE","filename":"movie.mkv","filesize":123}"""))
+            val attempts = mutableListOf<String>()
+            val selection = async { h.resolver.resolve(ready, null, null, onProviderAttempt = { attempts.add(it) }) }
+            try {
+                withTimeout(4_000) { entered.await() }
+                delay(350)
+                assertEquals(2, h.rd.requestCount)
+            } finally {
+                release.countDown()
+            }
+            assertEquals(DirectDebridResolveResult.Success(FILE, "movie.mkv", 123L, providerId = "realdebrid"),
+                withTimeout(5_000) { selection.await() })
+            assertEquals(listOf("alldebrid", "realdebrid"), attempts)
+            assertTrue(h.resolver.isPlaybackAuthorized(FILE, 1))
+            assertEquals(3, h.ad.requestCount)
+            assertEquals(4, h.rd.requestCount)
+            assertEquals(listOf("/v4.1/magnet/status", "/v4/magnet/files", "/v4.1/magnet/status"),
+                List(3) { h.ad.takeRequest().path })
+            assertEquals(listOf("/torrents/info/existing", "/unrestrict/link"),
+                List(4) { h.rd.takeRequest().path }.takeLast(2))
+        }
+    }
+
+    @Test fun `AllDebrid recalls a selected upload hash when the read-only status omits it`() = runBlocking {
+        Harness().use { h ->
+            h.settings.value = h.settings.value.copy(connectedServiceFallbackEnabled = false)
+            val files = """[{"n":"movie.mkv","s":123,"l":"https://alldebrid.example.test/selected"}]"""
+            val download = """{"status":"success","data":{"link":"$FILE","filename":"movie.mkv","filesize":123}}"""
+            h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"hash":"$HASH","ready":true}]}}"""))
+            h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"files":$files}]}}"""))
+            h.ad.enqueue(json(download))
+            assertTrue(h.resolver.resolve(source(), null, null) is DirectDebridResolveResult.Success)
+
+            h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"statusCode":4}]}}"""))
+            h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":"42","files":$files}]}}"""))
+            val request = NativeDebridLibraryRequest("movie", "tt1234", null, null)
+            val ready = h.availability.annotateCachedAvailability(listOf(AddonStreams("Synthetic", null, listOf(source()))),
+                h.settings.value, request).single().streams.single()
+            assertEquals("42", ready.debridCacheStatus?.libraryFile?.torrentId)
+            assertEquals(5, h.ad.requestCount)
+
+            h.ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"statusCode":4,"files":$files}]}}"""))
+            h.ad.enqueue(json(download))
+            assertEquals(DirectDebridResolveResult.Success(FILE, "movie.mkv", 123L, providerId = "alldebrid"),
+                h.resolver.resolve(ready, null, null, nativeVideoId = request.videoId, nativeMediaType = "movie"))
+            assertEquals(0, h.rd.requestCount)
+            assertEquals(7, h.ad.requestCount)
+            assertEquals(listOf("/v4/magnet/upload", "/v4/magnet/files", "/v4/link/unlock",
+                "/v4.1/magnet/status", "/v4/magnet/files", "/v4.1/magnet/status", "/v4/link/unlock"),
+                List(7) { h.ad.takeRequest().path })
+        }
+    }
+
     @Test fun `broadcast ordinal resolves only for its exact episode and never shares the regular cache`() = runBlocking {
         Harness().use { h ->
             h.settings.value = h.settings.value.copy(preferredResolverProviderId = "realdebrid")
@@ -309,6 +425,7 @@ class NativeDebridFallbackIntegrationTest {
         val grants = spyk(ServicePlaybackGrantRegistry({ System.nanoTime() / 1_000_000 }, requireLiveOrigin = true))
         private val job = SupervisorJob()
         val resolver: DirectDebridResolver
+        val availability: LocalDebridAvailabilityService
         init {
             every { store.activeProfileId } returns profile
             every { store.activeProfileSelectionRevision } answers { selection.get() }
@@ -319,10 +436,15 @@ class NativeDebridFallbackIntegrationTest {
             val moshi = Moshi.Builder().add(AllDebridMagnetCollectionAdapterFactory).addLast(KotlinJsonAdapterFactory()).build()
             fun retrofit(server: MockWebServer) = Retrofit.Builder().baseUrl(server.url("/"))
                 .addConverterFactory(MoshiConverterFactory.create(moshi)).build()
-            resolver = DirectDebridResolver(store, mockk(), RealDebridDirectDebridResolver(store,
-                retrofit(rd).create(RealDebridApi::class.java), RealDebridFileSelector()),
-                AllDebridDirectDebridResolver(store, AllDebridService(retrofit(ad).create(AllDebridApi::class.java))),
-                mockk(), mockk(), CoroutineScope(job + Dispatchers.Unconfined), grants)
+            val rdApi = retrofit(rd).create(RealDebridApi::class.java)
+            val adApi = retrofit(ad).create(AllDebridApi::class.java)
+            val adService = AllDebridService(adApi)
+            val library = NativeDebridAccountLibrary(rdApi, adApi, adService)
+            val cache = mockk<LocalDebridService>()
+            availability = LocalDebridAvailabilityService(store, cache, System::currentTimeMillis, library)
+            resolver = DirectDebridResolver(store, mockk(), RealDebridDirectDebridResolver(store, rdApi, RealDebridFileSelector()),
+                AllDebridDirectDebridResolver(store, adService),
+                mockk(), cache, CoroutineScope(job + Dispatchers.Unconfined), grants, accountLibrary = library)
         }
         fun adProcessing() {
             ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"ready":false}]}}"""))

@@ -2,14 +2,21 @@ package com.nuvio.tv.core.express
 
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -19,6 +26,52 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ExpressHttpCooldownTest {
+    @Test fun `queued request honors cooldown established while waiting for a global slot`() = runBlocking {
+        val sendRateLimit = CountDownLatch(1)
+        val releaseBusy = CountDownLatch(1)
+        val limitedRequests = AtomicInteger()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val response = Response.Builder().request(request).protocol(Protocol.HTTP_1_1).body("{}".toResponseBody())
+            if (request.url.host == "limited.example") limitedRequests.incrementAndGet()
+            when (request.url.encodedPath) {
+                "/first" -> {
+                    check(sendRateLimit.await(5, TimeUnit.SECONDS))
+                    response.code(429).message("Too Many Requests").header("Retry-After", "60").build()
+                }
+                "/busy" -> {
+                    check(releaseBusy.await(5, TimeUnit.SECONDS))
+                    response.code(200).message("OK").build()
+                }
+                else -> response.code(200).message("OK").build()
+            }
+        }.build()
+        val http = ExpressHttpClient(client, clock = { 1_000L })
+        val blockers = List(2) {
+            async(start = CoroutineStart.UNDISPATCHED) { http.get("https://busy.example/busy") }
+        }
+        try {
+            withTimeout(3_000) {
+                val first = async(start = CoroutineStart.UNDISPATCHED) {
+                    runCatching { http.get("https://limited.example/first") }.exceptionOrNull()
+                }
+                val queued = async(start = CoroutineStart.UNDISPATCHED) {
+                    runCatching { http.get("https://limited.example/queued") }.exceptionOrNull()
+                }
+                sendRateLimit.countDown()
+
+                assertEquals(ExpressHttpFailure.RATE_LIMITED, (first.await() as? ExpressHttpException)?.failure)
+                assertEquals(ExpressHttpFailure.RATE_LIMITED, (queued.await() as? ExpressHttpException)?.failure)
+                assertEquals(1, limitedRequests.get())
+            }
+        } finally {
+            sendRateLimit.countDown()
+            releaseBusy.countDown()
+            blockers.awaitAll()
+            client.dispatcher.executorService.shutdown()
+        }
+    }
+
     @Test fun `429 Retry-After cooldown survives another search without another network call`() = runBlocking {
         MockWebServer().use { server ->
             val now = AtomicLong(1_000L)

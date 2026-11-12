@@ -118,7 +118,8 @@ internal fun HomeBrowseScaffold(section: HomeBrowseSection, onSelect: (HomeBrows
         }
     }
     val saved = rememberSaveableStateHolder()
-    Column(Modifier.fillMaxSize().background(Color.Black)) {
+    val colors = NuvioTheme.colors
+    Column(Modifier.fillMaxSize().background(colors.Background)) {
         Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 24.dp)
             .selectableGroup()
             .focusProperties { onEnter = { tabs.getValue(section).requestFocus() } }
@@ -163,10 +164,10 @@ internal fun HomeBrowseScaffold(section: HomeBrowseSection, onSelect: (HomeBrows
                             else -> false
                         }
                     }, colors = ButtonDefaults.colors(
-                    containerColor = if (isSelected) Color(0xFF303033) else Color.Transparent,
-                    contentColor = if (isSelected) Color.White else Color.White.copy(alpha = 0.74f),
-                    focusedContainerColor = Color.White,
-                    focusedContentColor = Color.Black
+                    containerColor = if (isSelected) colors.FocusBackground else Color.Transparent,
+                    contentColor = if (isSelected) colors.TextPrimary else colors.TextSecondary,
+                    focusedContainerColor = colors.FocusRing,
+                    focusedContentColor = colors.Background
                 )) {
                     Text(tab.label, style = MaterialTheme.typography.titleMedium)
                 }

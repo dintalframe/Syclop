@@ -1,11 +1,18 @@
 package com.nuvio.tv.updater
 
+import android.content.Intent
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.updater.model.AppUpdate
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
+import io.mockk.verify
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +30,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -116,6 +124,74 @@ class UpdateViewModelSchedulingTest {
             assertTrue(viewModel.uiState.value.showBanner)
         }
 
+    @Test fun `a completed download opens the installer once when the user returns`() = updaterTest {
+        val viewModel = openOffer()
+        val oldActivity = mockk<ComponentActivity>()
+        every { oldActivity.lifecycle.currentState } returns Lifecycle.State.STARTED
+
+        viewModel.downloadUpdate()
+        awaitWork()
+        assertEquals(apk, viewModel.uiState.value.pendingInstall)
+        viewModel.launchPendingInstaller(oldActivity)
+        verify(exactly = 0) { ApkInstaller.launchSystemInstaller(any(), any()) }
+
+        val resumedActivity = mockk<ComponentActivity>()
+        every { resumedActivity.lifecycle.currentState } returns Lifecycle.State.RESUMED
+        viewModel.launchPendingInstaller(resumedActivity)
+        viewModel.launchPendingInstaller(resumedActivity)
+
+        verify(exactly = 1) { ApkInstaller.launchSystemInstaller(resumedActivity, apk) }
+        coVerify(exactly = 1) { downloads.download(offer, any()) }
+        assertFalse(viewModel.uiState.value.showBanner)
+    }
+
+    @Test fun `granting the unknown sources permission continues the original update once`() = updaterTest {
+        val viewModel = openOffer()
+        installAllowed = false
+        viewModel.downloadUpdate()
+        assertTrue(viewModel.uiState.value.showUnknownSourcesDialog)
+        viewModel.openUnknownSourcesSettings { assertEquals(unknownSourcesIntent, it) }
+        awaitWork()
+        coVerify(exactly = 0) { downloads.download(any(), any()) }
+
+        installAllowed = true
+        viewModel.onUnknownSourcesSettingsReturned()
+        viewModel.onUnknownSourcesSettingsReturned()
+        awaitWork()
+
+        assertEquals(apk, viewModel.uiState.value.pendingInstall)
+        coVerify(exactly = 1) { downloads.download(offer, any()) }
+    }
+
+    @Test fun `returning without the unknown sources permission leaves the offer available`() = updaterTest {
+        val viewModel = openOffer()
+        installAllowed = false
+        viewModel.downloadUpdate()
+        viewModel.openUnknownSourcesSettings {}
+        viewModel.onUnknownSourcesSettingsReturned()
+        awaitWork()
+
+        assertTrue(viewModel.uiState.value.showBanner)
+        assertFalse(viewModel.uiState.value.showUnknownSourcesDialog)
+        coVerify(exactly = 0) { downloads.download(any(), any()) }
+    }
+
+    @Test fun `dismissing the offer cancels a verified pending install`() = updaterTest {
+        val viewModel = openOffer()
+        viewModel.downloadUpdate()
+        awaitWork()
+        assertNotNull(viewModel.uiState.value.pendingInstall)
+
+        viewModel.dismissBanner()
+        val resumedActivity = mockk<ComponentActivity>()
+        every { resumedActivity.lifecycle.currentState } returns Lifecycle.State.RESUMED
+        viewModel.launchPendingInstaller(resumedActivity)
+        awaitWork()
+
+        verify(exactly = 0) { ApkInstaller.launchSystemInstaller(any(), any()) }
+        assertFalse(viewModel.uiState.value.showBanner)
+    }
+
     private fun updaterTest(
         enabled: Boolean = true,
         channel: UpdateChannel = UpdateChannel.STABLE,
@@ -123,6 +199,7 @@ class UpdateViewModelSchedulingTest {
         block: suspend Fixture.() -> Unit
     ) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        mockkObject(ApkInstaller)
         val fixture = Fixture(this, enabled, channel, lastCheckAt)
         try {
             fixture.block()
@@ -130,6 +207,7 @@ class UpdateViewModelSchedulingTest {
             fixture.close()
             runCurrent()
             Dispatchers.resetMain()
+            unmockkObject(ApkInstaller)
         }
     }
 
@@ -142,8 +220,11 @@ class UpdateViewModelSchedulingTest {
         val lastCheckAt = MutableStateFlow(initialLastCheckAt)
         val repository = mockk<UpdateRepository>()
         private val preferences = mockk<UpdatePreferences>()
-        private val downloads = mockk<UpdateDownloadStore>()
+        val downloads = mockk<UpdateDownloadStore>()
         private var model: UpdateViewModel? = null
+        val apk = File("verified.apk")
+        val unknownSourcesIntent = mockk<Intent>()
+        var installAllowed = true
         val offer = AppUpdate(
             tag = "v9.0.0", title = "Fixture release", notes = "", releaseUrl = null,
             assetName = "syclop-release.apk", assetUrl = "https://example.invalid/fixture.apk",
@@ -156,7 +237,12 @@ class UpdateViewModelSchedulingTest {
             every { preferences.lastCheckAtMs } returns lastCheckAt
             every { preferences.deferredRelease } returns flowOf(null)
             coEvery { preferences.setLastCheckAtMs(any()) } coAnswers { lastCheckAt.value = firstArg() }
+            coEvery { preferences.deferRelease(any(), any()) } returns Unit
             coEvery { downloads.clearIfInstalled() } returns Unit
+            coEvery { downloads.download(offer, any()) } returns Result.success(apk)
+            every { ApkInstaller.canRequestPackageInstalls(any()) } answers { installAllowed }
+            every { ApkInstaller.buildUnknownSourcesSettingsIntent(any()) } returns unknownSourcesIntent
+            every { ApkInstaller.launchSystemInstaller(any(), any()) } returns Unit
             coEvery { repository.getLatestUpdate(any()) } returns Result.success(offer)
         }
 
@@ -165,9 +251,20 @@ class UpdateViewModelSchedulingTest {
             model = viewModel
             // Startup has an IO cleanup. Join the constructor's already scheduled work
             // before inspecting network calls on the test dispatcher.
-            viewModel.viewModelScope.coroutineContext[Job]!!.children.toList().joinAll()
-            runCurrent()
+            awaitWork()
             return viewModel
+        }
+
+        suspend fun openOffer(): UpdateViewModel = open().also { viewModel ->
+            viewModel.checkForUpdates(force = true, showNoUpdateFeedback = true)
+            runCurrent()
+            assertTrue(viewModel.uiState.value.showBanner)
+        }
+
+        suspend fun awaitWork() {
+            runCurrent()
+            model!!.viewModelScope.coroutineContext[Job]!!.children.toList().joinAll()
+            runCurrent()
         }
 
         fun runCurrent() = scope.runCurrent()

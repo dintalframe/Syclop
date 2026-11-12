@@ -115,7 +115,7 @@ internal fun TurkishBroadcastEpisode.matchesFile(path: String): Boolean = path.m
 internal fun TurkishBroadcastEpisode.matchesBroadcastLabel(path: String): Boolean =
     path.matchesSingleEpisode(season, episode, this, requireBroadcastLabel = true)
 
-private fun String.matchesSingleEpisode(season: Int, episode: Int, broadcast: TurkishBroadcastEpisode?,
+internal fun String.matchesSingleEpisode(season: Int, episode: Int, broadcast: TurkishBroadcastEpisode?,
     requireBroadcastLabel: Boolean = false): Boolean {
     val basename = normalizedPath().substringAfterLast('/')
     if (basename.isBlank() || basename.length > 4_096 || basename.any(Char::isISOControl) ||

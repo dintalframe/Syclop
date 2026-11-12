@@ -14,7 +14,9 @@ import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedVisibility
@@ -123,7 +125,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.os.ConfigurationCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.metrics.performance.JankStats
 import androidx.metrics.performance.PerformanceMetricsState
@@ -1161,6 +1162,10 @@ open class MainActivity : ComponentActivity() {
                     var installedNotesDismissed by remember { mutableStateOf(false) }
                     val updateViewModel: UpdateViewModel = hiltViewModel(this@MainActivity)
                     val updateState by updateViewModel.uiState.collectAsState()
+                    var updateRequestEntryId by rememberSaveable { mutableStateOf<String?>(null) }
+                    val unknownSourcesSettings = rememberLauncherForActivityResult(
+                        ActivityResultContracts.StartActivityForResult()
+                    ) { updateViewModel.onUnknownSourcesSettingsReturned() }
                     val initializationBlocksContent = startupInitializationBlocksHome(initializationHomeEntry,
                         activeProfileId, profileManager.activeProfileSelectionRevision, initializationState)
                     val automaticUpdateCheckReady = installedNotesState.isLoaded &&
@@ -1178,23 +1183,31 @@ open class MainActivity : ComponentActivity() {
                         hasAddonConfirmation = addonLinkConfirmation != null,
                         isInstallingAddon = confirmedAddonLink != null
                     )
+                    val canHandOffInstall = updateRequestEntryId != null &&
+                        navBackStackEntry?.id == updateRequestEntryId && currentRoute == actualRoute
                     StartupInitializationContent(blocked = initializationBlocksContent) {
                     UpdateBannerHost(
                         state = updateState.copy(showBanner = updateState.showBanner && showUpdatePrompt),
                         onDismissBanner = updateViewModel::dismissBanner,
                         onDownload = {
-                            val updateRoute = navController.currentDestination?.route
-                            updateViewModel.downloadUpdate {
-                                this@MainActivity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
-                                    navController.currentDestination?.route == updateRoute
-                            }
+                            updateRequestEntryId = navController.currentBackStackEntry?.id
+                            updateViewModel.downloadUpdate()
                         },
                         onDismissUnknownSources = updateViewModel::dismissUnknownSourcesDialog,
-                        onOpenUnknownSources = updateViewModel::openUnknownSourcesSettings,
+                        onOpenUnknownSources = {
+                            updateViewModel.openUnknownSourcesSettings { unknownSourcesSettings.launch(it) }
+                        },
                         onFeedbackShown = updateViewModel::consumeFeedbackMessage,
                         automaticCheckReady = automaticUpdateCheckReady,
                         onAutomaticCheck = updateViewModel::checkForUpdatesAutomatically,
                         installedNotes = installedNotesState.notes.takeIf { showInstalledNotes },
+                        onInstallReady = if (canHandOffInstall) {
+                            {
+                                if (navController.currentBackStackEntry?.id == updateRequestEntryId) {
+                                    updateViewModel.launchPendingInstaller(this@MainActivity)
+                                }
+                            }
+                        } else null,
                         onDismissInstalledNotes = {
                             installedNotesDismissed = true
                             lifecycleScope.launch {

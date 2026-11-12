@@ -3,6 +3,7 @@ package com.nuvio.tv.core.debrid
 import com.nuvio.tv.core.cloud.CloudLibraryFile
 import com.nuvio.tv.core.cloud.CloudLibraryItem
 import com.nuvio.tv.core.cloud.CloudLibraryItemType
+import com.nuvio.tv.domain.model.StreamAvailabilityScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -14,18 +15,19 @@ class CapturedDebridOperation private constructor(
     private val isCurrent: () -> Boolean,
     internal val animeProof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof?,
     internal val turkishBroadcastEpisode: TurkishBroadcastEpisode?,
-    private val captureTorrentInventory: (suspend () -> Set<String>?)?
+    private val captureTorrentInventory: (suspend () -> Set<String>?)?,
+    internal val availabilityScope: StreamAvailabilityScope?
 ) {
-    internal constructor(providerId: String, apiKey: String, isCurrent: () -> Boolean) :
-        this(providerId, apiKey, isCurrent, null, null, null)
+    internal constructor(providerId: String, apiKey: String, availabilityScope: StreamAvailabilityScope? = null,
+        isCurrent: () -> Boolean) : this(providerId, apiKey, isCurrent, null, null, null, availabilityScope)
 
     internal fun withEpisodeProofs(anime: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof?,
         broadcast: TurkishBroadcastEpisode?): CapturedDebridOperation =
         if (anime == null && broadcast == null) this
-        else CapturedDebridOperation(providerId, apiKey, isCurrent, anime, broadcast, captureTorrentInventory)
+        else CapturedDebridOperation(providerId, apiKey, isCurrent, anime, broadcast, captureTorrentInventory, availabilityScope)
 
     internal fun withTorrentInventory(capture: suspend () -> Set<String>?): CapturedDebridOperation =
-        CapturedDebridOperation(providerId, apiKey, isCurrent, animeProof, turkishBroadcastEpisode, capture)
+        CapturedDebridOperation(providerId, apiKey, isCurrent, animeProof, turkishBroadcastEpisode, capture, availabilityScope)
 
     internal suspend fun torrentIdsBeforeCreate(): Set<String>? =
         captureTorrentInventory?.let { request(it) }

@@ -7,6 +7,7 @@ import com.nuvio.tv.data.remote.dto.AllDebridFileNodeDto
 import com.nuvio.tv.data.remote.dto.AllDebridLinkDto
 import com.nuvio.tv.data.remote.dto.AllDebridMagnetDto
 import com.nuvio.tv.data.remote.dto.AllDebridUserDto
+import com.nuvio.tv.domain.model.StreamAvailabilityScope
 import kotlinx.coroutines.delay
 import retrofit2.Response
 import java.io.IOException
@@ -23,6 +24,22 @@ class AllDebridApiException(message: String, val httpStatus: Int? = null,
 
 @Singleton
 class AllDebridService @Inject constructor(private val api: AllDebridApi) {
+    private val selectedMagnetHashes = LinkedHashMap<Pair<StreamAvailabilityScope, Long>, String>()
+
+    // The documented status endpoint may omit hashes. Only a completed, selected playback
+    // can supply the explicit hash-to-ID binding returned by a previous upload.
+    internal fun rememberSelectedMagnet(scope: StreamAvailabilityScope, requestedHash: String?, uploaded: AllDebridMagnetDto) {
+        val hash = canonicalAvailabilityHash(uploaded.hash)?.takeIf { it == requestedHash } ?: return
+        val id = uploaded.id?.takeIf { it > 0 } ?: return
+        synchronized(selectedMagnetHashes) {
+            selectedMagnetHashes[scope to id] = hash
+            while (selectedMagnetHashes.size > 128) selectedMagnetHashes.remove(selectedMagnetHashes.keys.first())
+        }
+    }
+
+    internal fun selectedMagnetHash(scope: StreamAvailabilityScope, id: Long): String? =
+        synchronized(selectedMagnetHashes) { selectedMagnetHashes[scope to id] }
+
     suspend fun user(apiKey: String): AllDebridUserDto =
         api.getUser(bearer(apiKey)).dataOrThrow().user
             ?.takeIf { !it.username.isNullOrBlank() }
@@ -45,24 +62,28 @@ class AllDebridService @Inject constructor(private val api: AllDebridApi) {
         }.mapNotNull { item -> item.id?.let { it to flattenAllDebridFiles(item.files) } }.toMap()
     }
 
-    suspend fun unlock(apiKey: String, source: String): AllDebridLinkDto {
-        val authorization = bearer(apiKey)
-        var result = api.unlockLink(authorization, source).dataOrThrow()
+    suspend fun unlock(apiKey: String, source: String): AllDebridLinkDto = unlock(apiKey, source, null)
+
+    internal suspend fun unlock(apiKey: String, source: String, operation: CapturedDebridOperation?): AllDebridLinkDto {
+        val authorization = bearer(operation?.credential(DebridProviders.ALL_DEBRID_ID) ?: apiKey)
+        var result = scopedDebridRequest(operation) { api.unlockLink(authorization, source) }.dataOrThrow()
         if (result.link.isNullOrBlank() && result.streams.isNotEmpty()) {
             // Prefer the highest numeric video quality; avoid choosing an audio-only entry.
             val stream = result.streams.filter { it.id != null && it.quality?.toIntOrNull() != null }
                 .maxByOrNull { it.quality?.toIntOrNull() ?: 0 }
                 ?: throw AllDebridApiException("Choose a supported video source.")
             val id = result.id ?: throw AllDebridApiException("AllDebrid returned an incomplete video response.")
-            result = api.streamingLink(authorization, id, stream.id!!).dataOrThrow()
+            val streamed = scopedDebridRequest(operation) { api.streamingLink(authorization, id, stream.id!!) }.dataOrThrow()
+            result = streamed.withPreviousMetadata(result)
         }
         val delayedId = result.delayed
         if (result.link.isNullOrBlank() && delayedId != null) {
             // Official minimum polling interval is five seconds. Bounded and cancellable.
             repeat(6) {
                 delay(5_000)
-                val delayed = api.delayedLink(authorization, delayedId).dataOrThrow()
-                if (delayed.link.isHttpUrl()) return result.copy(link = delayed.link)
+                val delayed = scopedDebridRequest(operation) { api.delayedLink(authorization, delayedId) }.dataOrThrow()
+                if (delayed.link.isHttpUrl()) return result.copy(link = delayed.link,
+                    filename = delayed.filename ?: result.filename, filesize = delayed.filesize ?: result.filesize)
                 if (delayed.status == 3) throw AllDebridApiException("AllDebrid could not prepare this link.")
             }
             throw AllDebridApiException("This link is still being prepared. Try again shortly.", reason = DirectDebridFailureReason.PROCESSING)
@@ -73,6 +94,9 @@ class AllDebridService @Inject constructor(private val api: AllDebridApi) {
 
     private fun bearer(apiKey: String) = "Bearer ${apiKey.trim()}"
 }
+
+private fun AllDebridLinkDto.withPreviousMetadata(previous: AllDebridLinkDto): AllDebridLinkDto =
+    copy(filename = filename ?: previous.filename, filesize = filesize ?: previous.filesize)
 
 internal fun flattenAllDebridFiles(nodes: List<AllDebridFileNodeDto>, parent: String = ""): List<AllDebridFile> =
     nodes.flatMap { node ->

@@ -1,7 +1,10 @@
 package com.nuvio.tv.updater
 
+import android.content.Intent
+import androidx.activity.ComponentActivity
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +16,7 @@ data class UpdateUiState(
     val isUpdateAvailable: Boolean = false,
     val isDownloading: Boolean = false,
     val downloadProgress: Float? = null,
+    val pendingInstall: File? = null,
     val downloadedApkPath: String? = null,
     val showBanner: Boolean = false,
     val showUnknownSourcesDialog: Boolean = false,
@@ -42,8 +46,12 @@ class UpdateViewModel @Inject constructor() : ViewModel() {
 
     fun setUpdateChannel(channel: UpdateChannel) = Unit
 
-    fun downloadUpdate(allowInstaller: () -> Boolean) = Unit
+    fun downloadUpdate() = Unit
 
-    fun openUnknownSourcesSettings() = Unit
+    fun launchPendingInstaller(activity: ComponentActivity) = Unit
+
+    fun openUnknownSourcesSettings(launch: (Intent) -> Unit) = Unit
+
+    fun onUnknownSourcesSettingsReturned() = Unit
 
 }

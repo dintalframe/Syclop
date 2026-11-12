@@ -81,14 +81,14 @@ object ThemeColors {
         backgroundCard = Color(0xFF241A1F)
     )
 
-    // Syclop's own free default: black canvas, quiet charcoal surfaces and white focus.
+    // The eye mark's visor blue carries into focus on the charcoal canvas.
     val Syclop = ThemeColorPalette(
         secondary = Color(0xFFF2F2F7),
         secondaryVariant = Color(0xFFD1D1D9),
         onSecondary = NuvioPrimitives.neutral925,
         onSecondaryVariant = NuvioPrimitives.neutral925,
-        focusRing = Color(0xFFD8D8E0),
-        focusBackground = Color(0xFF29292F),
+        focusRing = Color(0xFF9DE8F2),
+        focusBackground = Color(0xFF203139),
         background = Color.Black,
         backgroundElevated = Color(0xFF111114),
         backgroundCard = Color(0xFF1A1A1F),

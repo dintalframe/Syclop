@@ -166,6 +166,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.nuvio.tv.libass.media.widget.AssSubtitleSurfaceView
 import kotlin.math.abs
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 private fun PlayerUiState.returnFocusSeasonEpisode(completed: Boolean): Pair<Int?, Int?> {
@@ -2684,8 +2686,10 @@ private fun PlayerControlsOverlay(
     val customEpisodesPainter = rememberRawSvgPainter(R.raw.ic_player_episodes)
     val focusedControlLabel = remember { mutableStateOf<State<String>?>(null) }
     var showEngineSwitchConfirm by remember { mutableStateOf(false) }
-    val playbackTimeline by viewModel.playbackTimeline.collectAsState()
-    val isLivePlayback = playbackTimeline.isLive
+    val livePlayback = remember(viewModel) {
+        viewModel.playbackTimeline.map { it.isLive }.distinctUntilChanged()
+    }
+    val isLivePlayback by livePlayback.collectAsState(initial = viewModel.playbackTimeline.value.isLive)
     val startFromBeginningFocusRequester = remember { FocusRequester() }
     val showNextEpisodeButton = uiState.canManuallyPlayNextEpisode()
     val progressUpTarget = if (isLivePlayback) {

@@ -10,6 +10,7 @@ import com.nuvio.tv.data.local.DebridSettingsDataStore
 import com.nuvio.tv.domain.model.StreamBehaviorHints
 import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.model.StreamClientResolve
+import com.nuvio.tv.domain.model.StreamAvailabilityScope
 import com.nuvio.tv.domain.model.StreamDebridCacheState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -45,15 +46,17 @@ class DirectDebridResolver internal constructor(
     private val overallBudgetMillis: Long = 30_000L,
     private val serviceBudgetMillis: Long = 12_000L,
     private val clock: () -> Long = { System.nanoTime() / 1_000_000L },
-    private val cleanupRepository: CloudLibraryRepository? = null
+    private val cleanupRepository: CloudLibraryRepository? = null,
+    private val accountLibrary: NativeDebridAccountLibrary? = null
 ) {
     @Inject constructor(dataStore: DebridSettingsDataStore, torboxResolver: TorboxDirectDebridResolver,
         realDebridResolver: RealDebridDirectDebridResolver, allDebridResolver: AllDebridDirectDebridResolver,
         premiumizeResolver: PremiumizeDirectDebridResolver, localDebridService: LocalDebridService,
-        cleanupRepository: CloudLibraryRepository, animeMappings: NativeAnimeEpisodeMappings? = null) : this(
+        cleanupRepository: CloudLibraryRepository, accountLibrary: NativeDebridAccountLibrary,
+        animeMappings: NativeAnimeEpisodeMappings? = null) : this(
         dataStore, torboxResolver, realDebridResolver, allDebridResolver, premiumizeResolver, localDebridService,
         CoroutineScope(SupervisorJob() + Dispatchers.Default), animeMappings = animeMappings,
-        cleanupRepository = cleanupRepository)
+        cleanupRepository = cleanupRepository, accountLibrary = accountLibrary)
     private val mutex = Mutex()
     private val resolvedCache = mutableMapOf<String, CachedDirectDebridResolve>()
     private data class SharedResolve(val deferred: Deferred<NativeDebridAttempt>, var waiters: Int = 0)
@@ -142,13 +145,14 @@ class DirectDebridResolver internal constructor(
         } else null
         if (animeProof != null && !stream.matchesNativeAnimeSource(animeProof)) return wrongDebridFile(null)
         if (!bindingIsCurrent(binding)) throw kotlinx.coroutines.CancellationException("The selected viewer changed.")
-        val accounts = resolutionAccounts(stream, settings, allowFallback)
+        val eligibleAccounts = resolutionAccounts(stream, settings, allowFallback)
+        val libraryOnly = stream.hasAccountLibraryEvidence()
+        val accounts = if (libraryOnly) eligibleAccounts
+            .filter { stream.accountLibraryFile(it.provider.id, binding.availabilityScope()) != null } else eligibleAccounts
         if (accounts.isEmpty()) return DirectDebridResolveResult.Stale
-        // The bounded service race belongs to the caller; per-provider shared jobs retain
-        // their own waiter ownership. Canceling a selection stops its pending attempts.
         val route = NativeDebridFallbackRouter.resolve(accounts,
             isCurrent = { bindingIsCurrent(binding) },
-            onAttempt = onProviderAttempt) { account ->
+            onAttempt = onProviderAttempt, sequential = libraryOnly) { account ->
             resolveAttempt(stream, season, episode, binding, account, animeProof, nativeVideoId)
         }
         val result = route.result
@@ -185,8 +189,9 @@ class DirectDebridResolver internal constructor(
         binding: ServicePlaybackGrantRegistry.Scope, account: DebridServiceCredential,
         animeProof: NativeAnimeEpisodeProof?, nativeVideoId: String?): NativeDebridAttempt {
         val cooldownKey = "${binding.profileId}:${binding.revision}:${binding.selectionRevision}:${binding.accountRevision}:${account.provider.id}"
-        val cacheKey = stream.directDebridResolveCacheKey(season, episode, account, animeProof, nativeVideoId)
-            ?.let { "${binding.profileId}:${binding.revision}:$it" }
+        val cacheKey = if (stream.hasAccountLibraryEvidence()) null else
+            stream.directDebridResolveCacheKey(season, episode, account, animeProof, nativeVideoId)
+                ?.let { "${binding.profileId}:${binding.revision}:$it" }
         if (cacheKey != null) getCachedResult(cacheKey, binding, account.provider.id)?.let { return NativeDebridAttempt(it) }
         mutex.withLock {
             val until = serviceCooldowns[cooldownKey]
@@ -265,6 +270,7 @@ class DirectDebridResolver internal constructor(
     }
 
     suspend fun cachedPlayableStream(stream: Stream, season: Int?, episode: Int?, nativeVideoId: String? = null, nativeMediaType: String? = null): Stream? {
+        if (stream.hasAccountLibraryEvidence()) return null
         val binding = playbackScope() ?: return null
         val settings = dataStore.settings.first()
         if (playbackScope() != binding) return null
@@ -355,17 +361,28 @@ class DirectDebridResolver internal constructor(
         binding: ServicePlaybackGrantRegistry.Scope, account: DebridServiceCredential,
         animeProof: NativeAnimeEpisodeProof?): NativeDebridAttempt {
         val broadcast = stream.nativeTurkishBroadcastEpisode
-        var operation = CapturedDebridOperation(account.provider.id, account.apiKey) {
+        val availabilityScope = binding.availabilityScope()
+        val neutral = NativeDebridFallbackRouter.neutralHashSource(stream)
+        val libraryOnly = stream.hasAccountLibraryEvidence()
+        var operation = CapturedDebridOperation(account.provider.id, account.apiKey, availabilityScope.takeIf { neutral }) {
             bindingIsCurrent(binding)
         }.withEpisodeProofs(animeProof, broadcast)
-        cleanupRepository?.let { repository ->
+        cleanupRepository?.takeUnless { libraryOnly }?.let { repository ->
             operation = operation.withTorrentInventory {
                 repository.torrentIdsBeforeCreate(binding.cleanupScope(), account.provider.id, account.apiKey)
             }
         }
-        val rawResult = if (NativeDebridFallbackRouter.neutralHashSource(stream)) {
-            resolveNeutralHash(stream, season, episode, account, operation, binding)
-        } else resolveProvider(stream, season, episode, account.provider.id, operation)
+        val rawResult = when {
+            libraryOnly -> {
+                val hash = stream.localAvailabilityHash() ?: return NativeDebridAttempt(DirectDebridResolveResult.Stale)
+                val file = stream.accountLibraryFile(account.provider.id, availabilityScope)
+                    ?: return NativeDebridAttempt(DirectDebridResolveResult.Stale)
+                accountLibrary?.resolve(account, availabilityScope, hash, file, stream, season, episode, operation)
+                    ?: DirectDebridResolveResult.Stale
+            }
+            neutral -> resolveNeutralHash(stream, season, episode, account, operation, binding)
+            else -> resolveProvider(stream, season, episode, account.provider.id, operation)
+        }
         // A service response cannot authorize a URL that the final playback policy rejects.
         // Treat that service attempt as failed before caching; never upgrade HTTP to HTTPS.
         val result = if (rawResult is DirectDebridResolveResult.Success) {
@@ -388,6 +405,9 @@ class DirectDebridResolver internal constructor(
         val item = result.createdCloudItem?.takeIf { it.providerId == providerId } ?: return
         cleanupRepository?.rememberCreatedPlaybackCleanup(result.url, item, binding.cleanupScope())
     }
+
+    private fun ServicePlaybackGrantRegistry.Scope.availabilityScope() =
+        StreamAvailabilityScope(profileId, selectionRevision, accountRevision)
 
     private fun ServicePlaybackGrantRegistry.Scope.cleanupScope() =
         CloudPlaybackCleanupScope(profileId, selectionRevision, accountRevision)
@@ -416,42 +436,6 @@ class DirectDebridResolver internal constructor(
             nativeTurkishBroadcastEpisode?.cacheKey.orEmpty()).joinToString("|")
     }
 
-    private fun String?.requiresNativeAnimeProof(mediaType: String?, season: Int?, episode: Int?): Boolean {
-        if (this?.startsWith("mal:", ignoreCase = true) != true) return false
-        // A native MAL movie has no episode identity. Never infer this exemption from addon fields.
-        return !(mediaType == "movie" && season == null && episode == null && Regex("^mal:[1-9][0-9]{0,9}$").matches(this))
-    }
-
-    private fun validNativeAnimeContext(videoId: String, season: Int?, episode: Int?, mediaType: String?): Boolean {
-        if (mediaType == "movie") return false
-        // The raw Kitsu video ID names the catalog ordinal. UI coordinates may be TVDB S/E.
-        if (NativeAnimeEpisodeMappings.kitsuIdentity(videoId) != null) return true
-        val identity = NativeAnimeEpisodeMappings.identity(videoId) ?: return false
-        return (season == null || season == 1) && (episode == null || episode == identity.second)
-    }
-
-    private fun Stream.acceptsAnimeProof(videoId: String, proof: NativeAnimeEpisodeProof): Boolean {
-        if (!proof.hasTrustedTitleIdentity) return false
-        val expected = nativeKitsuProofCacheKey ?: return true
-        val (kitsuId, ordinal) = NativeAnimeEpisodeMappings.kitsuIdentity(videoId) ?: return false
-        return proof.cacheKey == expected && proof.isKitsuEpisode(kitsuId, ordinal) &&
-            proof.tvdbShowId != null && proof.tvdbSeason != null && proof.tvdbEpisode != null
-    }
-
-    /** Reject an unrelated declared release before its hash can reach any account API. */
-    private fun Stream.matchesNativeAnimeSource(proof: NativeAnimeEpisodeProof): Boolean {
-        if (!proof.hasTrustedTitleIdentity) return false
-        val resolve = clientResolve
-        if (fileIdx != null && resolve?.fileIdx != null && fileIdx != resolve.fileIdx) return false
-        val filenameHints = listOfNotNull(behaviorHints?.filename, resolve?.filename, resolve?.stream?.raw?.filename)
-        if (filenameHints.any { it.isBlank() || !proof.matchesFile(it) }) return false
-        val basenames = filenameHints.map { it.trim().replace('\\', '/').substringAfterLast('/').lowercase(java.util.Locale.ROOT) }.distinct()
-        if (basenames.size > 1) return false // One actual file cannot satisfy different explicit basenames.
-        val names = listOfNotNull(title, behaviorHints?.filename, resolve?.filename, resolve?.torrentName,
-            resolve?.stream?.raw?.filename, resolve?.stream?.raw?.torrentName).filter { it.isNotBlank() }
-        return names.isNotEmpty() && names.all(proof::acceptsReleaseTitle)
-    }
-
     /** Every selector-relevant hint is bound, including absent versus present-empty values. */
     private fun Stream.nativeAnimeHintKey(): String {
         val resolve = clientResolve
@@ -465,10 +449,6 @@ class DirectDebridResolver internal constructor(
         return java.security.MessageDigest.getInstance("SHA-256").digest(bytes.array())
             .joinToString("") { "%02x".format(it) }
     }
-
-    private fun canSelectNativeAnimeFile(stream: Stream): Boolean =
-        stream.getEffectiveInfoHash()?.matches(Regex("[0-9a-fA-F]{40}|[a-zA-Z2-7]{32}")) == true &&
-            stream.getStreamUrl().let { it == null || it.startsWith("magnet:", true) }
 
     private fun AnimeOrigin?.requiresKitsuOwner(videoId: String?): Boolean = this != null &&
         (this.videoId.startsWith("kitsu:") || videoId?.startsWith("kitsu:") == true)
@@ -499,7 +479,7 @@ class DirectDebridResolver internal constructor(
         operation: CapturedDebridOperation, binding: ServicePlaybackGrantRegistry.Scope): DirectDebridResolveResult {
         val hash = canonicalAvailabilityHash(stream.getEffectiveInfoHash()) ?: return DirectDebridResolveResult.Stale
         val availability = stream.nativeAvailabilityFor(account.provider.id,
-            com.nuvio.tv.domain.model.StreamAvailabilityScope(binding.profileId, binding.selectionRevision, binding.accountRevision))
+            binding.availabilityScope())
         if (availability?.state == StreamDebridCacheState.NOT_CACHED) return DirectDebridResolveResult.NotCached
         if (availability?.state != StreamDebridCacheState.CACHED && account.provider.supports(DebridProviderCapability.LocalTorrentCacheCheck)) {
             if (scopedDebridRequest(operation) { localDebridService.isCached(account, hash) } == false) return DirectDebridResolveResult.NotCached
@@ -518,6 +498,46 @@ class DirectDebridResolver internal constructor(
     }
 
 }
+
+internal fun String?.requiresNativeAnimeProof(mediaType: String?, season: Int?, episode: Int?): Boolean {
+    if (this?.startsWith("mal:", ignoreCase = true) != true) return false
+    // A native MAL movie has no episode identity. Never infer this exemption from addon fields.
+    return !(mediaType == "movie" && season == null && episode == null && Regex("^mal:[1-9][0-9]{0,9}$").matches(this))
+}
+
+internal fun validNativeAnimeContext(videoId: String, season: Int?, episode: Int?, mediaType: String?): Boolean {
+    if (mediaType == "movie") return false
+    // The raw Kitsu video ID names the catalog ordinal. UI coordinates may be TVDB S/E.
+    if (NativeAnimeEpisodeMappings.kitsuIdentity(videoId) != null) return true
+    val identity = NativeAnimeEpisodeMappings.identity(videoId) ?: return false
+    return (season == null || season == 1) && (episode == null || episode == identity.second)
+}
+
+internal fun Stream.acceptsAnimeProof(videoId: String, proof: NativeAnimeEpisodeProof): Boolean {
+    if (!proof.hasTrustedTitleIdentity) return false
+    val expected = nativeKitsuProofCacheKey ?: return true
+    val (kitsuId, ordinal) = NativeAnimeEpisodeMappings.kitsuIdentity(videoId) ?: return false
+    return proof.cacheKey == expected && proof.isKitsuEpisode(kitsuId, ordinal) &&
+        proof.tvdbShowId != null && proof.tvdbSeason != null && proof.tvdbEpisode != null
+}
+
+/** Reject an unrelated declared release before its hash can reach any account API. */
+internal fun Stream.matchesNativeAnimeSource(proof: NativeAnimeEpisodeProof): Boolean {
+    if (!proof.hasTrustedTitleIdentity) return false
+    val resolve = clientResolve
+    if (fileIdx != null && resolve?.fileIdx != null && fileIdx != resolve.fileIdx) return false
+    val filenameHints = listOfNotNull(behaviorHints?.filename, resolve?.filename, resolve?.stream?.raw?.filename)
+    if (filenameHints.any { it.isBlank() || !proof.matchesFile(it) }) return false
+    val basenames = filenameHints.map { it.trim().replace('\\', '/').substringAfterLast('/').lowercase(java.util.Locale.ROOT) }.distinct()
+    if (basenames.size > 1) return false // One actual file cannot satisfy different explicit basenames.
+    val names = listOfNotNull(title, behaviorHints?.filename, resolve?.filename, resolve?.torrentName,
+        resolve?.stream?.raw?.filename, resolve?.stream?.raw?.torrentName).filter { it.isNotBlank() }
+    return names.isNotEmpty() && names.all(proof::acceptsReleaseTitle)
+}
+
+internal fun canSelectNativeAnimeFile(stream: Stream): Boolean =
+    stream.getEffectiveInfoHash()?.matches(Regex("[0-9a-fA-F]{40}|[a-zA-Z2-7]{32}")) == true &&
+        stream.getStreamUrl().let { it == null || it.startsWith("magnet:", true) }
 
 /** Native Express proof bindings and declared standalone episode labels require a Kitsu proof. */
 internal fun Stream.requiresKitsuEpisodeProof(videoId: String?): Boolean {

@@ -281,8 +281,7 @@ private fun LayoutCard(
                         animated = animatePreview
                     )
                     HomeLayout.GRID -> GridLayoutPreview(
-                        modifier = Modifier.fillMaxWidth(),
-                        animated = animatePreview
+                        modifier = Modifier.fillMaxWidth()
                     )
                     HomeLayout.MODERN -> ModernLayoutPreview(
                         modifier = Modifier.fillMaxWidth(),

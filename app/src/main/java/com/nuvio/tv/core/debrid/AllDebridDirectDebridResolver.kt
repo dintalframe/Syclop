@@ -5,6 +5,7 @@ import com.nuvio.tv.core.cloud.CloudLibraryFile
 import com.nuvio.tv.core.cloud.CloudLibraryItem
 
 import com.nuvio.tv.data.local.DebridSettingsDataStore
+import com.nuvio.tv.data.remote.dto.AllDebridMagnetDto
 import com.nuvio.tv.domain.model.Stream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
@@ -27,6 +28,7 @@ class AllDebridDirectDebridResolver @Inject constructor(
             val source: String
             var selectedFile: AllDebridFile? = null
             var createdCloudItem: CloudLibraryItem? = null
+            var selectedUpload: AllDebridMagnetDto? = null
             if (magnet != null) {
                 stage = "magnet_upload"
                 val beforeCreate = operation?.torrentIdsBeforeCreate()
@@ -64,14 +66,21 @@ class AllDebridDirectDebridResolver @Inject constructor(
                         CloudLibraryFile(selectedFile.path, selectedFile.path, selectedFile.size))
                 }
                 source = selectedFile.link
+                selectedUpload = uploaded
             } else {
                 source = stream.getStreamUrl()?.takeIf { it.isHttpUrl() }
                     ?: return DirectDebridResolveResult.Stale
             }
             stage = "link_unlock"
             val result = scopedDebridRequest(operation) { service.unlock(apiKey, source) }
+            val url = result.link ?: return DirectDebridResolveResult.Stale
+            val availabilityScope = operation?.availabilityScope
+            val uploaded = selectedUpload
+            if (availabilityScope != null && uploaded != null && com.nuvio.tv.core.streams.SyclopPlaybackPolicy.isHttps(url)) {
+                service.rememberSelectedMagnet(availabilityScope, canonicalAvailabilityHash(stream.getEffectiveInfoHash()), uploaded)
+            }
             DirectDebridResolveResult.Success(
-                url = result.link ?: return DirectDebridResolveResult.Stale,
+                url = url,
                 filename = result.filename ?: selectedFile?.path?.substringAfterLast('/'),
                 videoSize = result.filesize ?: selectedFile?.size,
                 createdCloudItem = createdCloudItem

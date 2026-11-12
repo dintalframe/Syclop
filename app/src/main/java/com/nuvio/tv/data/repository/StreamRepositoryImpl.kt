@@ -9,6 +9,7 @@ import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.network.safeApiCall
 import com.nuvio.tv.core.express.ExpressAddonAdapter
 import com.nuvio.tv.core.express.ExpressMediaRequest
+import com.nuvio.tv.core.debrid.NativeDebridLibraryRequest
 import com.nuvio.tv.core.debrid.DebridStreamPresentation
 import com.nuvio.tv.core.debrid.LocalDebridAvailabilityService
 import com.nuvio.tv.core.plugin.PluginManager
@@ -115,6 +116,7 @@ class StreamRepositoryImpl @Inject constructor(
     ): Flow<NetworkResult<List<AddonStreams>>> = flow {
         try {
             val sourceConfiguration = captureSourceConfiguration()
+            val libraryRequest = NativeDebridLibraryRequest(type, videoId, season, episode)
             val isNativeServerRequest = serverStreams.isNativeRequest(videoId)
             val requestKey = buildStreamSearchRequestKey(sourceConfiguration, type, videoId, season, episode)
 
@@ -139,24 +141,27 @@ class StreamRepositoryImpl @Inject constructor(
                     when (result) {
                         is NetworkResult.Success -> {
                             requireCurrentSourceConfiguration(sourceConfiguration)
+                            val episodeRequest = com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(type, episode)
                             val checking = scopedAvailability {
-                                localDebridAvailabilityService.markChecking(result.data, sourceConfiguration.debridSettings)
+                                localDebridAvailabilityService.markChecking(result.data, sourceConfiguration.debridSettings, libraryRequest)
                             }
                             requireCurrentSourceConfiguration(sourceConfiguration)
-                            emit(NetworkResult.Success(presentStreams(checking, sourceConfiguration.debridSettings,
-                                com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(type, episode))))
+                            emit(NetworkResult.Success(presentStreams(checking, sourceConfiguration.debridSettings, episodeRequest)))
                             // The search cache owns admitted candidates, never availability-filtered rows.
                             // Re-enrich on every observation/cache reuse; one in-flight annotation per
                             // collector is cancelled when a newer complete candidate snapshot arrives.
                             if (checking.any { it.streams.isNotEmpty() }) {
                                 val annotated = availabilityPermits.withPermit {
                                     scopedAvailability {
-                                        localDebridAvailabilityService.annotateCachedAvailability(checking, sourceConfiguration.debridSettings)
+                                        localDebridAvailabilityService.annotateCachedAvailability(checking,
+                                            sourceConfiguration.debridSettings, libraryRequest) { partial ->
+                                            requireCurrentSourceConfiguration(sourceConfiguration)
+                                            emit(NetworkResult.Success(presentStreams(partial, sourceConfiguration.debridSettings, episodeRequest)))
+                                        }
                                     }
                                 }
                                 requireCurrentSourceConfiguration(sourceConfiguration)
-                                emit(NetworkResult.Success(presentStreams(annotated, sourceConfiguration.debridSettings,
-                                    com.nuvio.tv.core.debrid.EpisodeSourcePolicy.isEpisodeRequest(type, episode))))
+                                emit(NetworkResult.Success(presentStreams(annotated, sourceConfiguration.debridSettings, episodeRequest)))
                             }
                         }
                         else -> { requireCurrentSourceConfiguration(sourceConfiguration); emit(result) }
@@ -181,7 +186,8 @@ class StreamRepositoryImpl @Inject constructor(
                 ?: return null
             requireCurrentSourceConfiguration(sourceConfiguration)
             val annotated = scopedAvailability {
-                localDebridAvailabilityService.annotateFromMemory(raw, sourceConfiguration.debridSettings)
+                localDebridAvailabilityService.annotateFromMemory(raw, sourceConfiguration.debridSettings,
+                    NativeDebridLibraryRequest(type, videoId, season, episode))
             }
             requireCurrentSourceConfiguration(sourceConfiguration)
             return presentStreams(annotated, sourceConfiguration.debridSettings,

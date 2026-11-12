@@ -60,6 +60,7 @@ import com.nuvio.tv.ui.components.PosterCardDefaults
 import com.nuvio.tv.ui.components.PosterCardStyle
 import com.nuvio.tv.ui.screens.home.HomeEvent
 import com.nuvio.tv.ui.screens.home.HomeViewModel
+import com.nuvio.tv.ui.screens.home.WATCHED_HISTORY_ADDON_ID
 import com.nuvio.tv.ui.screens.search.SearchEvent
 import com.nuvio.tv.ui.screens.search.SearchViewModel
 import com.nuvio.tv.domain.model.MetaPreview
@@ -100,17 +101,19 @@ fun CatalogSeeAllScreen(
     BackHandler { onBackPress() }
 
     val isSearchMode = searchViewModel != null
+    val isWatchedHistory = !isSearchMode && addonId == WATCHED_HISTORY_ADDON_ID
     val catalogKey = catalogRowLegacyKey(addonId, type, catalogId)
 
     // In search mode, get the catalog row from SearchViewModel's existing results.
-    // Otherwise fall back to HomeViewModel's fullCatalogRows (home screen catalogs).
     val searchUiState = searchViewModel?.uiState?.collectAsState()
     val searchWatchedMovieIds = searchViewModel?.watchedMovieIds?.collectAsState()
     val searchWatchedSeriesIds = searchViewModel?.watchedSeriesIds?.collectAsState()
     val searchCatalogRow = searchUiState?.value?.catalogRows?.find {
         if (searchCatalogKey != null) it.stableKey() == searchCatalogKey else it.legacyKey() == catalogKey
     }
-    val homeCatalogRow = fullCatalogRows.find {
+    // Watched History is projected into Home's UI state from the active profile.
+    val homeCatalogRows = if (isWatchedHistory) uiState.catalogRows else fullCatalogRows
+    val homeCatalogRow = homeCatalogRows.find {
         it.legacyKey() == catalogKey
     }
     val serverRow = serverCatalog?.row?.collectAsState()
@@ -122,7 +125,7 @@ fun CatalogSeeAllScreen(
     }
 
     LaunchedEffect(catalogKey, isSearchMode, catalogRow != null) {
-        if (!isSearchMode && serverCatalog == null && catalogRow == null) {
+        if (!isSearchMode && !isWatchedHistory && serverCatalog == null && catalogRow == null) {
             viewModel.requestLazyCatalogLoad(catalogKey)
         }
     }
@@ -231,7 +234,7 @@ fun CatalogSeeAllScreen(
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.xl))
 
         val hasItems = catalogRow?.items?.isNotEmpty() == true
-        val isCatalogLoading = if (catalogRow == null) serverFailed?.value != true else catalogRow.isLoading
+        val isCatalogLoading = catalogRow?.isLoading ?: (!isWatchedHistory && serverFailed?.value != true)
 
         if (hasItems) {
             val seeAllItemKeys = remember(catalogRow?.items) {

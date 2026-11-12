@@ -1,5 +1,6 @@
 package com.nuvio.tv.core.debrid
 
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
 import com.nuvio.tv.data.local.DebridSettingsDataStore
 import com.nuvio.tv.domain.model.AddonStreams
 import com.nuvio.tv.domain.model.DebridSettings
@@ -11,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -23,37 +25,48 @@ import javax.inject.Singleton
 class LocalDebridAvailabilityService internal constructor(
     private val dataStore: DebridSettingsDataStore,
     private val localDebridService: LocalDebridService,
-    private val clock: () -> Long
+    private val clock: () -> Long,
+    private val accountLibrary: NativeDebridAccountLibrary? = null,
+    private val animeMappings: NativeAnimeEpisodeMappings? = null
 ) {
-    @Inject constructor(dataStore: DebridSettingsDataStore, service: LocalDebridService) :
-        this(dataStore, service, System::currentTimeMillis)
+    @Inject constructor(dataStore: DebridSettingsDataStore, service: LocalDebridService,
+        accountLibrary: NativeDebridAccountLibrary, animeMappings: NativeAnimeEpisodeMappings) :
+        this(dataStore, service, System::currentTimeMillis, accountLibrary, animeMappings)
 
     private data class Snapshot(val scope: StreamAvailabilityScope, val settings: DebridSettings)
     private data class Key(val scope: StreamAvailabilityScope, val provider: String, val hash: String)
     private val mutex = Mutex()
     private val cache = LinkedHashMap<Key, StreamDebridCacheStatus>()
+    private data class LibraryObservation(val item: AccountLibraryItem?, val checkedAt: Long) {
+        fun fresh(now: Long) = now - checkedAt in 0 until if (item == null) 5_000L else 30_000L
+    }
+
+    private val libraryObservations = LinkedHashMap<Key, LibraryObservation>()
     private val cooldowns = LinkedHashMap<Pair<StreamAvailabilityScope, String>, Long>()
 
     suspend fun markChecking(groups: List<AddonStreams>) = annotateFromMemory(groups, null, checking = true)
-    suspend fun markChecking(groups: List<AddonStreams>, expectedSettings: DebridSettings) =
-        annotateFromMemory(groups, expectedSettings, checking = true)
+    internal suspend fun markChecking(groups: List<AddonStreams>, expectedSettings: DebridSettings,
+        request: NativeDebridLibraryRequest? = null) = annotateFromMemory(groups, expectedSettings, checking = true, request)
 
-    internal suspend fun annotateFromMemory(groups: List<AddonStreams>, expectedSettings: DebridSettings) =
-        annotateFromMemory(groups, expectedSettings, checking = false)
+    internal suspend fun annotateFromMemory(groups: List<AddonStreams>, expectedSettings: DebridSettings,
+        request: NativeDebridLibraryRequest? = null) = annotateFromMemory(groups, expectedSettings, checking = false, request)
 
     private suspend fun annotateFromMemory(groups: List<AddonStreams>, expected: DebridSettings?,
-        checking: Boolean): List<AddonStreams> {
+        checking: Boolean, request: NativeDebridLibraryRequest? = null): List<AddonStreams> {
         val snapshot = requiredSnapshot(expected) ?: return groups.clearNativeAvailability()
-        val updated = annotate(groups, snapshot, emptyMap(), checking)
+        val updated = annotate(groups, snapshot, emptyMap(), checking, request)
         if (expected != null && !current(snapshot)) throw CancellationException("The connected service changed.")
         return if (current(snapshot)) updated else groups.clearNativeAvailability()
     }
 
     suspend fun annotateCachedAvailability(groups: List<AddonStreams>) = annotateCachedAvailabilityInternal(groups, null)
-    suspend fun annotateCachedAvailability(groups: List<AddonStreams>, expectedSettings: DebridSettings) =
-        annotateCachedAvailabilityInternal(groups, expectedSettings)
+    internal suspend fun annotateCachedAvailability(groups: List<AddonStreams>, expectedSettings: DebridSettings,
+        request: NativeDebridLibraryRequest? = null,
+        onBulkReady: suspend (List<AddonStreams>) -> Unit = {}) =
+        annotateCachedAvailabilityInternal(groups, expectedSettings, request, onBulkReady)
 
-    private suspend fun annotateCachedAvailabilityInternal(groups: List<AddonStreams>, expected: DebridSettings?): List<AddonStreams> {
+    private suspend fun annotateCachedAvailabilityInternal(groups: List<AddonStreams>, expected: DebridSettings?,
+        request: NativeDebridLibraryRequest? = null, onBulkReady: suspend (List<AddonStreams>) -> Unit = {}): List<AddonStreams> {
         val snapshot = requiredSnapshot(expected) ?: return groups.clearNativeAvailability()
         val requests = groups.flatMap { group -> group.streams.flatMap { stream ->
             val hash = stream.localAvailabilityHash() ?: return@flatMap emptyList()
@@ -61,7 +74,10 @@ class LocalDebridAvailabilityService internal constructor(
                 .map { it to hash }
         } }.groupBy({ it.first }, { it.second })
         val fresh = coroutineScope {
-            requests.entries.take(2).map { (account, allHashes) -> async {
+            val libraryCheck = async {
+                if (request != null) checkAccountLibraries(groups, snapshot, request)
+            }
+            val result = requests.entries.take(2).map { (account, allHashes) -> async {
                 val hashes = allHashes.distinct().take(300)
                 val existing = mutex.withLock {
                     cache.keys.removeAll { it.scope != snapshot.scope }
@@ -80,16 +96,7 @@ class LocalDebridAvailabilityService internal constructor(
                         if (mutex.withLock { (cooldowns[cooldownKey] ?: 0L) > clock() }) return@withTimeoutOrNull
                         val response = try { localDebridService.checkCached(account, chunk) }
                         catch (rejected: DirectDebridHttpException) {
-                            if (rejected.status == 429 && current(snapshot)) {
-                                val seconds = rejected.retryAfterSeconds?.coerceAtLeast(1L) ?: 60L
-                                val delay = if (seconds > Long.MAX_VALUE / 1_000L) Long.MAX_VALUE else seconds * 1_000L
-                                val now = clock()
-                                val until = if (now > Long.MAX_VALUE - delay) Long.MAX_VALUE else now + delay
-                                mutex.withLock {
-                                    cooldowns[cooldownKey] = maxOf(cooldowns[cooldownKey] ?: Long.MIN_VALUE, until)
-                                    while (cooldowns.size > 128) cooldowns.remove(cooldowns.keys.first())
-                                }
-                            }
+                            if (rejected.status == 429 && current(snapshot)) coolDown(cooldownKey, rejected.retryAfterSeconds)
                             // No additional chunk request after authentication/rate rejection.
                             // Completed chunks survive; all other observations remain unknown.
                             return@withTimeoutOrNull
@@ -115,14 +122,97 @@ class LocalDebridAvailabilityService internal constructor(
                 }
                 account.provider.id to combined
             } }.awaitAll().toMap()
+            if (!libraryCheck.isCompleted && result.values.any { states ->
+                    states.values.any { it.state == StreamDebridCacheState.CACHED }
+                } && current(snapshot)) {
+                val partial = annotate(groups, snapshot, result, checking = false, request)
+                if (current(snapshot)) onBulkReady(partial)
+            }
+            libraryCheck.await()
+            result
         }
         if (!current(snapshot)) {
             if (expected != null) throw CancellationException("The connected service changed.")
             return groups.clearNativeAvailability()
         }
-        val updated = annotate(groups, snapshot, fresh, checking = false)
+        val updated = annotate(groups, snapshot, fresh, checking = false, request)
         if (expected != null && !current(snapshot)) throw CancellationException("The connected service changed.")
         return if (current(snapshot)) updated else groups.clearNativeAvailability()
+    }
+
+    private suspend fun checkAccountLibraries(groups: List<AddonStreams>, snapshot: Snapshot,
+        request: NativeDebridLibraryRequest) {
+        val library = accountLibrary ?: return
+        val requests = groups.flatMap { group -> group.streams.flatMap { stream ->
+            val hash = stream.localAvailabilityHash() ?: return@flatMap emptyList()
+            if (!eligibleForLibrary(stream, request)) return@flatMap emptyList()
+            availabilityAccounts(stream, snapshot.settings).filter { it.provider.supportsAccountLibraryLookup() }
+                .map { it to hash }
+        } }.groupBy({ it.first }, { it.second })
+        coroutineScope {
+            requests.map { (account, hashes) -> async {
+                val providerId = account.provider.id
+                val cooldownKey = snapshot.scope to providerId
+                val pending = mutex.withLock {
+                    libraryObservations.keys.removeAll { it.scope != snapshot.scope }
+                    if ((cooldowns[cooldownKey] ?: 0L) > clock()) return@withLock emptySet()
+                    hashes.distinct().take(300).filterTo(linkedSetOf()) {
+                        libraryObservations[Key(snapshot.scope, providerId, it)]?.fresh(clock()) != true
+                    }
+                }
+                if (pending.isEmpty() || !current(snapshot)) return@async
+                val operation = CapturedDebridOperation(providerId, account.apiKey, snapshot.scope) {
+                    currentScope() == snapshot.scope
+                }
+                val items = try {
+                    withTimeoutOrNull(3_500L) { library.find(account, snapshot.scope, pending, operation) }.orEmpty()
+                } catch (error: Exception) {
+                    if (error is CancellationException) {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        if (current(snapshot)) throw error
+                        return@async
+                    }
+                    val failure = directDebridExceptionFailure(error, providerId).detail
+                    if (failure.reason == DirectDebridFailureReason.RATE_LIMITED && current(snapshot)) {
+                        coolDown(cooldownKey, failure.retryAfterSeconds)
+                    }
+                    emptyMap()
+                }
+                if (current(snapshot)) mutex.withLock {
+                    val now = clock()
+                    for (hash in pending) {
+                        val key = Key(snapshot.scope, providerId, hash)
+                        // A slow miss cannot replace a successful concurrent observation.
+                        if (items[hash] != null || libraryObservations[key]?.fresh(now) != true) {
+                            libraryObservations[key] = LibraryObservation(items[hash], now)
+                        }
+                    }
+                    while (libraryObservations.size > 640) libraryObservations.remove(libraryObservations.keys.first())
+                }
+            } }.awaitAll()
+        }
+    }
+
+    private suspend fun coolDown(key: Pair<StreamAvailabilityScope, String>, retryAfterSeconds: Long?) {
+        val seconds = retryAfterSeconds?.coerceAtLeast(1L) ?: 60L
+        val delay = if (seconds > Long.MAX_VALUE / 1_000L) Long.MAX_VALUE else seconds * 1_000L
+        val now = clock()
+        val until = if (now > Long.MAX_VALUE - delay) Long.MAX_VALUE else now + delay
+        mutex.withLock {
+            cooldowns[key] = maxOf(cooldowns[key] ?: Long.MIN_VALUE, until)
+            while (cooldowns.size > 128) cooldowns.remove(cooldowns.keys.first())
+        }
+    }
+
+    private fun eligibleForLibrary(stream: Stream, request: NativeDebridLibraryRequest): Boolean {
+        if (!NativeDebridFallbackRouter.neutralHashSource(stream)) return false
+        val broadcast = stream.nativeTurkishBroadcastEpisode
+        if (broadcast != null && !broadcast.matchesContext(request.videoId, request.season, request.episode, request.type))
+            return false
+        if (request.needsAnimeProof(stream)) return request.animeProof(stream, animeMappings) != null
+        if (request.type.equals("movie", true)) return request.season == null && request.episode == null
+        return EpisodeSourcePolicy.isEpisodeRequest(request.type, request.episode) &&
+            request.season != null && request.season >= 0 && (request.episode ?: 0) > 0 && !EpisodeSourcePolicy.isReportedPack(stream)
     }
 
     suspend fun isCached(hash: String): Boolean? {
@@ -161,7 +251,8 @@ class LocalDebridAvailabilityService internal constructor(
         dataStore.settings.first() == snapshot.settings && currentScope() == snapshot.scope
 
     private suspend fun annotate(groups: List<AddonStreams>, snapshot: Snapshot,
-        responses: Map<String, Map<String, StreamDebridCacheStatus>>, checking: Boolean): List<AddonStreams> =
+        responses: Map<String, Map<String, StreamDebridCacheStatus>>, checking: Boolean,
+        request: NativeDebridLibraryRequest?): List<AddonStreams> =
         groups.map { group -> group.copy(streams = group.streams.map { stream ->
             val hash = stream.localAvailabilityHash()
             val accounts = availabilityAccounts(stream, snapshot.settings)
@@ -173,11 +264,28 @@ class LocalDebridAvailabilityService internal constructor(
                     val known = responses[account.provider.id]?.get(hash) ?: mutex.withLock {
                         cache[Key(snapshot.scope, account.provider.id, hash)]?.takeIf { it.isFreshNativeAvailability(now) }
                     }
-                    known ?: status(account, hash, snapshot.scope,
-                        if (checking && account.provider.supports(DebridProviderCapability.LocalTorrentCacheCheck))
-                            StreamDebridCacheState.CHECKING else StreamDebridCacheState.UNKNOWN, now)
+                    val library = if (request != null && account.provider.supportsAccountLibraryLookup() &&
+                        eligibleForLibrary(stream, request)) mutex.withLock {
+                        libraryObservations[Key(snapshot.scope, account.provider.id, hash)]?.takeIf { it.fresh(now) }
+                    } else null
+                    val file = if (request == null) null else library?.item?.exactFile(stream, request.season, request.episode,
+                        request.animeProof(stream, animeMappings))
+                    when {
+                        file != null && library != null -> status(account, hash, snapshot.scope, StreamDebridCacheState.CACHED,
+                            library.checkedAt, LocalDebridCachedItem(file.path.substringAfterLast('/'), file.sizeBytes))
+                            .copy(libraryFile = file)
+                        known != null -> known
+                        else -> status(account, hash, snapshot.scope,
+                            if (checking && account.provider.supports(DebridProviderCapability.LocalTorrentCacheCheck))
+                                StreamDebridCacheState.CHECKING else StreamDebridCacheState.UNKNOWN, now)
+                    }
                 }
-                val selected = observations.firstOrNull { it.state == StreamDebridCacheState.CACHED }
+                val selected = observations.firstOrNull { it.libraryFile != null }
+                    ?: observations.firstOrNull { it.state == StreamDebridCacheState.CACHED }
+                    ?: observations.firstOrNull { it.state == StreamDebridCacheState.CHECKING }
+                        .takeIf { request != null && accounts.any { it.provider.supportsAccountLibraryLookup() } }
+                    ?: observations.firstOrNull { it.state == StreamDebridCacheState.UNKNOWN }
+                        .takeIf { request != null && accounts.any { it.provider.supportsAccountLibraryLookup() } }
                     // An unchecked fallback may still resolve this source. One negative answer
                     // cannot suppress native resolution through another connected account.
                     ?: observations.firstOrNull().takeUnless {

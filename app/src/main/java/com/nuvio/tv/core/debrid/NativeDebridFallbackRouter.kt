@@ -5,6 +5,7 @@ import com.nuvio.tv.domain.model.Stream
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -40,6 +41,7 @@ internal object NativeDebridFallbackRouter {
         accounts: List<DebridServiceCredential>,
         isCurrent: () -> Boolean,
         onAttempt: (String) -> Unit,
+        sequential: Boolean = false,
         attempt: suspend (DebridServiceCredential) -> NativeDebridAttempt
     ): NativeDebridRoute = supervisorScope {
         fun checkCurrent() {
@@ -49,15 +51,15 @@ internal object NativeDebridFallbackRouter {
         checkCurrent()
         val pool = accounts.filter { it.apiKey.isNotBlank() && it.provider.supports(DebridProviderCapability.LocalTorrentResolve) }
             .distinctBy { it.provider.id }
-        val start = if (pool.size > 1) Math.floorMod(nextStart.getAndIncrement(), pool.size) else 0
+        val start = if (!sequential && pool.size > 1) Math.floorMod(nextStart.getAndIncrement(), pool.size) else 0
         val selected = pool.drop(start) + pool.take(start)
         val permits = Semaphore(MAX_PARALLEL_SERVICES)
         val stopDispatch = AtomicBoolean(false)
         val jobs = selected.mapIndexed { index, account ->
-            async {
+            async(start = if (sequential) CoroutineStart.LAZY else CoroutineStart.DEFAULT) {
                 permits.withPermit {
                     if (stopDispatch.get()) return@withPermit NativeDebridRoute(account.provider.id, DirectDebridResolveResult.NotCached)
-                    if (index in 1 until MAX_PARALLEL_SERVICES) delay(index * SERVICE_STAGGER_MILLIS)
+                    if (!sequential && index in 1 until MAX_PARALLEL_SERVICES) delay(index * SERVICE_STAGGER_MILLIS)
                     if (stopDispatch.get()) return@withPermit NativeDebridRoute(account.provider.id, DirectDebridResolveResult.NotCached)
                     currentCoroutineContext().ensureActive()
                     checkCurrent()
@@ -95,7 +97,11 @@ internal object NativeDebridFallbackRouter {
         var classifiedFailure: NativeDebridRoute? = null
         try {
             while (remaining.isNotEmpty()) {
-                val (completed, route) = select {
+                // Await starts only this lazy job when the selected row has account file proof.
+                val (completed, route) = if (sequential) {
+                    val next = remaining.first()
+                    next to next.await()
+                } else select {
                     remaining.forEach { job -> job.onAwait { job to it } }
                 }
                 remaining.remove(completed)

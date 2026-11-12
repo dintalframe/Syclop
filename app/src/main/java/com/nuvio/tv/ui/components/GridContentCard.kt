@@ -70,7 +70,7 @@ fun GridContentCard(
     posterCardStyle: PosterCardStyle = PosterCardDefaults.Style,
     showLabel: Boolean = true,
     showLogo: Boolean = false,
-    imageCrossfade: Boolean = true,
+    imageCrossfade: Boolean = false,
     isWatched: Boolean = false,
     focusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
@@ -214,7 +214,8 @@ fun GridContentCard(
                     item.poster
                 }
                 val revalidationKey = com.nuvio.tv.core.image.rememberImageRevalidationKey(effectiveImageUrl)
-                val imageModel = remember(effectiveImageUrl, requestWidthPx, requestHeightPx, revalidationKey) {
+                val fallbackUrl = item.rawPosterUrl
+                val imageModel = remember(effectiveImageUrl, requestWidthPx, requestHeightPx, revalidationKey, imageCrossfade, fallbackUrl) {
                     val builder = ImageRequest.Builder(context)
                         .data(effectiveImageUrl)
                         .crossfade(imageCrossfade)
@@ -223,7 +224,6 @@ fun GridContentCard(
                     if (revalidationKey > 0) {
                         builder.placeholderMemoryCacheKey("${effectiveImageUrl}_${requestWidthPx}x${requestHeightPx}_v${revalidationKey - 1}")
                     }
-                    val fallbackUrl = item.rawPosterUrl
                     if (!fallbackUrl.isNullOrBlank() && fallbackUrl != effectiveImageUrl) {
                         builder.memoryCacheKeyExtras(
                             mapOf(com.nuvio.tv.core.image.CustomPosterFallbackInterceptor.FALLBACK_URL_KEY to fallbackUrl)

@@ -89,9 +89,12 @@ class DebridStreamPresentation internal constructor(
             .filterNot { it.isUncachedDebridStream(settings) }
         if (!settings.canResolvePlayableLinks) return eligible
         val managed = eligible.filter { it.isManagedDebridStream(settings) }
-        val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits).map { it.first }
+        val scope = currentScope()
+        val now = clock()
+        val ranked = DirectDebridStreamFilter.applyPreferencesWithFacts(managed, settings, enforceLimits,
+            libraryScope = scope, nowMs = now).map { it.first }
         return (ranked + eligible.filterNot { it.isManagedDebridStream(settings) }).map { stream ->
-            NativeDebridServiceLabels.decorate(stream, settings, currentScope(), clock())
+            NativeDebridServiceLabels.decorate(stream, settings, scope, now)
         }
     }
 

@@ -43,7 +43,8 @@ class DirectDebridStreamPreparer @Inject constructor(
 
         val candidates = prioritizeCandidates(
             streams = streams.filter { stream ->
-                !stream.requiresKitsuEpisodeProof(nativeVideoId) &&
+                val provider = DebridProviders.byId(stream.clientResolve?.service) ?: settings.activeResolverCredential?.provider
+                provider?.supportsAccountLibraryLookup() != true && !stream.requiresKitsuEpisodeProof(nativeVideoId) &&
                     stream.nativeTurkishBroadcastEpisode?.matchesContext(nativeVideoId, season, episode, null) != false
             },
             limit = limit,
@@ -89,7 +90,8 @@ class DirectDebridStreamPreparer @Inject constructor(
     ): List<Stream> {
         if (limit <= 0) return emptyList()
         val candidates = streams
-            .filter { (it.isDirectDebrid() || it.isCachedLocalDebridTorrent()) && it.getStreamUrl() == null }
+            .filter { !it.hasAccountLibraryEvidence() && (it.isDirectDebrid() || it.isCachedLocalDebridTorrent()) &&
+                it.getStreamUrl() == null }
             .distinctBy { it.preparationKey() }
         if (candidates.isEmpty()) return emptyList()
 

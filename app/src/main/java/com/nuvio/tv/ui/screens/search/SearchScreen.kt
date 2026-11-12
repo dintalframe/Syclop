@@ -626,10 +626,10 @@ fun SearchScreen(
         }
 
         // Skip the initial composition; there is nothing stale to reset yet.
-        var lastScrollResetQuery by remember { mutableStateOf(uiState.query) }
-        LaunchedEffect(uiState.query) {
-            if (uiState.query == lastScrollResetQuery) return@LaunchedEffect
-            lastScrollResetQuery = uiState.query
+        var lastScrollResetQuery by remember { mutableStateOf(uiState.submittedQuery) }
+        LaunchedEffect(uiState.submittedQuery) {
+            if (uiState.submittedQuery == lastScrollResetQuery) return@LaunchedEffect
+            lastScrollResetQuery = uiState.submittedQuery
             // Clear stale focus so the restorer cannot return to an item from the previous query.
             searchRowFocusedItems.clear()
             viewModel.savedResultFocus = null
@@ -872,9 +872,9 @@ fun SearchScreen(
                                 listState = listState,
                                 restorerFocusedIndex = if (restoredItemIndex >= 0) restoredItemIndex else rememberedItemIndex,
                                 focusResetToken = if (catalogKey == focusResetRowKey) {
-                                    "${uiState.query}#$focusResetCounter"
+                                    "${uiState.submittedQuery}#$focusResetCounter"
                                 } else {
-                                    uiState.query
+                                    uiState.submittedQuery
                                 },
                                 isItemWatched = { item ->
                                     val isSeries = item.apiType.equals("series", ignoreCase = true) || item.apiType.equals("tv", ignoreCase = true)

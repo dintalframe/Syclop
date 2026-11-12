@@ -186,6 +186,8 @@ fun HomeScreen(
     val hasCatalogContent = uiState.catalogRows.any { it.items.isNotEmpty() }
     val hasCollectionContent = uiState.homeRows.any { it is HomeRow.CollectionRow }
     val hasHeroContent = uiState.heroItems.isNotEmpty()
+    val gridHasVisibleTitles = uiState.homeLayout == HomeLayout.GRID &&
+        uiState.gridItems.any { it is GridItem.Content || it is GridItem.CollectionFolder }
     val modernPresentationReady =
         uiState.homeLayout != HomeLayout.MODERN ||
             modernPresentation.rows.list.isNotEmpty() ||
@@ -242,7 +244,8 @@ fun HomeScreen(
         hasCollectionContent,
         hasHeroContent,
         initialCwResolved,
-        modernPresentationReady
+        modernPresentationReady,
+        gridHasVisibleTitles
     ) {
         // Track that addons are known (even if isLoading flipped too fast to catch).
         if (uiState.installedAddonsCount > 0) {
@@ -250,13 +253,9 @@ fun HomeScreen(
         }
         // Wait until catalog loading has completed with content AND the CW
         // pipeline has completed its first emission.
-        if (!homeStableGateReleased &&
-            catalogLoadingStarted &&
-            !uiState.isLoading &&
-            initialCwResolved &&
-            modernPresentationReady &&
-            // When addons are installed, require at least one catalog row.
-            (hasCatalogContent || uiState.installedAddonsCount == 0)
+        if (!homeStableGateReleased && (gridHasVisibleTitles ||
+            (catalogLoadingStarted && !uiState.isLoading && initialCwResolved &&
+                modernPresentationReady && (hasCatalogContent || uiState.installedAddonsCount == 0)))
         ) {
             Log.d("HomeGate", "RELEASE: catalogs=$hasCatalogContent cwResolved=$initialCwResolved cwItems=${uiState.continueWatchingItems.size} addons=${uiState.installedAddonsCount}")
             homeStableGateReleased = true
@@ -405,7 +404,7 @@ fun HomeScreen(
                     }
                     AnimatedVisibility(
                         visible = showHomeContentWithAnimation,
-                        enter = if (hasShownInitialHomeContent) {
+                        enter = if (hasShownInitialHomeContent || uiState.homeLayout == HomeLayout.GRID) {
                             EnterTransition.None
                         } else {
                             fadeIn(animationSpec = tween(320)) +

@@ -70,7 +70,7 @@ class StreamRepositoryPluginIsolationTest {
         val h = newHarness(emptyList(), express)
         val annotationEntered = CompletableDeferred<Unit>()
         val annotationRelease = CompletableDeferred<Unit>()
-        coEvery { h.availability.annotateCachedAvailability(any(), any()) } coAnswers {
+        coEvery { h.availability.annotateCachedAvailability(any(), any(), any(), any()) } coAnswers {
             annotationEntered.complete(Unit)
             annotationRelease.await()
             throw CancellationException("Synthetic stale captured service")
@@ -109,7 +109,7 @@ class StreamRepositoryPluginIsolationTest {
         val firstCancelled = CompletableDeferred<Unit>()
         val neverComplete = CompletableDeferred<Unit>()
         val calls = AtomicInteger()
-        coEvery { h.availability.annotateCachedAvailability(any(), any()) } coAnswers {
+        coEvery { h.availability.annotateCachedAvailability(any(), any(), any(), any()) } coAnswers {
             if (calls.incrementAndGet() == 1) {
                 entered.complete(Unit)
                 try { neverComplete.await() } finally { firstCancelled.complete(Unit) }
@@ -188,7 +188,7 @@ class StreamRepositoryPluginIsolationTest {
         val second = compatibleAddon().copy(id = "second", name = "Second Addon", displayName = "Second Addon", baseUrl = "https://second.example")
         every { harness.addonRepository.getInstalledAddons() } returns flowOf(listOf(compatibleAddon(), second))
         val cacheCheck = CompletableDeferred<Unit>()
-        coEvery { harness.availability.annotateCachedAvailability(any(), any()) } coAnswers {
+        coEvery { harness.availability.annotateCachedAvailability(any(), any(), any(), any()) } coAnswers {
             cacheCheck.await()
             firstArg<List<AddonStreams>>()
         }
@@ -405,8 +405,8 @@ class StreamRepositoryPluginIsolationTest {
         val backend = mockk<LocalDebridService>()
         val availability = if (nativeAvailability) LocalDebridAvailabilityService(debridSettingsDataStore, backend, now::get)
         else mockk<LocalDebridAvailabilityService>().also { mock ->
-            coEvery { mock.markChecking(any(), any()) } coAnswers { firstArg<List<AddonStreams>>() }
-            coEvery { mock.annotateCachedAvailability(any(), any()) } coAnswers { firstArg<List<AddonStreams>>() }
+            coEvery { mock.markChecking(any(), any(), any()) } coAnswers { firstArg<List<AddonStreams>>() }
+            coEvery { mock.annotateCachedAvailability(any(), any(), any(), any()) } coAnswers { firstArg<List<AddonStreams>>() }
         }
 
         return Harness(

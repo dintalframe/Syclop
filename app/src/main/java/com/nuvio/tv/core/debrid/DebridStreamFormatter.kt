@@ -12,7 +12,6 @@ import com.nuvio.tv.domain.model.StreamAvailabilityScope
 import com.nuvio.tv.domain.model.StreamBadge
 import com.nuvio.tv.domain.model.StreamClientResolve
 import com.nuvio.tv.domain.model.StreamClientResolveParsed
-import com.nuvio.tv.domain.model.StreamDebridCacheState
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,14 +30,18 @@ class DebridStreamFormatter @Inject constructor(
         if (!stream.isManagedDebridForFormatting()) return stream
         val matchedBadges = StreamBadgeMatcher.matchedBadges(stream, compiledBadgeFilters)
         val sourceFacts = facts ?: DirectDebridStreamFilter.facts(stream, settings)
-        val values = buildValues(stream, matchedBadges, sourceFacts,
-            NativeDebridServiceLabels.services(stream, settings, scope, nowMs))
-        val formattedName = engine.render(settings.streamNameTemplate, values)
+        val services = NativeDebridServiceLabels.services(stream, settings, scope, nowMs)
+        val values = buildValues(stream, matchedBadges, sourceFacts, services)
+        val nameTemplate = if (services.availabilityUnverified && settings.streamNameTemplate == DebridStreamFormatterDefaults.NAME_TEMPLATE)
+            settings.streamNameTemplate.removeSuffix("Instant") + "Source" else settings.streamNameTemplate
+        val formattedName = engine.render(nameTemplate, values)
             .lineSequence()
             .joinToString(" ") { it.trim() }
             .replace(Regex("\\s+"), " ")
             .trim()
-        val formattedDescription = engine.render(settings.streamDescriptionTemplate, values)
+        val descriptionTemplate = settings.streamDescriptionTemplate.replace(
+            DebridStreamFormatterDefaults.LEGACY_AVAILABILITY, "{service.availability}")
+        val formattedDescription = engine.render(descriptionTemplate, values)
             .lineSequence()
             .map { it.trim() }
             .filter { it.isNotBlank() }
@@ -93,7 +96,7 @@ class DebridStreamFormatter @Inject constructor(
             "stream.formattedEpisodes" to formatEpisodes(episodes),
             "stream.formattedSeasons" to formatSeasons(seasons),
             "stream.resolution" to (parsed?.resolution ?: facts.resolution.labelUnlessUnknown()),
-            "stream.library" to false,
+            "stream.library" to services.libraryProviderIds.isNotEmpty(),
             "stream.quality" to (parsed?.quality ?: facts.quality.labelUnlessUnknown()),
             "stream.visualTags" to visualTags,
             "stream.audioTags" to audioTags,
@@ -113,6 +116,7 @@ class DebridStreamFormatter @Inject constructor(
             "stream.rseMatched" to matchedBadgeNames,
             "stream.type" to streamType(stream, resolve),
             "service.cached" to (services.resolved || services.verifiedCached),
+            "service.availability" to services.availability,
             "service.shortName" to services.shortName,
             "service.name" to services.name,
             "addon.name" to stream.addonName

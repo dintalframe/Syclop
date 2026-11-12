@@ -143,101 +143,36 @@ private fun DrawScope.drawClassicLayoutPreview(
     }
 }
 
-/** Preview of the grid layout: a 5-column grid scrolling upward when animated. */
+/** Compact Home places the catalog first and keeps title details in a stable footer. */
 @Composable
-fun GridLayoutPreview(
-    modifier: Modifier = Modifier,
-    accentColor: Color = NuvioTheme.colors.Primary,
-    animated: Boolean = true
-) {
-    if (animated) {
-        AnimatedGridLayoutPreview(modifier = modifier, accentColor = accentColor)
-    } else {
-        StaticGridLayoutPreview(modifier = modifier, accentColor = accentColor)
-    }
-}
-
-@Composable
-private fun AnimatedGridLayoutPreview(
-    modifier: Modifier,
-    accentColor: Color
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "gridPreview")
-    val scrollOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            // 3-row cycle, so the duration is ~3x to keep the original per-pixel speed.
-            animation = tween(8800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "gridScroll"
-    )
-    GridLayoutPreviewFrame(
-        modifier = modifier,
-        accentColor = accentColor,
-        scrollOffset = scrollOffset
-    )
-}
-
-@Composable
-private fun StaticGridLayoutPreview(
-    modifier: Modifier,
-    accentColor: Color
-) {
-    GridLayoutPreviewFrame(
-        modifier = modifier,
-        accentColor = accentColor,
-        scrollOffset = 0f
-    )
-}
-
-@Composable
-private fun GridLayoutPreviewFrame(
-    modifier: Modifier,
-    accentColor: Color,
-    scrollOffset: Float
-) {
-    val bgColor = NuvioTheme.colors.Background
-    val cardColor = accentColor.copy(alpha = 0.5f)
-    val cardColorAlt = accentColor.copy(alpha = 0.3f)
-
-    LayoutPreviewFrame(modifier = modifier, background = bgColor) {
-        drawGridLayoutPreview(scrollOffset, cardColor, cardColorAlt)
-    }
-}
-
-private fun DrawScope.drawGridLayoutPreview(
-    scrollOffset: Float,
-    cardColor: Color,
-    cardColorAlt: Color
-) {
-    val w = size.width
-    val h = size.height
-
-    val cols = 5
-    val cardGap = w * 0.025f
-    val cardW = (w - cardGap * (cols + 1)) / cols
-    val cardH = cardW * 1.4f
-    val rowStep = cardH + cardGap
-    val cornerRadius = CornerRadius(h * 0.015f)
-    val scrollY = scrollOffset * rowStep * 3f
-    val rowsToFill = (h / rowStep).toInt() + 5
-
-    for (row in 0..rowsToFill) {
-        val cardY = cardGap + row * rowStep - scrollY
-        if (cardY + cardH > 0f && cardY < h) {
-            val color = if (row % 3 < 2) cardColor else cardColorAlt
-            for (col in 0 until cols) {
-                val cardX = cardGap + col * (cardW + cardGap)
-                drawRoundRect(
-                    color = color,
-                    topLeft = Offset(cardX, cardY),
-                    size = Size(cardW, cardH),
-                    cornerRadius = cornerRadius
-                )
+fun GridLayoutPreview(modifier: Modifier = Modifier) {
+    val colors = NuvioTheme.colors
+    val accent = colors.FocusRing
+    val card = colors.SurfaceVariant
+    val footer = colors.BackgroundElevated
+    LayoutPreviewFrame(modifier = modifier, background = colors.Background) {
+        val gap = size.width * 0.025f
+        val width = (size.width - 7 * gap) / 6
+        val height = size.height * 0.30f
+        val radius = CornerRadius(size.height * 0.024f)
+        repeat(2) { row ->
+            repeat(6) { column ->
+                val selected = row == 0 && column == 0
+                val position = Offset(gap + column * (width + gap), gap + row * (height + gap))
+                drawRoundRect(if (selected) accent else card, position, Size(width, height), radius)
+                if (selected) {
+                    val inset = gap * 0.22f
+                    drawRoundRect(card, position + Offset(inset, inset),
+                        Size(width - 2 * inset, height - 2 * inset), radius)
+                }
             }
         }
+        val footerHeight = size.height * 0.18f
+        val footerTop = size.height - footerHeight - gap
+        drawRoundRect(footer, Offset(gap, footerTop), Size(size.width - 2 * gap, footerHeight), radius)
+        drawCircle(accent, radius = footerHeight * 0.19f, center = Offset(2 * gap, footerTop + footerHeight * 0.5f))
+        drawRoundRect(accent, Offset(3 * gap, footerTop + footerHeight * 0.40f),
+            Size(size.width * 0.27f, footerHeight * 0.20f), radius)
     }
 }
 

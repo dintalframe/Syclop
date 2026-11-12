@@ -16,6 +16,7 @@ fun UpdateBannerHost(
     onAutomaticCheck: suspend () -> Unit = {},
     installedNotes: InstalledUpdateNotes? = null,
     onDismissInstalledNotes: () -> Unit = {},
+    onInstallReady: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     content()

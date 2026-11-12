@@ -81,6 +81,15 @@ class NativeDebridServiceLabelsTest {
         assertTrue(output.description.orEmpty().contains("Not Ready (TB)"))
         assertFalse(output.name.orEmpty().contains("FAKE"))
     }
+    @Test fun `default formatter reports unverified RD availability without a negative cache claim`() {
+        val stream = source().copy(debridCacheStatus = status("realdebrid").copy(state = StreamDebridCacheState.UNKNOWN))
+        val output = DebridStreamFormatter(DebridStreamTemplateEngine()).format(stream, settings,
+            scope = scope, nowMs = 1000)
+        assertTrue(output.description.orEmpty().contains("Availability unverified"))
+        assertFalse(output.description.orEmpty().contains("Not Ready"))
+        assertFalse(output.name.orEmpty().contains("Instant"))
+    }
+
     @Test fun `Magnify display suppression keeps release text and underlying source intact`() {
         val stream = source().copy(description = "Magnify Scrapers\nMovie.1080p.mkv")
         assertFalse(NativeDebridSourceCards.visibleAddonName("Magnify Scrapers"))

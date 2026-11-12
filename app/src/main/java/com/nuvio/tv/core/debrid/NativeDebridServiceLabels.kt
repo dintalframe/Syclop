@@ -10,7 +10,16 @@ import com.nuvio.tv.domain.model.StreamDebridCacheState
 internal object NativeDebridServiceLabels {
     private const val MARKER = "native-service:"
     data class Services(val providers: List<DebridProvider>, val automatic: Boolean = false,
-        val resolved: Boolean = false, val verifiedCached: Boolean = false) {
+        val resolved: Boolean = false, val verifiedCached: Boolean = false,
+        val libraryProviderIds: Set<String> = emptySet()) {
+        val availabilityUnverified: Boolean get() =
+            !resolved && !verifiedCached && libraryProviderIds.isEmpty() && providers.any { it.supportsAccountLibraryLookup() }
+        val availability: String get() = when {
+            libraryProviderIds.isNotEmpty() -> "In your library"
+            resolved || verifiedCached -> "Ready"
+            availabilityUnverified -> "Availability unverified"
+            else -> "Not Ready"
+        }
         val shortName: String get() = if (automatic) "Automatic" else providers.joinToString(" / ") { it.shortName }
         val name: String get() = providers.joinToString(" · ") { it.displayName }
     }
@@ -29,11 +38,16 @@ internal object NativeDebridServiceLabels {
         }
         if (!NativeDebridFallbackRouter.neutralHashSource(stream)) return Services(emptyList())
         val accounts = NativeDebridFallbackRouter.accounts(settings, true).map { it.provider }
-        val cached = if (scope == null) emptyList() else accounts.filter {
-            stream.nativeAvailabilityFor(it.id, scope, nowMs)?.state == StreamDebridCacheState.CACHED
+        val cached = if (scope == null) emptyList() else accounts.mapNotNull { provider ->
+            stream.nativeAvailabilityFor(provider.id, scope, nowMs)
+                ?.takeIf { it.state == StreamDebridCacheState.CACHED }?.let { provider to it }
         }
-        return if (cached.isNotEmpty()) Services(cached, verifiedCached = true)
-            else Services(accounts, automatic = accounts.isNotEmpty())
+        val library = cached.filter { (_, status) -> status.libraryFile != null }.map { it.first }
+        return when {
+            library.isNotEmpty() -> Services(library, libraryProviderIds = library.mapTo(mutableSetOf()) { it.id })
+            cached.isNotEmpty() -> Services(cached.map { it.first }, verifiedCached = true)
+            else -> Services(accounts, automatic = accounts.isNotEmpty())
+        }
     }
 
     fun decorate(stream: Stream, settings: DebridSettings, scope: StreamAvailabilityScope? = null,
@@ -46,6 +60,7 @@ internal object NativeDebridServiceLabels {
             services.providers.forEach { provider ->
                 val prefix = when {
                     services.resolved -> "Resolved: "
+                    provider.id in services.libraryProviderIds -> "In your library: "
                     services.verifiedCached -> "Available: "
                     services.automatic && services.providers.size > 1 -> "Try "
                     else -> "Resolve with: "

@@ -90,6 +90,55 @@ class LocalDebridAvailabilityServiceTest {
         coVerify(exactly = 0) { h.backend.checkCached(any(), any()) }
     }
 
+    @Test fun `account ready evidence is specific to the file and current credential revision`() = runTest {
+        val accountLibrary = mockk<NativeDebridAccountLibrary>()
+        val h = harness(DebridSettings(enabled = true, realDebridApiKey = "synthetic-rd"), accountLibrary)
+        val file = AccountLibraryFile("Show.S02E03.mkv", 100L, "9", available = true)
+        coEvery { accountLibrary.find(any(), any(), setOf(HASH_A, HASH_B), any()) } returns
+            mapOf(HASH_A to AccountLibraryItem("existing", listOf(file)))
+        val request = NativeDebridLibraryRequest("series", "tt12345:2:3", 2, 3)
+        val groups = listOf(group(listOf(stream(name = "Show.S02E03"), stream(name = "Show.S02E04"),
+            stream(name = "Show.S02E03", infoHash = HASH_B))))
+        val rows = h.service.annotateCachedAvailability(groups, h.settings.value, request).single().streams
+        assertEquals(StreamDebridCacheState.CACHED, rows[0].debridCacheStatus?.state)
+        assertEquals("existing", rows[0].debridCacheStatus?.libraryFile?.torrentId)
+        assertEquals(h.scope(), rows[0].debridCacheStatus?.nativeScope)
+        assertEquals(StreamDebridCacheState.UNKNOWN, rows[1].nativeDebridAvailability.single().state)
+        assertEquals(StreamDebridCacheState.UNKNOWN, rows[2].nativeDebridAvailability.single().state)
+        assertEquals("In your library: Real-Debrid",
+            NativeDebridServiceLabels.decorate(rows[0], h.settings.value, h.scope(), h.now.get()).badges.first().name)
+        assertFalse(NativeDebridServiceLabels.decorate(rows[0], h.settings.value,
+            h.scope().copy(credentialRevision = 42), h.now.get()).badges.any { it.name.startsWith("In your library") })
+        h.credentialRevision.incrementAndGet()
+        val refreshed = h.service.markChecking(groups, h.settings.value, request).single().streams
+        assertTrue(refreshed.all { it.nativeDebridAvailability.single().libraryFile == null })
+        coVerify(exactly = 1) { accountLibrary.find(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { h.backend.checkCached(any(), any()) }
+    }
+
+    @Test fun `a slow account library cannot hold back a confirmed TorBox result`() = runTest {
+        val library = mockk<NativeDebridAccountLibrary>()
+        val h = harness(DebridSettings(enabled = true, torboxApiKey = "synthetic-tb", realDebridApiKey = "synthetic-rd"), library)
+        val releaseLibrary = CompletableDeferred<Unit>()
+        val emitted = CompletableDeferred<StreamDebridCacheStatus?>()
+        val file = AccountLibraryFile("Torrent.mkv", 100L, "9", available = true)
+        coEvery { library.find(any(), any(), any(), any()) } coAnswers {
+            releaseLibrary.await()
+            mapOf(HASH_A to AccountLibraryItem("existing", listOf(file)))
+        }
+        coEvery { h.backend.checkCached(any(), any()) } returns mapOf(HASH_A to LocalDebridCachedItem("Torrent.mkv", 100L))
+        val search = async {
+            h.service.annotateCachedAvailability(listOf(group(listOf(stream()))), h.settings.value,
+                NativeDebridLibraryRequest("movie", "tt1234", null, null)) { partial ->
+                emitted.complete(partial.single().streams.single().debridCacheStatus)
+            }
+        }
+        assertEquals(DebridProviders.TORBOX_ID, emitted.await()?.providerId)
+        assertFalse(search.isCompleted)
+        releaseLibrary.complete(Unit)
+        assertEquals(DebridProviders.REAL_DEBRID_ID, search.await().single().streams.single().debridCacheStatus?.providerId)
+    }
+
     @Test fun `provider reported CACHED claim is replaced by native checking rather than trusted`() = runTest {
         val h = harness()
         val claimed = stream().copy(debridCacheStatus = StreamDebridCacheStatus(DebridProviders.TORBOX_ID,
@@ -329,7 +378,8 @@ class LocalDebridAvailabilityServiceTest {
         fun scope() = StreamAvailabilityScope(profile.value, selectionRevision.get(), credentialRevision.get())
     }
 
-    private fun harness(initial: DebridSettings = DebridSettings(enabled = true, torboxApiKey = "synthetic-tb")): Harness {
+    private fun harness(initial: DebridSettings = DebridSettings(enabled = true, torboxApiKey = "synthetic-tb"),
+        accountLibrary: NativeDebridAccountLibrary? = null): Harness {
         val settings = MutableStateFlow(initial)
         val profile = MutableStateFlow(1)
         val selection = AtomicLong(7L)
@@ -343,7 +393,7 @@ class LocalDebridAvailabilityServiceTest {
         every { store.activeProfileSelectionRevision } answers { selection.get() }
         every { store.activeCredentialRevision } answers { credentials.get() }
         coEvery { store.credentialForProfile(any(), any()) } coAnswers { settings.value.apiKeyFor(secondArg()) }
-        return Harness(LocalDebridAvailabilityService(store, backend, now::get), backend, settings,
+        return Harness(LocalDebridAvailabilityService(store, backend, now::get, accountLibrary), backend, settings,
             profile, selection, credentials, now)
     }
 

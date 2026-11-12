@@ -1,5 +1,7 @@
 package com.nuvio.tv.core.debrid
 
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
+import com.nuvio.tv.core.anime.NativeAnimeEpisodeProof
 import com.nuvio.tv.domain.model.DebridSettings
 import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.model.StreamAvailabilityScope
@@ -13,6 +15,26 @@ internal fun Stream.nativeAvailabilityFor(providerId: String, scope: StreamAvail
     val hash = localAvailabilityHash() ?: return null
     return nativeDebridAvailability.firstOrNull { it.providerId == providerId && it.infoHash == hash &&
         it.nativeScope == scope && it.isFreshNativeAvailability(nowMs) }
+}
+
+internal fun Stream.hasAccountLibraryEvidence(): Boolean =
+    nativeDebridAvailability.any { it.libraryFile != null }
+
+internal fun Stream.accountLibraryFile(providerId: String, scope: StreamAvailabilityScope) =
+    localAvailabilityHash()?.let { hash ->
+        nativeDebridAvailability.singleOrNull { it.providerId == providerId && it.infoHash == hash &&
+            it.nativeScope == scope && it.state == StreamDebridCacheState.CACHED && it.libraryFile != null }?.libraryFile
+    }
+
+internal fun NativeDebridLibraryRequest.needsAnimeProof(stream: Stream): Boolean =
+    videoId.requiresNativeAnimeProof(type, season, episode) || stream.requiresKitsuEpisodeProof(videoId)
+
+internal fun NativeDebridLibraryRequest.animeProof(stream: Stream, mappings: NativeAnimeEpisodeMappings?): NativeAnimeEpisodeProof? {
+    if (!needsAnimeProof(stream) || !validNativeAnimeContext(videoId, season, episode, type) ||
+        !canSelectNativeAnimeFile(stream)) return null
+    return mappings?.cachedProof(videoId)?.takeIf {
+        stream.acceptsAnimeProof(videoId, it) && stream.matchesNativeAnimeSource(it)
+    }
 }
 
 internal fun StreamDebridCacheStatus.isFreshNativeAvailability(nowMs: Long): Boolean {

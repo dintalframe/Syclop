@@ -46,6 +46,7 @@ fun UpdateBannerHost(
     onAutomaticCheck: suspend () -> Unit = {},
     installedNotes: InstalledUpdateNotes? = null,
     onDismissInstalledNotes: () -> Unit = {},
+    onInstallReady: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     if (automaticCheckReady) {
@@ -86,6 +87,13 @@ fun UpdateBannerHost(
         UpdateReleaseNotesDialog(title = stringResource(R.string.update_release_notes),
             subtitle = update.title, notes = update.notes, onDismiss = { showNotes = false })
         return
+    }
+    if (state.pendingInstall != null && onInstallReady != null) {
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        val handoff by rememberUpdatedState(onInstallReady)
+        LaunchedEffect(lifecycle, state.pendingInstall) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { handoff() }
+        }
     }
     NuvioDialog(
         onDismiss = onDismissBanner,

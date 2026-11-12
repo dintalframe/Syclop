@@ -2231,7 +2231,7 @@ private fun MetaDetailsContent(
         } else {
             ImageRequest.Builder(localContext)
                 .data(backdropDataUrl)
-                .apply { if (shouldShowSeedBackdropUnderlay) crossfade(400) else if (hasHeroBackdrop) crossfade(false) else crossfade(400) }
+                .crossfade(if (hasHeroBackdrop) 0 else NuvioMotion.tokens.durations.fast)
                 .size(width = backdropWidthPx, height = backdropHeightPx)
                 .build()
         }

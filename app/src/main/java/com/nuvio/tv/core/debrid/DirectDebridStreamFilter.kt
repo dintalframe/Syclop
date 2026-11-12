@@ -17,6 +17,7 @@ import com.nuvio.tv.domain.model.DebridStreamSortKey
 import com.nuvio.tv.domain.model.DebridStreamSortMode
 import com.nuvio.tv.domain.model.DebridStreamVisualTag
 import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.domain.model.StreamAvailabilityScope
 import java.util.concurrent.ConcurrentHashMap
 
 object DirectDebridStreamFilter {
@@ -112,7 +113,9 @@ object DirectDebridStreamFilter {
     fun applyPreferencesWithFacts(
         streams: List<Stream>,
         settings: DebridSettings,
-        enforceLimits: Boolean = true
+        enforceLimits: Boolean = true,
+        libraryScope: StreamAvailabilityScope? = null,
+        nowMs: Long = System.currentTimeMillis()
     ): List<Pair<Stream, StreamFacts>> {
         val preferences = effectivePreferences(settings)
         val matchedStreams = streams.map { it to streamFacts(it, preferences) }
@@ -126,7 +129,16 @@ object DirectDebridStreamFilter {
             }
         }
 
-        return if (enforceLimits) applyLimits(orderedStreams, preferences) else orderedStreams
+        val ranked = if (libraryScope == null) orderedStreams else {
+            val (library, rest) = orderedStreams.partition { (stream, _) ->
+                stream.nativeDebridAvailability.any { observation ->
+                    observation.libraryFile != null &&
+                        stream.nativeAvailabilityFor(observation.providerId, libraryScope, nowMs) == observation
+                }
+            }
+            library + rest
+        }
+        return if (enforceLimits) applyLimits(ranked, preferences) else ranked
     }
 
     fun facts(stream: Stream, settings: DebridSettings): StreamFacts =

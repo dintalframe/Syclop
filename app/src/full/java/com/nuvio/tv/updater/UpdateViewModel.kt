@@ -1,6 +1,9 @@
 package com.nuvio.tv.updater
 
 import android.content.Context
+import android.content.Intent
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.BuildConfig
@@ -8,6 +11,7 @@ import com.nuvio.tv.R
 import com.nuvio.tv.updater.model.AppUpdate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
 import java.io.IOException
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -26,6 +30,7 @@ data class UpdateUiState(
     val update: AppUpdate? = null,
     val isDownloading: Boolean = false,
     val downloadProgress: Float? = null,
+    val pendingInstall: File? = null,
     val showBanner: Boolean = false,
     val showUnknownSourcesDialog: Boolean = false,
     val errorMessage: String? = null,
@@ -46,6 +51,7 @@ class UpdateViewModel @Inject constructor(
     val uiState: StateFlow<UpdateUiState> = _uiState.asStateFlow()
     private var updateCheckJob: Job? = null
     private var downloadJob: Job? = null
+    private var awaitingUnknownSourcesSettings = false
 
     private val preferencesInitialization = if (SelfUpdatePolicy.enabled) {
         viewModelScope.launch {
@@ -70,7 +76,8 @@ class UpdateViewModel @Inject constructor(
         updateCheckJob = viewModelScope.launch {
             val now = System.currentTimeMillis()
             if (!force && !UpdateBannerPolicy.canCheckAutomatically(now, updatePreferences.lastCheckAtMs.first())) return@launch
-            _uiState.update { it.copy(isChecking = true, showBanner = false, feedbackMessage = null, errorMessage = null) }
+            cancelInstallAttempt()
+            _uiState.update { it.copy(isChecking = true, showBanner = false, feedbackMessage = null) }
             val channel = _uiState.value.updateChannel
             val result = updateRepository.getLatestUpdate(channel)
             savePreferences { updatePreferences.setLastCheckAtMs(now) }
@@ -111,11 +118,8 @@ class UpdateViewModel @Inject constructor(
 
     fun dismissBanner() {
         val state = _uiState.value
-        downloadJob?.cancel()
-        _uiState.update {
-            it.copy(showBanner = false, showUnknownSourcesDialog = false, isDownloading = false,
-                downloadProgress = null, errorMessage = null)
-        }
+        cancelInstallAttempt()
+        _uiState.update { it.copy(showBanner = false) }
         state.update?.tag?.let { tag ->
             viewModelScope.launch {
                 savePreferences { updatePreferences.deferRelease(tag, System.currentTimeMillis() + UpdateBannerPolicy.DEFER_MS) }
@@ -133,6 +137,7 @@ class UpdateViewModel @Inject constructor(
 
     fun setUpdateBannerEnabled(enabled: Boolean) {
         if (!SelfUpdatePolicy.enabled) return
+        if (!enabled) cancelInstallAttempt()
         _uiState.update { it.copy(updateBannerEnabled = enabled, showBanner = it.showBanner && enabled) }
         viewModelScope.launch {
             savePreferences { updatePreferences.setUpdateBannerEnabled(enabled) }
@@ -142,6 +147,7 @@ class UpdateViewModel @Inject constructor(
 
     fun setUpdateChannel(channel: UpdateChannel) {
         if (!SelfUpdatePolicy.enabled || _uiState.value.updateChannel == channel) return
+        cancelInstallAttempt()
         _uiState.update { it.copy(updateChannel = channel, update = null, showBanner = false) }
         viewModelScope.launch {
             savePreferences { updatePreferences.setUpdateChannel(channel) }
@@ -149,15 +155,19 @@ class UpdateViewModel @Inject constructor(
         }
     }
 
-    fun downloadUpdate(allowInstaller: () -> Boolean) {
+    fun downloadUpdate() {
         val state = _uiState.value
-        if (!SelfUpdatePolicy.enabled || !state.showBanner || state.isDownloading) return
+        if (!SelfUpdatePolicy.enabled || !state.showBanner || state.isDownloading ||
+            state.pendingInstall != null || awaitingUnknownSourcesSettings
+        ) return
         val update = state.update ?: return
         if (!ApkInstaller.canRequestPackageInstalls(context)) {
             _uiState.update { it.copy(showUnknownSourcesDialog = true) }
             return
         }
-        _uiState.update { it.copy(isDownloading = true, downloadProgress = null, errorMessage = null) }
+        _uiState.update {
+            it.copy(isDownloading = true, downloadProgress = null, showUnknownSourcesDialog = false, errorMessage = null)
+        }
         downloadJob = viewModelScope.launch {
             val result = try {
                 withContext(Dispatchers.IO) {
@@ -171,29 +181,57 @@ class UpdateViewModel @Inject constructor(
             } catch (error: Exception) {
                 Result.failure(error)
             }
-            val launchInstaller = result.isSuccess && allowInstaller()
-            val error = when {
-                result.isFailure -> context.getString(R.string.update_error_download_failed)
-                launchInstaller -> result.mapCatching { ApkInstaller.launchSystemInstaller(context, it) }
-                    .exceptionOrNull()?.let { context.getString(R.string.update_error_install_failed) }
-                else -> null
-            }
             _uiState.update {
                 it.copy(
                     isDownloading = false,
                     downloadProgress = null,
-                    showBanner = !launchInstaller || error != null,
-                    errorMessage = error
+                    pendingInstall = result.getOrNull(),
+                    errorMessage = if (result.isFailure) context.getString(R.string.update_error_download_failed) else null
                 )
             }
         }
     }
 
-    fun openUnknownSourcesSettings() {
+    fun launchPendingInstaller(activity: ComponentActivity) {
+        if (!activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        val file = _uiState.value.pendingInstall ?: return
+        if (!ApkInstaller.canRequestPackageInstalls(context)) {
+            _uiState.update { it.copy(pendingInstall = null, showUnknownSourcesDialog = true) }
+            return
+        }
+        _uiState.update { it.copy(pendingInstall = null, showBanner = false) }
+        runCatching { ApkInstaller.launchSystemInstaller(activity, file) }
+            .onFailure {
+                _uiState.update { it.copy(showBanner = true, errorMessage = context.getString(R.string.update_error_install_failed)) }
+            }
+    }
+
+    fun openUnknownSourcesSettings(launch: (Intent) -> Unit) {
         if (!SelfUpdatePolicy.enabled || !_uiState.value.showUnknownSourcesDialog) return
+        val intent = ApkInstaller.buildUnknownSourcesSettingsIntent(context) ?: return
+        awaitingUnknownSourcesSettings = true
         dismissUnknownSourcesDialog()
-        runCatching { ApkInstaller.buildUnknownSourcesSettingsIntent(context)?.let(context::startActivity) }
-            .onFailure { _uiState.update { it.copy(errorMessage = context.getString(R.string.update_error_install_failed)) } }
+        runCatching { launch(intent) }.onFailure {
+            awaitingUnknownSourcesSettings = false
+            _uiState.update { it.copy(errorMessage = context.getString(R.string.update_error_install_failed)) }
+        }
+    }
+
+    fun onUnknownSourcesSettingsReturned() {
+        if (!awaitingUnknownSourcesSettings) return
+        awaitingUnknownSourcesSettings = false
+        if (ApkInstaller.canRequestPackageInstalls(context)) downloadUpdate()
+    }
+
+    private fun cancelInstallAttempt() {
+        downloadJob?.cancel()
+        awaitingUnknownSourcesSettings = false
+        _uiState.update {
+            it.copy(
+                isDownloading = false, downloadProgress = null, pendingInstall = null,
+                showUnknownSourcesDialog = false, errorMessage = null
+            )
+        }
     }
 
     private suspend fun savePreferences(action: suspend () -> Unit) {

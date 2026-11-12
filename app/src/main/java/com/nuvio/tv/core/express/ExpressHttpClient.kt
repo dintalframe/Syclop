@@ -73,15 +73,23 @@ class ExpressHttpClient internal constructor(
             if (redirectIndex > 0) beforeRedirect?.invoke(target)
             val host = target.originKey()
             val result = hostPermits.getOrPut(host) { Semaphore(2) }.withPermit {
-                val remaining = (cooldowns[host] ?: 0L) - clock()
-                if (remaining > 0L) throw ExpressHttpException(ExpressHttpFailure.RATE_LIMITED, remaining)
-                permits.withPermit { fetch(target, maxBytes) }
+                checkCooldown(host)
+                permits.withPermit {
+                    // Another request may have received Retry-After while this one waited.
+                    checkCooldown(host)
+                    fetch(target, maxBytes)
+                }
             }
             if (result.redirect == null) return ExpressDocument(target.toString(), result.text.orEmpty())
             target = validatedUrl(target.resolve(result.redirect)?.toString()
                 ?: throw ExpressException("Provider returned an invalid redirect."))
         }
         throw ExpressException("Provider returned too many redirects.")
+    }
+
+    private fun checkCooldown(origin: String) {
+        val remaining = (cooldowns[origin] ?: 0L) - clock()
+        if (remaining > 0L) throw ExpressHttpException(ExpressHttpFailure.RATE_LIMITED, remaining)
     }
 
     private data class Fetch(val text: String? = null, val redirect: String? = null)

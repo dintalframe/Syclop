@@ -220,7 +220,18 @@ data class StreamDebridCacheStatus(
     val nativeScope: StreamAvailabilityScope? = null,
     val infoHash: String? = null,
     val checkedAtMs: Long? = null,
-    val expiresAtMs: Long? = null
+    val expiresAtMs: Long? = null,
+    internal val libraryFile: StreamDebridLibraryFile? = null
+)
+
+/** Existing authenticated account file identity. No service URL or credential is retained. */
+@Immutable
+@ConsistentCopyVisibility
+data class StreamDebridLibraryFile internal constructor(
+    val torrentId: String,
+    val providerFileId: String?,
+    val path: String,
+    val sizeBytes: Long?
 )
 
 /** Observation provenance only; this never authorizes a playback URL. */

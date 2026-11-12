@@ -41,7 +41,7 @@ internal object HomeCategoryPresentation {
         return ModernHomePresentationState(grouped.asStable(), buildCarouselRowLookups(grouped))
     }
 
-    private fun kidsRowTitle(group: KidsBrowseGroup, catalogTitle: String): String {
+    fun kidsRowTitle(group: KidsBrowseGroup, catalogTitle: String): String {
         val parts = catalogTitle.split(" · ").map { it.trim() }.filter { it.isNotEmpty() }
         // Only the final catalog label repeats the group; keep the source and other context.
         val context = if (parts.lastOrNull()?.equals(group.label, ignoreCase = true) == true)

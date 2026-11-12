@@ -25,6 +25,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 /** Component fixture only: v9.9.9 is not a published update and no network is used. */
 @RunWith(AndroidJUnit4::class)
@@ -114,6 +115,26 @@ class UpdateOfferDetailsTvTest {
         assertEquals(0, fixture.downloads)
     }
 
+    @Test
+    fun readyInstallerWaitsUntilReleaseNotesClose() {
+        val fixture = mount((1..40).joinToString("\n\n") { "Fixture release note $it" })
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        compose.onNode(hasScrollAction()).assertIsFocused()
+
+        compose.runOnIdle {
+            fixture.state = fixture.state.copy(pendingInstall = File("verified-fixture.apk"))
+        }
+        compose.onNode(hasScrollAction()).assertIsFocused()
+        assertEquals(0, fixture.installerHandoffs)
+
+        press(KeyEvent.KEYCODE_BACK)
+        compose.runOnIdle { assertEquals(1, fixture.installerHandoffs) }
+        assertEquals(1, fixture.downloads)
+    }
+
     private fun mount(notes: String): Fixture {
         val fixture = Fixture(notes)
         compose.setContent {
@@ -127,7 +148,11 @@ class UpdateOfferDetailsTvTest {
                     onDownload = { fixture.downloads++ },
                     onDismissUnknownSources = {},
                     onOpenUnknownSources = {},
-                    onFeedbackShown = {}
+                    onFeedbackShown = {},
+                    onInstallReady = {
+                        fixture.installerHandoffs++
+                        fixture.state = fixture.state.copy(pendingInstall = null)
+                    }
                 ) {}
             }
         }
@@ -156,5 +181,6 @@ class UpdateOfferDetailsTvTest {
         ))
         var downloads = 0
         var dismissals = 0
+        var installerHandoffs = 0
     }
 }
