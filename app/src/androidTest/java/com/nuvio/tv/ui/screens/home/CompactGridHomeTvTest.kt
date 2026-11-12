@@ -2,7 +2,13 @@ package com.nuvio.tv.ui.screens.home
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.focusable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
@@ -62,9 +68,9 @@ class CompactGridHomeTvTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             NuvioTheme {
-                HomeBrowseScaffold(HomeBrowseSection.HOME, onSelect = {}) { _, _ ->
-                    val selected = detail.value
-                    if (selected == null) {
+                val selected = detail.value
+                if (selected == null) {
+                    HomeBrowseScaffold(HomeBrowseSection.HOME, onSelect = {}) { _, _ ->
                         GridHomeContent(
                             uiState = state.value,
                             gridFocusState = saved,
@@ -83,10 +89,12 @@ class CompactGridHomeTvTest {
                                 )
                             }
                         )
-                    } else {
-                        BackHandler { detail.value = null }
-                        Text("Details for $selected")
                     }
+                } else {
+                    BackHandler { detail.value = null }
+                    val detailFocus = remember { FocusRequester() }
+                    Text("Details for $selected", Modifier.focusRequester(detailFocus).focusable())
+                    LaunchedEffect(selected) { detailFocus.requestFocus() }
                 }
             }
         }

@@ -48,39 +48,41 @@ class CompactCategoryGridTvTest {
         compose.setContent {
             NuvioTheme {
                 val selected = section.value
-                HomeBrowseScaffold(selected, onSelect = { section.value = it }) { _, entry ->
-                    val title = detail.value
-                    if (title != null) {
-                        BackHandler { detail.value = null }
-                        Text("Details for $title")
-                    } else key(selected) {
-                        val projected = projectCategoryTrackingRows(selected, HomeUiState(),
-                            listOf(HomeBrowseRules.scoped(selected, catalog)))
-                        val row = projected.catalogRows.single()
-                        val projection = buildHomeCategoryGrid(selected, projected.catalogRows,
-                            listOf(HomeBrowseRow("${selected.name}-page", row.catalogName, row, loading = false)))
-                        val request = rememberHomeCategoryEntryRequest(entry, ready = true,
-                            isCurrent = { section.value == selected }, consumeReturn = {
-                                returning.also { returning = false }
-                            })
-                        GridHomeContent(
-                            uiState = projected.copy(homeLayout = HomeLayout.GRID,
-                                gridItems = projection.items, heroSectionEnabled = false, posterLabelsEnabled = true),
-                            gridFocusState = saved[selected] ?: HomeScreenFocusState(),
-                            posterCardStyle = PosterCardDefaults.Style.copy(width = 104.dp, height = 156.dp),
-                            limitCatalogPreview = false,
-                            contentEntryRequest = request,
-                            onNavigateToDetail = { id, _, _ -> returning = true; detail.value = id },
-                            onContinueWatchingClick = {},
-                            onNavigateToCatalogSeeAll = { _, _, _ -> error("Category used Home's See All route") },
-                            onCatalogAction = { pageRequests += projection.pageRows.getValue(it).key },
-                            catalogActionLabel = { "Load more category" },
-                            onRemoveContinueWatching = { _, _, _, _ -> },
-                            onSaveGridFocusState = { index, offset, key ->
-                                saved[selected] = HomeScreenFocusState(verticalScrollIndex = index,
-                                    verticalScrollOffset = offset, focusedItemKey = key, hasSavedFocus = true)
-                            }
-                        )
+                val title = detail.value
+                if (title != null) {
+                    BackHandler { detail.value = null }
+                    Text("Details for $title")
+                } else {
+                    HomeBrowseScaffold(selected, onSelect = { section.value = it }) { _, entry ->
+                        key(selected) {
+                            val projected = projectCategoryTrackingRows(selected, HomeUiState(),
+                                listOf(HomeBrowseRules.scoped(selected, catalog)))
+                            val row = projected.catalogRows.single()
+                            val projection = buildHomeCategoryGrid(selected, projected.catalogRows,
+                                listOf(HomeBrowseRow("${selected.name}-page", row.catalogName, row, loading = false)))
+                            val request = rememberHomeCategoryEntryRequest(entry, ready = true,
+                                isCurrent = { section.value == selected }, consumeReturn = {
+                                    returning.also { returning = false }
+                                })
+                            GridHomeContent(
+                                uiState = projected.copy(homeLayout = HomeLayout.GRID,
+                                    gridItems = projection.items, heroSectionEnabled = false, posterLabelsEnabled = true),
+                                gridFocusState = saved[selected] ?: HomeScreenFocusState(),
+                                posterCardStyle = PosterCardDefaults.Style.copy(width = 104.dp, height = 156.dp),
+                                limitCatalogPreview = false,
+                                contentEntryRequest = request,
+                                onNavigateToDetail = { id, _, _ -> returning = true; detail.value = id },
+                                onContinueWatchingClick = {},
+                                onNavigateToCatalogSeeAll = { _, _, _ -> error("Category used Home's See All route") },
+                                onCatalogAction = { pageRequests += projection.pageRows.getValue(it).key },
+                                catalogActionLabel = { "Load more category" },
+                                onRemoveContinueWatching = { _, _, _, _ -> },
+                                onSaveGridFocusState = { index, offset, key ->
+                                    saved[selected] = HomeScreenFocusState(verticalScrollIndex = index,
+                                        verticalScrollOffset = offset, focusedItemKey = key, hasSavedFocus = true)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -121,7 +123,9 @@ class CompactCategoryGridTvTest {
     }
 
     private fun preview(id: String, name: String, type: ContentType) = MetaPreview(
-        id = id, type = type, name = name, poster = null, posterShape = PosterShape.POSTER,
+        id = id, type = type, name = name,
+        poster = "android.resource://${InstrumentationRegistry.getInstrumentation().targetContext.packageName}/drawable/syclop_primary_head_512",
+        posterShape = PosterShape.POSTER,
         background = null, logo = null, description = null, releaseInfo = null, imdbRating = null, genres = emptyList()
     )
 }
