@@ -713,7 +713,7 @@ class StreamRepositoryImpl @Inject constructor(
             val discriminator = name?.takeIf { it.isNotBlank() }
             if (discriminator != null) "|$discriminator" else ""
         } else ""
-        return "$base$nameSuffix" to nativeKitsuProofCacheKey
+        return "$base$nameSuffix" to nativeSourceProofKey
     }
 
     /**

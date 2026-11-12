@@ -3,6 +3,7 @@ package com.nuvio.tv.ui.screens.stream
 import com.nuvio.tv.core.debrid.DirectDebridFailure
 import com.nuvio.tv.core.debrid.DirectDebridFailureReason
 import com.nuvio.tv.core.debrid.DirectDebridResolveResult
+import com.nuvio.tv.core.debrid.TurkishBroadcastEpisode
 import com.nuvio.tv.core.player.StreamAutoPlaySelector
 import com.nuvio.tv.data.local.StreamAutoPlayMode
 import com.nuvio.tv.data.local.StreamAutoPlaySource
@@ -51,6 +52,21 @@ class AutomaticStreamFallbackTest {
             assertEquals(reason.name, streams, calls)
             assertEquals(reason, (result.failure as DirectDebridResolveResult.Failure).detail.reason)
         }
+    }
+
+    @Test fun `a source without broadcast proof cannot suppress a proven alias of the same hash`() = runTest {
+        val plain = stream('1')
+        val proven = plain.copy(nativeTurkishBroadcastEpisode =
+            TurkishBroadcastEpisode("tt1286677:2:1", 2, 1, 39, "Aşk-ı Memnu", 2008))
+        val calls = mutableListOf<Stream>()
+        val result = resolveAutomaticStreamFallback(initial = plain, ranked = listOf(plain, proven),
+            eligible = { true }, selectNext = { it.firstOrNull() }, isCurrent = { true }) {
+            calls += it
+            if (it == proven) AutomaticStreamAttempt(playback = "verified episode")
+            else failure(DirectDebridFailureReason.WRONG_EPISODE)
+        }
+        assertEquals(listOf(plain, proven), calls)
+        assertEquals("verified episode", result.playback)
     }
 
     @Test fun `auth rate limit timeout network and unclassified results never try another source`() = runTest {

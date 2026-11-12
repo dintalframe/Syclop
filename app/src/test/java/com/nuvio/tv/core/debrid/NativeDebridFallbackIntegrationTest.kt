@@ -24,6 +24,54 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 
 /** Actual router, cache, operation guards, provider resolvers and intercepted HTTP contracts. */
 class NativeDebridFallbackIntegrationTest {
+    @Test fun `broadcast ordinal resolves only for its exact episode and never shares the regular cache`() = runBlocking {
+        Harness().use { h ->
+            h.settings.value = h.settings.value.copy(preferredResolverProviderId = "realdebrid")
+            val filename = "Aşk-ı Memnu 39. Bölüm.mkv"
+            val proof = TurkishBroadcastEpisode("tt1286677:2:1", 2, 1, 39, "Aşk-ı Memnu", 2008)
+            val plain = source().copy(behaviorHints = source().behaviorHints?.copy(filename = filename))
+            val selected = plain.copy(nativeTurkishBroadcastEpisode = proof)
+
+            assertEquals(DirectDebridResolveResult.Stale, h.resolver.resolve(selected, 2, 1,
+                allowFallback = false, nativeVideoId = "tt1286677:2:2", nativeMediaType = "series"))
+            assertEquals(DirectDebridResolveResult.Stale, h.resolver.resolve(selected, 2, 2,
+                allowFallback = false, nativeVideoId = proof.videoId, nativeMediaType = "series"))
+            assertEquals(0, h.rd.requestCount)
+
+            h.rdReady(filename)
+            val result = h.resolver.resolve(selected, 2, 1, allowFallback = false,
+                nativeVideoId = proof.videoId, nativeMediaType = "series")
+            assertEquals(DirectDebridResolveResult.Success(FILE, filename, 123L, providerId = "realdebrid"), result)
+            assertEquals(FILE, h.resolver.cachedPlayableStream(selected, 2, 1, proof.videoId, "series")?.url)
+            assertNull(h.resolver.cachedPlayableStream(plain, 2, 1, proof.videoId, "series"))
+            assertNull(h.resolver.cachedPlayableStream(selected, 2, 1, "tt1286677:2:2", "series"))
+            val changedProof = TurkishBroadcastEpisode(proof.videoId, 2, 1, 40, "Aşk-ı Memnu", 2008)
+            assertNull(h.resolver.cachedPlayableStream(selected.copy(nativeTurkishBroadcastEpisode = changedProof),
+                2, 1, proof.videoId, "series"))
+            assertTrue(h.resolver.isPlaybackAuthorized(FILE, 1, proof.videoId, 2, 1, "series"))
+            assertFalse(h.resolver.isPlaybackAuthorized(FILE, 1, "tt1286677:2:2", 2, 1, "series"))
+            assertEquals(5, h.rd.requestCount)
+        }
+    }
+
+    @Test fun `broadcast ordinal rejects a conflicting selected or unrestricted service filename`() = runBlocking {
+        for (changedSelectedFile in listOf(true, false)) Harness().use { h ->
+            h.settings.value = h.settings.value.copy(preferredResolverProviderId = "realdebrid")
+            val filename = "Aşk-ı Memnu 39. Bölüm.mkv"
+            val conflicting = "Aşk-ı Memnu 40. Bölüm.mkv"
+            val proof = TurkishBroadcastEpisode("tt1286677:2:1", 2, 1, 39, "Aşk-ı Memnu", 2008)
+            val selected = source().copy(behaviorHints = source().behaviorHints?.copy(filename = filename),
+                nativeTurkishBroadcastEpisode = proof)
+            h.rdReady(filename, selectedFilename = if (changedSelectedFile) conflicting else filename,
+                finalFilename = if (changedSelectedFile) filename else conflicting)
+
+            assertEquals(wrongDebridFile("realdebrid"), h.resolver.resolve(selected, 2, 1,
+                allowFallback = false, nativeVideoId = proof.videoId, nativeMediaType = "series"))
+            assertFalse(h.resolver.isPlaybackAuthorized(FILE, 1, proof.videoId, 2, 1, "series"))
+            assertEquals(if (changedSelectedFile) 4 else 5, h.rd.requestCount)
+        }
+    }
+
     @Test fun `neutral hash race keeps separate service auth and actual RD grant metadata cache`() = runBlocking {
         Harness().use { h ->
             h.adProcessing(); h.rdReady()
@@ -280,12 +328,12 @@ class NativeDebridFallbackIntegrationTest {
             ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"ready":false}]}}"""))
             ad.enqueue(json("""{"status":"success","data":{"magnets":[{"id":42,"statusCode":1}]}}"""))
         }
-        fun rdReady() {
+        fun rdReady(filename: String = "movie.mkv", selectedFilename: String = filename, finalFilename: String = filename) {
             rd.enqueue(json("""{"id":"synthetic-job"}""").setBodyDelay(500, java.util.concurrent.TimeUnit.MILLISECONDS))
-            rd.enqueue(json("""{"status":"downloaded","files":[{"id":1,"path":"/movie.mkv","bytes":123,"selected":0}]}"""))
+            rd.enqueue(json("""{"status":"downloaded","files":[{"id":1,"path":"/$filename","bytes":123,"selected":0}]}"""))
             rd.enqueue(MockResponse().setResponseCode(204))
-            rd.enqueue(json("""{"status":"downloaded","files":[{"id":1,"path":"/movie.mkv","bytes":123,"selected":1}],"links":["https://real-debrid.example.test/selected"]}"""))
-            rd.enqueue(json("""{"download":"$FILE","filename":"movie.mkv","filesize":123}"""))
+            rd.enqueue(json("""{"status":"downloaded","files":[{"id":1,"path":"/$selectedFilename","bytes":123,"selected":1}],"links":["https://real-debrid.example.test/selected"]}"""))
+            rd.enqueue(json("""{"download":"$FILE","filename":"$finalFilename","filesize":123}"""))
         }
         override fun close() { job.cancel(); grants.clear(); ad.close(); rd.close() }
     }

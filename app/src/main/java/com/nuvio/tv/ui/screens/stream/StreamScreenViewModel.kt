@@ -2337,7 +2337,7 @@ class StreamScreenViewModel @Inject constructor(
 }
 
 private fun Stream.badgeMergeKey(): Pair<String, String?> {
-    infoHash?.lowercase()?.let { hash -> return "$addonName|$hash:${fileIdx ?: ""}" to nativeKitsuProofCacheKey }
+    infoHash?.lowercase()?.let { hash -> return "$addonName|$hash:${fileIdx ?: ""}" to nativeSourceProofKey }
     // Use the playable URL as primary key - but for streams without a playable URL
     // (e.g. statistic/informational entries that only have externalUrl), fall back
     // to name+title+description to avoid all such streams collapsing to one key.
@@ -2346,9 +2346,9 @@ private fun Stream.badgeMergeKey(): Pair<String, String?> {
     }
     if (playableUrl != null) {
         val nameSuffix = name?.takeIf { it.isNotBlank() }?.let { "|$it" } ?: ""
-        return "$addonName|$playableUrl$nameSuffix" to nativeKitsuProofCacheKey
+        return "$addonName|$playableUrl$nameSuffix" to nativeSourceProofKey
     }
-    return "$addonName|${name}:${title}:${description?.hashCode() ?: 0}" to nativeKitsuProofCacheKey
+    return "$addonName|${name}:${title}:${description?.hashCode() ?: 0}" to nativeSourceProofKey
 }
 
 data class StreamPlaybackInfo(

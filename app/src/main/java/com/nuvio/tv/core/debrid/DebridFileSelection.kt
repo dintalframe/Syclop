@@ -11,6 +11,7 @@ internal fun <T> selectDebridFile(
     isPlayable: (T) -> Boolean,
     size: (T) -> Long,
     animeProof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof? = null,
+    turkishBroadcastEpisode: TurkishBroadcastEpisode? = null,
 ): T? {
     if (animeProof != null) return selectNativeAnimeFile(files, resolve, path, isPlayable, animeProof)
     val playable = files.filter(isPlayable)
@@ -19,7 +20,10 @@ internal fun <T> selectDebridFile(
     val requestedSeason = season ?: resolve.season
     val requestedEpisode = episode ?: resolve.episode
     if (requestedSeason != null || requestedEpisode != null) {
-        return selectEpisodeFile(files, resolve, requestedSeason, requestedEpisode, path, isPlayable)
+        val broadcast = turkishBroadcastEpisode?.takeIf {
+            it.matchesContext(resolve.mediaId ?: it.videoId, requestedSeason, requestedEpisode, resolve.mediaType)
+        }
+        return selectEpisodeFile(files, resolve, requestedSeason, requestedEpisode, path, isPlayable, broadcast)
     }
 
     val names = listOfNotNull(resolve.filename, resolve.stream?.raw?.filename)
@@ -42,7 +46,7 @@ internal fun <T> selectDebridFile(
 
 /** An episode request must select one actual leaf; provider hints never override its coordinates. */
 private fun <T> selectEpisodeFile(files: List<T>, resolve: StreamClientResolve, season: Int?, episode: Int?,
-    path: (T) -> String, isPlayable: (T) -> Boolean): T? {
+    path: (T) -> String, isPlayable: (T) -> Boolean, broadcast: TurkishBroadcastEpisode?): T? {
     if (season == null || season < 0 || episode == null || episode <= 0) return null
     val indexed = files.withIndex().toList()
     val names = listOfNotNull(resolve.filename, resolve.stream?.raw?.filename)
@@ -52,14 +56,14 @@ private fun <T> selectEpisodeFile(files: List<T>, resolve: StreamClientResolve, 
         val matches = indexed.matchingFiles(name) { path(it.value) }
         if (matches.isEmpty()) continue // A missing pack-level hint may still have one exact leaf.
         val target = matches.singleOrNull() ?: return null
-        if (!isPlayable(target.value) || !path(target.value).matchesSingleEpisode(season, episode)) return null
+        if (!isPlayable(target.value) || !path(target.value).matchesSingleEpisode(season, episode, broadcast)) return null
         if (selected != null && selected.index != target.index) return null
         selected = target
     }
     selected?.let { return it.value }
     // Torrent indices are not consistent across services. They cannot select another episode
     // or disambiguate multiple encodes without an actual matching filename.
-    return indexed.filter { isPlayable(it.value) && path(it.value).matchesSingleEpisode(season, episode) }
+    return indexed.filter { isPlayable(it.value) && path(it.value).matchesSingleEpisode(season, episode, broadcast) }
         .singleOrNull()?.value
 }
 
@@ -106,19 +110,39 @@ private fun <T> List<T>.matchingFiles(name: String, path: (T) -> String): List<T
     return emptyList()
 }
 
-private fun String.matchesSingleEpisode(season: Int, episode: Int): Boolean {
-    val file = normalizedPath().substringAfterLast('/')
-    if (file.isBlank() || file.length > 4_096 || file.any(Char::isISOControl)) return false
-    val pair = episodeCoordinates.findAll(file).toList().singleOrNull() ?: return false
-    if (pair.groupValues[1].ifEmpty { pair.groupValues[3] }.toIntOrNull() != season ||
-        pair.groupValues[2].ifEmpty { pair.groupValues[4] }.toIntOrNull() != episode) return false
-    val continuation = episodeContinuation.find(file.substring(pair.range.last + 1))
-    if (continuation != null && !episodeQualitySuffix.matches(continuation.groupValues[1])) return false
-    val remainder = file.replaceRange(pair.range, " ".repeat(pair.value.length))
-    return !additionalEpisodeLabel.containsMatchIn(remainder)
+internal fun TurkishBroadcastEpisode.matchesFile(path: String): Boolean = path.matchesSingleEpisode(season, episode, this)
+
+internal fun TurkishBroadcastEpisode.matchesBroadcastLabel(path: String): Boolean =
+    path.matchesSingleEpisode(season, episode, this, requireBroadcastLabel = true)
+
+private fun String.matchesSingleEpisode(season: Int, episode: Int, broadcast: TurkishBroadcastEpisode?,
+    requireBroadcastLabel: Boolean = false): Boolean {
+    val basename = normalizedPath().substringAfterLast('/')
+    if (basename.isBlank() || basename.length > 4_096 || basename.any(Char::isISOControl) ||
+        TurkishEpisodeLabels.hasCollection(basename) || TurkishEpisodeLabels.hasClip(basename)) return false
+    val file = TurkishEpisodeLabels.normalizeCoordinates(basename)
+    val label = broadcast?.let { TurkishEpisodeLabels.findBroadcastLabel(file, it) }
+    if (requireBroadcastLabel && label == null) return false
+    val relativeFile = file.withoutLabel(label)
+    val pairs = episodeCoordinates.findAll(relativeFile).take(2).toList()
+    if (pairs.size > 1 || (pairs.isEmpty() && label == null)) return false
+    val pair = pairs.singleOrNull()
+    if (pair != null && (pair.groupValues[1].ifEmpty { pair.groupValues[3] }.toIntOrNull() != season ||
+        pair.groupValues[2].ifEmpty { pair.groupValues[4] }.toIntOrNull() != episode || relativeFile.hasEpisodeContinuation(pair))) return false
+    if (label != null && file.withoutLabel(pair).hasEpisodeContinuation(label)) return false
+    val remainder = relativeFile.withoutLabel(pair)
+    return !additionalEpisodeLabel.containsMatchIn(remainder) &&
+        !TurkishEpisodeLabels.hasSeason(remainder) && !TurkishEpisodeLabels.hasEpisode(remainder)
 }
 
-private val episodeCoordinates = Regex(
+private fun String.withoutLabel(match: MatchResult?): String =
+    if (match == null) this else replaceRange(match.range, " ".repeat(match.value.length))
+
+private fun String.hasEpisodeContinuation(label: MatchResult): Boolean =
+    episodeContinuation.find(substring(label.range.last + 1))?.groupValues?.get(1)
+        ?.let { !episodeQualitySuffix.matches(it) } ?: false
+
+internal val episodeCoordinates = Regex(
     "(?<![a-z0-9])(?:s([0-9]{1,10})e([0-9]{1,10})|([0-9]{1,10})x([0-9]{1,10}))(?![a-z0-9])",
     RegexOption.IGNORE_CASE)
 private val episodeContinuation = Regex(
@@ -130,7 +154,7 @@ private val episodeQualitySuffix = Regex(
 // After masking the sole pair, a residual E05E06/S02E05E06 is still another
 // coordinate claim; requiring a trailing word boundary would hide those chains.
 private val additionalEpisodeLabel = Regex(
-    "(?<![a-z0-9])(?:s[0-9]+|season[ ._-]*[0-9]+|e[0-9]+|episode[ ._-]*[0-9]+|[0-9]+x[0-9]+)",
+    "(?<![a-z0-9])(?:s[0-9]+|season[ ._-]*[0-9]+|(?:e|ep|episode)[ ._-]*[0-9]+|[0-9]+x[0-9]+)",
     RegexOption.IGNORE_CASE)
 
 internal fun String.hasDebridVideoExtension(): Boolean = videoExtensions.any { endsWith(it, ignoreCase = true) }

@@ -19,6 +19,7 @@ import com.nuvio.tv.domain.model.DebridStreamSortKey
 import com.nuvio.tv.domain.model.DebridStreamSortMode
 import com.nuvio.tv.domain.model.DebridStreamVisualTag
 import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.domain.model.StreamBehaviorHints
 import com.nuvio.tv.domain.model.StreamClientResolve
 import com.nuvio.tv.domain.model.StreamClientResolveParsed
 import com.nuvio.tv.domain.model.StreamClientResolveRaw
@@ -518,6 +519,102 @@ class DirectDebridStreamFilterTest {
         )
 
         assertEquals(listOf(DebridStreamLanguage.IT, DebridStreamLanguage.EN), facts.languages)
+    }
+
+    @Test
+    fun `recognizes structured Turkish audio language aliases`() {
+        for (language in listOf("tr", "tur", "tr-TR", "Turkish", " Türkçe ")) {
+            val source = stream(resolve = resolve(languages = listOf("en", language)))
+            assertEquals(language, listOf("en", "tr"),
+                DirectDebridStreamFilter.facts(source, DebridSettings()).languages.map { it.code })
+        }
+    }
+
+    @Test
+    fun `recognizes Turkish audio release tags alongside other reported languages`() {
+        for (release in listOf(
+            "Movie.2023.1080p.TR.ENG.WEB-DL.mkv",
+            "Movie.2023.1080p.TUR.ENG.WEB-DL.mkv",
+            "Movie.2023.1080p.Turkish.Audio.ENG.WEB-DL.mkv",
+            "Movie (2023) [ENG] [Türkçe Dublaj] [Türkçe Altyazılı]"
+        )) {
+            val source = stream(resolve = resolve(languages = listOf("en"))).copy(description = release)
+            assertEquals(release, listOf("en", "tr"),
+                DirectDebridStreamFilter.facts(source, DebridSettings()).languages.map { it.code })
+        }
+        val source = stream(resolve = null).copy(behaviorHints = StreamBehaviorHints(
+            null, null, null, null, filename = "Movie.2023.1080p.Turkish.Dubbed.mkv"
+        ))
+        assertEquals(listOf(DebridStreamLanguage.TR), DirectDebridStreamFilter.facts(source, DebridSettings()).languages)
+    }
+
+    @Test
+    fun `keeps audio unknown for Turkish subtitles and country labels`() {
+        for (release in listOf(
+            "Movie (2023) [Türkçe Altyazılı]",
+            "Movie.2023.Turkce.Altyazili.1080p.mkv",
+            "Movie.2023.Turkish-Sub.1080p.mkv",
+            "Movie (2023) [Turkish — Subtitled]",
+            "Movie (2023) [Subtitles: tr-TR]",
+            "Movie (2023) [TR Subs]",
+            "Movie (2023) [Country: TR]"
+        )) {
+            val source = stream(resolve = resolve()).copy(description = release)
+            assertEquals(release, emptyList<DebridStreamLanguage>(),
+                DirectDebridStreamFilter.facts(source, DebridSettings()).languages)
+        }
+        val title = stream(resolve = resolve().copy(title = "The Turkish Detective"))
+            .copy(description = "The.Turkish.Detective.S01E01.1080p.WEB-DL.mkv")
+        assertTrue(DirectDebridStreamFilter.facts(title, DebridSettings()).languages.isEmpty())
+    }
+
+    @Test
+    fun `Turkish audio follows source preference filtering and ranking`() {
+        val turkish = stream(resolve = resolve(languages = listOf("tr")))
+        val english = stream(resolve = resolve(languages = listOf("en")))
+        val unknown = stream(resolve = resolve()).copy(description = "Movie (2023) [Türkçe Altyazılı]")
+        val sources = listOf(english, unknown, turkish)
+        val language = DebridStreamLanguage.TR
+
+        fun apply(preferences: DebridStreamPreferences) =
+            DirectDebridStreamFilter.applyPreferences(sources, DebridSettings(streamPreferences = preferences))
+
+        assertEquals(sources, apply(DebridStreamPreferences()))
+        assertEquals(listOf(turkish), apply(DebridStreamPreferences(requiredLanguages = listOf(language))))
+        assertEquals(listOf(english, unknown), apply(DebridStreamPreferences(excludedLanguages = listOf(language))))
+        assertEquals(listOf(turkish, english, unknown), apply(DebridStreamPreferences(
+            preferredLanguages = listOf(language),
+            sortCriteria = listOf(DebridStreamSortCriterion(DebridStreamSortKey.LANGUAGE))
+        )))
+    }
+
+    @Test
+    fun `formatter renders the Turkish flag for reported Turkish audio`() {
+        val formatter = DebridStreamFormatter(DebridStreamTemplateEngine())
+        val settings = DebridSettings(streamNameTemplate = "{stream.languageEmojis::join(' ')}")
+        val structured = stream(resolve = resolve(languages = listOf("tr-TR")))
+        val release = stream(resolve = resolve()).copy(description = "Movie (2023) [Türkçe Dublaj]")
+        val bilingual = stream(resolve = resolve(languages = listOf("en"))).copy(description = release.description)
+        val subtitleOnly = stream(resolve = resolve()).copy(description = "Movie (2023) [Türkçe Altyazılı]")
+
+        assertEquals("🇹🇷", formatter.format(structured, settings).name)
+        assertEquals("🇹🇷", formatter.format(release, settings).name)
+        assertEquals("🇬🇧 🇹🇷", formatter.format(bilingual, settings).name)
+        assertEquals("Stream", formatter.format(subtitleOnly, settings).name)
+    }
+
+    @Test
+    fun `formatting does not create or erase Turkish audio evidence on reranking`() {
+        val formatter = DebridStreamFormatter(DebridStreamTemplateEngine())
+        val source = stream(resolve = resolve()).copy(description = "Movie (2023) [Türkçe Dublaj]")
+        val subtitleOnly = stream(resolve = resolve()).copy(description = "Movie (2023) [Türkçe Altyazılı]")
+        val settings = DebridSettings(streamPreferences = DebridStreamPreferences(
+            requiredLanguages = listOf(DebridStreamLanguage.TR)
+        ))
+        val formatted = formatter.format(source, settings)
+        val mislabeled = formatter.format(subtitleOnly, settings.copy(streamNameTemplate = "Turkish"))
+
+        assertEquals(listOf(formatted), DirectDebridStreamFilter.applyPreferences(listOf(formatted, mislabeled), settings))
     }
 
     @Test

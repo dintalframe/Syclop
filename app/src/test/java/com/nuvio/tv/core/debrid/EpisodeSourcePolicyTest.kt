@@ -42,6 +42,40 @@ class EpisodeSourcePolicyTest {
         assertTrue(EpisodeSourcePolicy.hasReportedPackText("Show.S01.COMPLETE", "Show.S01E04.mkv"))
     }
 
+    @Test fun `Turkish episode labels keep a single release visible alongside a season marker`() {
+        for (leaf in listOf("Dizi.2.Sezon.4.Bölüm.mkv", "Dizi.02.Sezon.04.BOLUM.mkv", "Dizi.4.Bölüm.mkv")) {
+            assertFalse(leaf, EpisodeSourcePolicy.hasReportedPackText("Dizi.S02.1080p", leaf))
+            assertFalse(leaf, EpisodeSourcePolicy.isReportedPack(source("Dizi.S02.1080p").copy(description = leaf)))
+        }
+    }
+
+    @Test fun `Turkish season packs ranges conflicting labels and clips are hidden for episodes`() {
+        val hidden = listOf("Dizi.2.Sezon.1080p", "Dizi.2.Sezon.Paket", "Dizi.Tüm.Bölümler",
+            "Dizi.1-12.Bölüm", "Dizi.4.Bolum-5.Bolum", "Dizi.1-2.Sezon", "Dizi.S02E04.1080p.5.Bölüm",
+            "Dizi.2.Sezon.4.Bölüm.1080p.3.Sezon", "Dizi.2.Sezon.4.Bölüm.1080p.EP05",
+            "Dizi.2.Sezon.4.Bölüm.Fragmanı", "Dizi.S02E04.Ozet")
+        for (release in hidden) {
+            assertTrue(release, EpisodeSourcePolicy.hasReportedPackText(release))
+            assertTrue(release, EpisodeSourcePolicy.isReportedPack(source(release)))
+        }
+        assertTrue(EpisodeSourcePolicy.hasReportedPackText("Dizi.2.Sezon.Paket", "Dizi.2.Sezon.4.Bölüm"))
+        assertTrue(EpisodeSourcePolicy.hasReportedPackText("Dizi.4.Bölüm", "Özet"))
+        assertFalse(EpisodeSourcePolicy.hasReportedPackText("Dizi.2.Sezon.4.Bölüm.Tam.Bölüm"))
+        assertEquals(hidden.first(), EpisodeSourcePolicy.filter(listOf(source(hidden.first())), false).single().title)
+    }
+
+    @Test fun `verified broadcast label agrees with the relative episode only for the same show and edition`() {
+        val proof = TurkishBroadcastEpisode("tt1286677:2:1", 2, 1, 39, "Aşk-ı Memnu", 2008)
+        val mixed = "Ask-i Memnu.S02E01.39.Bölüm"
+        assertTrue(EpisodeSourcePolicy.hasReportedPackText(mixed))
+        assertFalse(EpisodeSourcePolicy.hasReportedPackText(mixed, turkishBroadcastEpisode = proof))
+        assertFalse(EpisodeSourcePolicy.isReportedPack(source(mixed).copy(nativeTurkishBroadcastEpisode = proof)))
+        for (bad in listOf("Other Show.S02E01.39.Bölüm", "Ask-i Memnu.1975.S02E01.39.Bölüm",
+            "Ask-i Memnu.S02E02.39.Bölüm", "Ask-i Memnu.S02E01.39.Bölüm.Part.1")) {
+            assertTrue(bad, EpisodeSourcePolicy.hasReportedPackText(bad, turkishBroadcastEpisode = proof))
+        }
+    }
+
     @Test fun `native selected leaf and file index cannot override an explicit release pack`() {
         val pack = source("Show.S01-S12").copy(fileIdx = 4,
             behaviorHints = StreamBehaviorHints(null, null, null, null, filename = "Show.S01E04.mkv", videoSize = 123L),

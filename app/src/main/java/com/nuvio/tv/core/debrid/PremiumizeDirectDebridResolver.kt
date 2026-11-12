@@ -49,7 +49,8 @@ class PremiumizeDirectDebridResolver @Inject constructor(
                 resolve = resolve,
                 season = season,
                 episode = episode,
-                animeProof = operation?.animeProof
+                animeProof = operation?.animeProof,
+                turkishBroadcastEpisode = operation?.turkishBroadcastEpisode
             ) ?: return wrongDebridFile(DebridProviders.PREMIUMIZE_ID)
             val url = file.link?.takeIf { it.isNotBlank() } ?: return DirectDebridResolveResult.Stale
             DirectDebridResolveResult.Success(

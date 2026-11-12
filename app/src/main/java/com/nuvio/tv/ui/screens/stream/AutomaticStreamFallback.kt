@@ -15,7 +15,7 @@ internal data class AutomaticStreamAttempt<T>(val playback: T? = null,
 
 internal const val SOURCE_RESOLUTION_TIMEOUT_MS = 30_000L
 
-/** One bounded selection: each source hash is attempted once, including aliases from other addons. */
+/** One bounded selection: aliases of the same source and episode proof are attempted once. */
 internal suspend fun <T> resolveAutomaticStreamFallback(
     initial: Stream,
     ranked: List<Stream>,
@@ -53,10 +53,12 @@ internal suspend fun <T> resolveAutomaticStreamFallback(
     return last
 }
 
-private fun Stream.automaticSourceIdentity(): String =
-    canonicalAvailabilityHash(getEffectiveInfoHash())?.let { "hash:$it" }
+private fun Stream.automaticSourceIdentity(): String {
+    val identity = canonicalAvailabilityHash(getEffectiveInfoHash())?.let { "hash:$it" }
         ?: getStreamUrl()?.let { "url:$it" }
         ?: stableKey(0)
+    return nativeTurkishBroadcastEpisode?.let { "$identity:${it.cacheKey}" } ?: identity
+}
 
 private fun DirectDebridResolveResult?.canAdvanceAutomaticSource(): Boolean =
     this == DirectDebridResolveResult.NotCached || this is DirectDebridResolveResult.Failure && detail.reason in setOf(

@@ -13,10 +13,12 @@ class RealDebridFileSelector @Inject constructor() {
         season: Int?,
         episode: Int?,
         animeProof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof? = null,
+        turkishBroadcastEpisode: TurkishBroadcastEpisode? = null,
     ): RealDebridTorrentFileDto? = selectDebridFile(
         files = files,
         resolve = resolve,
         animeProof = animeProof,
+        turkishBroadcastEpisode = turkishBroadcastEpisode,
         season = season,
         episode = episode,
         path = { it.path.orEmpty() },

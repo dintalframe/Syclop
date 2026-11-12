@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.debrid.EpisodeSourcePolicy
+import com.nuvio.tv.core.debrid.matchesBroadcastLabel
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.AddonResource
 import com.nuvio.tv.domain.model.ContentType
@@ -128,12 +129,16 @@ class ExpressAddonAdapter internal constructor(
             suspend fun admit(row: ExpressRow, providerName: String) {
                 val stream = row.toStream(providerName)
                 if (stream == null) { count(SourceSearchReason.INVALID_HASH); return }
+                val broadcast = media.turkishBroadcastEpisode?.takeIf { proof ->
+                    listOfNotNull(row.filename, row.title).any(proof::matchesBroadcastLabel)
+                }
                 resultMutex.withLock {
-                    val key = listOf(stream.infoHash, stream.fileIdx, stream.behaviorHints?.filename).joinToString("|")
+                    val key = listOf(stream.infoHash, stream.fileIdx, stream.behaviorHints?.filename, broadcast?.cacheKey)
+                        .joinToString("|")
                     if (streams.containsKey(key)) count(SourceSearchReason.DUPLICATE)
                     else if (streams.size < MAX_RESULTS) {
-                        streams[key] = if (kitsuProofKey == null) stream
-                            else stream.copy(nativeKitsuProofCacheKey = kitsuProofKey)
+                        streams[key] = stream.copy(nativeKitsuProofCacheKey = kitsuProofKey,
+                            nativeTurkishBroadcastEpisode = broadcast)
                     }
                 }
             }
@@ -226,7 +231,8 @@ class ExpressAddonAdapter internal constructor(
                                     for (row in rows) {
                                         if (!media.acceptsNativeAnimeRow(row)) { count(SourceSearchReason.TITLE_MISMATCH); continue }
                                         if (!media.acceptsInternationalYearHints(row)) { count(SourceSearchReason.TITLE_MISMATCH); continue }
-                                        if (episodeRequest && EpisodeSourcePolicy.hasReportedPackText(row.title, row.filename)) {
+                                        if (episodeRequest && EpisodeSourcePolicy.hasReportedPackText(row.title, row.filename,
+                                                turkishBroadcastEpisode = media.turkishBroadcastEpisode)) {
                                             count(SourceSearchReason.SEASON_PACK_HIDDEN); continue
                                         }
                                         if (admittedRows++ >= MAX_ROWS) break
@@ -450,24 +456,33 @@ class ExpressAddonAdapter internal constructor(
             if (keywordValues.any { !it.isJsonPrimitive || !it.asJsonPrimitive.isString }) {
                 throw ExpressException("Provider query configuration is invalid.")
             }
-            val keywords = keywordValues.map { it.asString }
-            keywords.take(3).flatMap { keyword ->
-                media.queryTitles().mapNotNull { title ->
-                    val variables = media.variables(title)
-                    // A verified catalog ordinal can narrow a text query. Provider URLs still
-                    // require the exact coordinates they declare.
-                    val textKeyword = if (scope == "anime" && media.nativeAnimeEpisode?.usesCatalogOrdinalForSearch == true &&
-                        "{title}" in keyword && "{query}" in query) keyword.replace("{absoluteNumber}", "{catalogEpisode}")
-                    else keyword
-                    val searchVariables = if (media.nativeAnimeEpisode?.needsCatalogYear == true && media.year != null)
-                        variables + ("title" to "$title ${media.year}") else variables
-                    val search = expressTemplate(textKeyword, searchVariables) ?: return@mapNotNull null
-                    val path = expressTemplate(query, variables.mapValues { expressEncode(it.value) } + ("query" to expressEncode(search))) ?: return@mapNotNull null
-                    val base = provider.string("base_url") ?: return@mapNotNull null
-                    // Query fragments are relative to the provider's configured path, not the host root.
-                    http.validatedUrl(base.trimEnd('/') + "/" + path.trimStart('/')).toString()
-                }
+            val keywords = keywordValues.take(3).map { it.asString }
+            val titles = media.queryTitles()
+            fun render(keyword: String, title: String): String? {
+                val variables = media.variables(title)
+                // A verified catalog ordinal can narrow a text query. Provider URLs still
+                // require the exact coordinates they declare.
+                val textKeyword = if (scope == "anime" && media.nativeAnimeEpisode?.usesCatalogOrdinalForSearch == true &&
+                    "{title}" in keyword && "{query}" in query) keyword.replace("{absoluteNumber}", "{catalogEpisode}")
+                else keyword
+                val searchVariables = if (media.nativeAnimeEpisode?.needsCatalogYear == true && media.year != null)
+                    variables + ("title" to "$title ${media.year}") else variables
+                val search = expressTemplate(textKeyword, searchVariables) ?: return null
+                val path = expressTemplate(query, variables.mapValues { expressEncode(it.value) } + ("query" to expressEncode(search)))
+                    ?: return null
+                val base = provider.string("base_url") ?: return null
+                // Query fragments are relative to the provider's configured path, not the host root.
+                return http.validatedUrl(base.trimEnd('/') + "/" + path.trimStart('/')).toString()
             }
+            val standard = keywords.flatMap { keyword -> titles.mapNotNull { render(keyword, it) } }
+            if (scope != "episode" || !media.preferOriginalTitle || "{query}" !in query ||
+                media.season == null || media.episode == null) return@map standard
+            val title = titles.firstOrNull() ?: return@map standard
+            val keyword = keywords.firstOrNull { "{title}" in it && "{episodeCode}" in it } ?: return@map standard
+            val localizedLabel = media.turkishBroadcastEpisode?.let { "${it.number}. Bölüm" }
+                ?: "${media.season}. Sezon ${media.episode}. Bölüm"
+            val localized = render(keyword.replace("{episodeCode}", localizedLabel), title) ?: return@map standard
+            standard.take(1) + localized + standard.drop(1)
         }
         // Verified S/E runs in the first provider round. Shared origins may exhaust their
         // request cap before a second round, so broad absolute searches must not take
@@ -476,7 +491,7 @@ class ExpressAddonAdapter internal constructor(
             repeat(scopeQueries.maxOfOrNull { it.size } ?: 0) { index ->
                 scopeQueries.forEach { queries -> queries.getOrNull(index)?.let(::add) }
             }
-        }.distinct().let { if (media.anime) it.take(6) else it }
+        }.distinct().take(if (media.anime) 6 else MAX_REQUESTS_PER_PROVIDER)
     }
 
     private fun fingerprint(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())

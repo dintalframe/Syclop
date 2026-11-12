@@ -177,6 +177,50 @@ class DebridFileSelectionTest(private val provider: String) {
     }
 
     @Test
+    fun `actual file with explicit Turkish season and episode labels can be selected`() {
+        for (name in listOf("Dizi.2.Sezon.4.Bölüm.1080p.mkv", "Dizi - 02 SEZON - 04 BOLUM 1080p.mkv")) {
+            val files = listOf(file(1, "Dizi.2.Sezon.40.Bölüm.mkv"), file(2, name))
+            assertSelected(2, files, resolve(fileIdx = 0), season = 2, episode = 4)
+            assertSelected(2, files, resolve(filename = name), season = 2, episode = 4)
+            assertSelected(null, files, resolve(filename = name), season = 1, episode = 4)
+        }
+    }
+
+    @Test
+    fun `Turkish ranges clips and ambiguous coordinates cannot prove an actual episode file`() {
+        val rejected = listOf("Dizi.4.Bölüm.mkv", "Dizi.39.Bölüm.mkv", "Dizi.2.Sezon/Dizi.4.Bölüm.mkv",
+            "Dizi.2.Sezon.4-5.Bölüm.mkv", "Dizi.2.Sezon.4.Bölüm-5.Bölüm.mkv", "Dizi.2.Sezon.4.Bölüm–5.mkv",
+            "Dizi.S02E04.Tüm.Bölümler.mkv",
+            "Dizi.S02E04.1080p.5.Bölüm.mkv", "Dizi.S02E04.1080p.3.Sezon.mkv", "Dizi.2.Sezon.4.Bölüm.1080p.1x04.mkv",
+            "Dizi.2.Sezon.4.Bölüm.Fragman.mkv", "Dizi.S02E04.1080p.Özeti.mkv", "Dizi.2.Sezon.4.Bölüm.1080p.EP05.mkv")
+        for (name in rejected) {
+            assertSelected(null, listOf(file(1, name)), resolve(filename = name, fileIdx = 0), season = 2, episode = 4)
+        }
+    }
+
+    @Test
+    fun `broadcast proof binds an exact ordinal filename to the requested show and episode`() {
+        val proof = TurkishBroadcastEpisode("tt1286677:2:1", 2, 1, 39, "Aşk-ı Memnu", 2008)
+        val metadata = resolve().copy(mediaId = proof.videoId)
+        fun choose(name: String, seriesMetadata: StreamClientResolve = metadata, requestedEpisode: Int = 1) =
+            selectDebridFile(listOf(name), seriesMetadata, 2, requestedEpisode, { it }, { true }, { 1L },
+                turkishBroadcastEpisode = proof)
+
+        for (name in listOf("Aşk-ı Memnu 39. Bölüm.mkv", "Ask-i.Memnu.(2009).39.BOLUM.1080p.mkv",
+            "AŞK-I.MEMNU.S02E01.39.Bölüm.mkv", "Ask-i.Memnu.39.Bolum.S02E01.mkv")) {
+            assertEquals(name, name, choose(name))
+        }
+        for (name in listOf("Other.Show.39.Bölüm.mkv", "2009 39.Bölüm.mkv", "Aşk-ı Memnu başka dizi 39.Bölüm.mkv",
+            "Aşk-ı Memnu/39.Bölüm.mkv", "Aşk-ı Memnu (1975) 39.Bölüm.mkv", "Aşk-ı Memnu 40.Bölüm.mkv",
+            "Aşk-ı Memnu 39-40.Bölüm.mkv", "Aşk-ı Memnu 39.Bölüm 2. Parça.mkv", "Aşk-ı Memnu 39.Bölüm.Part2.mkv",
+            "Aşk-ı Memnu 39.Bölüm.Özet.mkv", "Aşk-ı Memnu.S02E02.39.Bölüm.mkv", "Aşk-ı Memnu 39.Bölüm.3.Sezon.mkv")) {
+            assertEquals(name, null, choose(name))
+        }
+        assertNull(choose("Aşk-ı Memnu 39.Bölüm.mkv", requestedEpisode = 2))
+        assertNull(choose("Aşk-ı Memnu 39.Bölüm.mkv", metadata.copy(mediaId = "tt9999999:2:1")))
+    }
+
+    @Test
     fun `missing or ambiguous episodes do not fall back to another file`() {
         val files = listOf(
             file(1, "Show.S01E01.mkv"),

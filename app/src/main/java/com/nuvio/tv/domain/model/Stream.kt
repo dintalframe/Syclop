@@ -2,6 +2,7 @@ package com.nuvio.tv.domain.model
 
 import androidx.compose.runtime.Immutable
 import com.nuvio.tv.core.debrid.DebridProviders
+import com.nuvio.tv.core.debrid.TurkishBroadcastEpisode
 import com.nuvio.tv.data.mediaserver.ServerPlaybackTarget
 import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
@@ -39,8 +40,15 @@ data class Stream(
     /** Native resolver winner for display only; this field never authorizes a playback URL. */
     val nativeResolvedProviderId: String? = null,
     /** Set only by native Express search after verifying the exact Kitsu mapping. */
-    @Transient internal val nativeKitsuProofCacheKey: String? = null
+    @Transient internal val nativeKitsuProofCacheKey: String? = null,
+    /** Set only by native Express search after corroborating the original broadcast episode. */
+    @Transient internal val nativeTurkishBroadcastEpisode: TurkishBroadcastEpisode? = null,
+    /** Retains Turkish audio evidence from the source before its display text is formatted. */
+    @Transient internal val reportedTurkishAudio: Boolean? = null,
 ) {
+    internal val nativeSourceProofKey: String?
+        get() = nativeTurkishBroadcastEpisode?.let { "turkish-broadcast:${it.cacheKey}" } ?: nativeKitsuProofCacheKey
+
     /**
      * Returns the primary stream source URL
      */
@@ -184,7 +192,7 @@ data class Stream(
         append(quality ?: "")
         append('\u0000')
         append(sources.orEmpty().joinToString("|"))
-        nativeKitsuProofCacheKey?.let {
+        nativeSourceProofKey?.let {
             append('\u0000')
             append(it)
         }

@@ -13,16 +13,19 @@ class CapturedDebridOperation private constructor(
     private val apiKey: String,
     private val isCurrent: () -> Boolean,
     internal val animeProof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof?,
+    internal val turkishBroadcastEpisode: TurkishBroadcastEpisode?,
     private val captureTorrentInventory: (suspend () -> Set<String>?)?
 ) {
     internal constructor(providerId: String, apiKey: String, isCurrent: () -> Boolean) :
-        this(providerId, apiKey, isCurrent, null, null)
+        this(providerId, apiKey, isCurrent, null, null, null)
 
-    internal fun withAnimeProof(proof: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof?): CapturedDebridOperation =
-        if (proof == null) this else CapturedDebridOperation(providerId, apiKey, isCurrent, proof, captureTorrentInventory)
+    internal fun withEpisodeProofs(anime: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof?,
+        broadcast: TurkishBroadcastEpisode?): CapturedDebridOperation =
+        if (anime == null && broadcast == null) this
+        else CapturedDebridOperation(providerId, apiKey, isCurrent, anime, broadcast, captureTorrentInventory)
 
     internal fun withTorrentInventory(capture: suspend () -> Set<String>?): CapturedDebridOperation =
-        CapturedDebridOperation(providerId, apiKey, isCurrent, animeProof, capture)
+        CapturedDebridOperation(providerId, apiKey, isCurrent, animeProof, turkishBroadcastEpisode, capture)
 
     internal suspend fun torrentIdsBeforeCreate(): Set<String>? =
         captureTorrentInventory?.let { request(it) }

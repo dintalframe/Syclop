@@ -87,7 +87,8 @@ class RealDebridDirectDebridResolver @Inject constructor(
                 resolve = resolve,
                 season = season,
                 episode = episode,
-                animeProof = operation?.animeProof
+                animeProof = operation?.animeProof,
+                turkishBroadcastEpisode = operation?.turkishBroadcastEpisode
             ) ?: return finish(wrongDebridFile(DebridProviders.REAL_DEBRID_ID))
             stage = "file_id"
             val fileId = file.id ?: return finish(DirectDebridResolveResult.Stale)
@@ -114,11 +115,15 @@ class RealDebridDirectDebridResolver @Inject constructor(
             if (diagnosticInfo?.status in RD_PROCESSING_STATES) {
                 return finish(processing())
             }
-            stage = "anime_file_check"
-            if (operation?.animeProof?.let { proof ->
-                infoAfter.body()?.files?.singleOrNull { it.selected == 1 && it.id == fileId }
-                    ?.path?.let(proof::matchesFile) != true
-            } == true) return finish(wrongDebridFile(DebridProviders.REAL_DEBRID_ID))
+            stage = "selected_file_check"
+            val animeProof = operation?.animeProof
+            val broadcast = operation?.turkishBroadcastEpisode
+            if (animeProof != null || broadcast != null) {
+                val selectedPath = diagnosticInfo?.files?.singleOrNull { it.selected == 1 && it.id == fileId }?.path
+                if (selectedPath == null || animeProof?.matchesFile(selectedPath) == false ||
+                    broadcast?.matchesFile(selectedPath) == false)
+                    return finish(wrongDebridFile(DebridProviders.REAL_DEBRID_ID))
+            }
             stage = "selected_link"
             val link = diagnosticInfo?.selectedDownloadLink(fileId)
                 ?: return finish(wrongDebridFile(DebridProviders.REAL_DEBRID_ID))

@@ -101,12 +101,12 @@ internal fun PlayerRuntimeController.scheduleEpisodeBadgeApplication() {
 }
 
 private fun Stream.sourceBadgeMergeKey(): Pair<String, String?> {
-    infoHash?.lowercase()?.let { return "$addonName|$it:${fileIdx ?: ""}" to nativeKitsuProofCacheKey }
+    infoHash?.lowercase()?.let { return "$addonName|$it:${fileIdx ?: ""}" to nativeSourceProofKey }
     val playableUrl = url ?: clientResolve?.let { resolve ->
         resolve.stream?.raw?.filename ?: resolve.infoHash
     }
-    if (playableUrl != null) return "$addonName|$playableUrl" to nativeKitsuProofCacheKey
-    return "$addonName|${name}:${title}:${description?.hashCode() ?: 0}" to nativeKitsuProofCacheKey
+    if (playableUrl != null) return "$addonName|$playableUrl" to nativeSourceProofKey
+    return "$addonName|${name}:${title}:${description?.hashCode() ?: 0}" to nativeSourceProofKey
 }
 
 internal fun PlayerRuntimeController.showEpisodesPanel() {
@@ -336,16 +336,16 @@ internal fun PlayerRuntimeController.loadSourceStreams(forceRefresh: Boolean) {
  * Newer entries for the same stream (matched by addon + url/infoHash) replace older ones.
  */
 private fun mergeSourceStreams(cached: List<Stream>, fresh: List<Stream>): List<Stream> {
-    val merged = LinkedHashMap<Pair<String, Boolean>, Stream>()
+    val merged = LinkedHashMap<Pair<String, String?>, Stream>()
     cached.forEach { stream -> merged[stream.mergeKey()] = stream }
     fresh.forEach { stream -> merged[stream.mergeKey()] = stream }
     return merged.values.toList()
 }
 
-private fun Stream.mergeKey(): Pair<String, Boolean> {
+private fun Stream.mergeKey(): Pair<String, String?> {
     val source = infoHash?.lowercase()?.let { hash -> "$addonName|$hash:${fileIdx ?: ""}" }
         ?: "$addonName|${getStreamUrl() ?: externalUrl ?: ytId ?: "${name}:${title}"}"
-    return source to (nativeKitsuProofCacheKey != null)
+    return source to if (nativeKitsuProofCacheKey != null) "kitsu" else nativeSourceProofKey
 }
 
 private fun PlayerRuntimeController.launchSourceDebridPreparationIfNeeded(

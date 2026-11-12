@@ -39,8 +39,8 @@ object DirectDebridStreamFilter {
         resolutionRegex("360p?") to DebridStreamResolution.P360
     )
 
-    // Words release names use for each language besides its code. Short words that are common in
-    // titles ("por", "chi", "fra") are left out so a title is not read as a language.
+    private val turkishAliases = listOf("tr-tr", "tr_tr", "turkish", "türkçe", "turkce", "tur", "tr")
+    // Short language aliases that are common in titles ("por", "chi", "fra") are left out.
     private val languageAliases = mapOf(
         DebridStreamLanguage.EN to listOf("eng", "english"),
         DebridStreamLanguage.HI to listOf("hin", "hindi"),
@@ -55,11 +55,21 @@ object DirectDebridStreamFilter {
         DebridStreamLanguage.JA to listOf("jpn", "japanese"),
         DebridStreamLanguage.KO to listOf("kor", "korean"),
         DebridStreamLanguage.ZH to listOf("chinese"),
-        DebridStreamLanguage.HE to listOf("heb", "hebrew")
+        DebridStreamLanguage.HE to listOf("heb", "hebrew"),
+        DebridStreamLanguage.TR to turkishAliases
     )
-    private val languageRegexes = DebridStreamLanguage.entries.map { language ->
+    private val languageRegexes = DebridStreamLanguage.entries.filterNot { it == DebridStreamLanguage.TR }.map { language ->
         language to languageRegex(listOf(language.code) + languageAliases[language].orEmpty())
     }
+    private const val releaseWord = """[\p{L}\p{M}\p{N}]"""
+    private const val labelSeparator = """[\s._:=\[(\-–—]+"""
+    private const val nonAudioLabel = """(?:sub(?:s|title[sd]?|bed)?|alt[\s._-]*yaz[ıi](?:l[ıi])?|origin|country|production)"""
+    private val turkishTag = turkishAliases.joinToString("|", "(?:", ")") { Regex.escape(it) }
+    private val turkishReleaseTag = Regex("(?<!$releaseWord)$turkishTag(?!$releaseWord)")
+    private val turkishNonAudioLabel = Regex(
+        "(?<!$releaseWord)(?:$turkishTag$labelSeparator$nonAudioLabel|" +
+            "$nonAudioLabel$labelSeparator$turkishTag)(?!$releaseWord)"
+    )
 
     fun filterInstant(streams: List<Stream>, settings: DebridSettings? = null): List<Stream> {
         val instantStreams = streams
@@ -265,10 +275,7 @@ object DirectDebridStreamFilter {
         val audioTags = VerifiedStreamFilterFacts.audio(inspected?.audio.orEmpty(), streamAudioTags(parsed?.audio.orEmpty(), searchText))
         val audioChannels = VerifiedStreamFilterFacts.channels(inspected?.audio.orEmpty(), streamAudioChannels(parsed?.channels.orEmpty(), searchText))
         val encode = VerifiedStreamFilterFacts.encode(inspected?.video, streamEncode(parsed?.codec, searchText))
-        val languages = parsed?.languages.orEmpty().mapNotNull { languageFor(it) }.ifEmpty {
-            val languageText = languageSearchText(stream)
-            languageRegexes.filter { (_, regex) -> regex.containsMatchIn(languageText) }.map { it.first }
-        }
+        val languages = streamLanguages(stream)
         val releaseGroup = parsed?.group?.takeIf { it.isNotBlank() } ?: releaseGroupFromText(searchText)
         return StreamFacts(
             resolution = resolution,
@@ -392,6 +399,8 @@ object DirectDebridStreamFilter {
         }
     }
 
+    internal fun isTurkishLanguage(value: String): Boolean = value.trim().lowercase() in turkishAliases
+
     private fun releaseGroupFromText(text: String): String {
         return releaseGroupRegex
             .find(text)
@@ -471,14 +480,32 @@ object DirectDebridStreamFilter {
     // Removes the media title from each text before languages are matched, so title words
     // ("The French Dispatch", "The Italian Job") are not read as the stream language. Only the
     // first match per text is removed: a release name repeats the title only as a language word.
-    private fun languageSearchText(stream: Stream): String {
+    private fun streamLanguages(stream: Stream): List<DebridStreamLanguage> {
         val resolve = stream.clientResolve
-        val titleRegexes = listOfNotNull(resolve?.stream?.raw?.parsed?.parsedTitle, resolve?.title)
+        val parsed = resolve?.stream?.raw?.parsed
+        val reported = parsed?.languages.orEmpty().mapNotNull(::languageFor)
+        if (DebridStreamLanguage.TR in reported) return reported
+
+        val titleRegexes = listOfNotNull(parsed?.parsedTitle, resolve?.title)
             .mapNotNull { titleRegex(it) }
             .distinctBy { it.pattern }
             .sortedByDescending { it.pattern.length }
-        return streamTexts(stream).joinToString(" ") { text ->
+
+        fun withoutTitle(text: String) =
             titleRegexes.fold(text.lowercase()) { remaining, regex -> regex.replaceFirst(remaining, " ") }
+
+        val releaseTexts = streamTexts(stream).map(::withoutTitle)
+        val languages = reported.ifEmpty {
+            val languageText = releaseTexts.joinToString(" ")
+            languageRegexes.filter { (_, regex) -> regex.containsMatchIn(languageText) }.map { it.first }
+        }
+        val hasTurkishAudio = stream.reportedTurkishAudio ?: (
+            releaseTexts + listOfNotNull(stream.behaviorHints?.filename, parsed?.rawTitle).map(::withoutTitle)
+        ).any { turkishReleaseTag.containsMatchIn(turkishNonAudioLabel.replace(it, " ")) }
+        return if (hasTurkishAudio) {
+            languages.filterNot { it == DebridStreamLanguage.UNKNOWN } + DebridStreamLanguage.TR
+        } else {
+            languages
         }
     }
 

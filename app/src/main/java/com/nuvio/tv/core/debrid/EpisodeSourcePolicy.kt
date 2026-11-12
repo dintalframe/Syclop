@@ -35,31 +35,41 @@ object EpisodeSourcePolicy {
         // Requested resolve.season/episode and fileIdx are deliberately not release evidence.
         if (parsed?.seasons.orEmpty().asSequence().filter { it >= 0 }.distinct().take(2).count() > 1 ||
             parsed?.episodes.orEmpty().asSequence().filter { it >= 0 }.distinct().take(2).count() > 1) return true
+        val broadcast = stream.nativeTurkishBroadcastEpisode
         // Addon name is a separate field; the primary source name can itself declare a pack.
-        if (stream.name?.take(MAX_RELEASE_TEXT)?.let(::hasExplicitPackText) == true) return true
+        if (stream.name?.take(MAX_RELEASE_TEXT)?.let { hasExplicitPackText(it, broadcast) } == true) return true
         val releases = listOfNotNull(stream.title, stream.description,
             stream.behaviorHints?.filename, resolve?.torrentName, resolve?.filename,
             raw?.torrentName, raw?.filename, parsed?.rawTitle).filter(String::isNotBlank)
             .ifEmpty { listOfNotNull(stream.name) }.map { it.take(MAX_RELEASE_TEXT) }
-        if (releases.any(::hasExplicitPackText)) return true
+        if (releases.any { hasExplicitPackText(it, broadcast) } || hasClipWithEpisodeClue(releases)) return true
         // A standalone season marker is a season release unless another release field
         // explicitly names one episode. These are provider claims, not episode verification.
         if (parsed?.episodes.orEmpty().any { it >= 0 } || releases.any(::hasSingleEpisodeClue)) return false
-        return parsed?.seasons.orEmpty().any { it >= 0 } || releases.any(seasonMarker::containsMatchIn)
+        return parsed?.seasons.orEmpty().any { it >= 0 } || releases.any(::hasSeasonMarker)
     }
 
     /** Used before Express row/subpage budgets, without constructing or resolving a stream. */
-    fun hasReportedPackText(vararg releases: String?): Boolean {
+    fun hasReportedPackText(vararg releases: String?, turkishBroadcastEpisode: TurkishBroadcastEpisode? = null): Boolean {
         val texts = releases.mapNotNull { it?.take(MAX_RELEASE_TEXT) }
-        if (texts.any(::hasExplicitPackText)) return true
-        return texts.none(::hasSingleEpisodeClue) && texts.any(seasonMarker::containsMatchIn)
+        if (texts.any { hasExplicitPackText(it, turkishBroadcastEpisode) } || hasClipWithEpisodeClue(texts)) return true
+        return texts.none(::hasSingleEpisodeClue) && texts.any(::hasSeasonMarker)
     }
 
-    private fun hasSingleEpisodeClue(text: String): Boolean =
-        singleEpisode.containsMatchIn(text) || releaseAbsoluteEpisode.containsMatchIn(text)
+    private fun hasSeasonMarker(text: String): Boolean =
+        seasonMarker.containsMatchIn(text) || TurkishEpisodeLabels.hasSeason(text)
 
-    private fun hasExplicitPackText(text: String): Boolean =
+    private fun hasSingleEpisodeClue(text: String): Boolean =
+        singleEpisode.containsMatchIn(text) || releaseAbsoluteEpisode.containsMatchIn(text) ||
+            TurkishEpisodeLabels.hasEpisode(text)
+
+    private fun hasClipWithEpisodeClue(texts: List<String>): Boolean =
+        texts.any(TurkishEpisodeLabels::hasClip) && texts.any(::hasSingleEpisodeClue)
+
+    private fun hasExplicitPackText(text: String, broadcast: TurkishBroadcastEpisode?): Boolean =
         completeSeason.containsMatchIn(text) || qualifiedBatch.containsMatchIn(text) ||
+            TurkishEpisodeLabels.hasCollection(text) ||
+            (TurkishEpisodeLabels.hasConflictingCoordinates(text) && broadcast?.matchesBroadcastLabel(text) != true) ||
             listOf(seasonRange, namedSeasonRange, episodeRange, bracketEpisodeRange, namedEpisodeRange)
                 .any { range -> range.findAll(text).any { it.groupValues[1].toInt() != it.groupValues[2].toInt() } } ||
             seasonEpisode.findAll(text).map { it.groupValues[1].toInt() to it.groupValues[2].toInt() }.distinct().take(2).count() > 1 ||

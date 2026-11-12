@@ -87,8 +87,9 @@ class ExpressHttpClient internal constructor(
     private data class Fetch(val text: String? = null, val redirect: String? = null)
 
     private suspend fun fetch(url: HttpUrl, maxBytes: Int): Fetch = suspendCancellableCoroutine { continuation ->
+        val wikidata = url.host == "www.wikidata.org"
         val call = client.newCall(Request.Builder().url(url)
-            .header("User-Agent", "Syclop/Express")
+            .header("User-Agent", if (wikidata) "Syclop/Express (https://github.com/dintalframe/Syclop/issues)" else "Syclop/Express")
             .header("Accept", "application/json,text/html,application/xml;q=0.9,*/*;q=0.5").build())
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
@@ -99,7 +100,7 @@ class ExpressHttpClient internal constructor(
             override fun onResponse(call: Call, response: Response) {
                 try {
                     response.use {
-                        if (response.code == 429) {
+                        if (response.code == 429 || wikidata && response.code == 503 && response.header("Retry-After") != null) {
                             val wait = retryAfterMillis(response.header("Retry-After"), clock())
                             val until = clock().let { now -> if (Long.MAX_VALUE - now < wait) Long.MAX_VALUE else now + wait }
                             cooldowns.merge(url.originKey(), until, ::maxOf)

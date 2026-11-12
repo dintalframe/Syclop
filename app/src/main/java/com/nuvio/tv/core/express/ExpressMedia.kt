@@ -5,6 +5,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
 import com.nuvio.tv.core.anime.NativeAnimeEpisodeProof
+import com.nuvio.tv.core.debrid.TurkishBroadcastEpisode
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.core.plugin.absoluteAnimeEpisodeNumber
 import com.nuvio.tv.data.mal.MalMetadataService
@@ -38,7 +39,9 @@ data class ExpressMedia(
     val nativeAnimeEpisode: com.nuvio.tv.core.anime.NativeAnimeEpisodeProof? = null,
     /** Optional original spelling resolved against this record's IMDb identity. */
     val originalTitle: String? = null,
-    internal val requiresStandaloneKitsuLabel: Boolean = false
+    internal val requiresStandaloneKitsuLabel: Boolean = false,
+    internal val preferOriginalTitle: Boolean = false,
+    internal val turkishBroadcastEpisode: TurkishBroadcastEpisode? = null
 ) {
     val hasMappedEpisodeCoordinates: Boolean get() = nativeAnimeEpisode?.catalogOnly == false
     val catalogSeason: Int? get() = nativeAnimeEpisode?.catalogSeason ?: season
@@ -50,8 +53,9 @@ data class ExpressMedia(
         if (!anime) {
             val canonical = expressQueryTitle(title)
             val original = originalTitle?.let(::expressQueryTitle)
-            return listOfNotNull(canonical, original, (original ?: canonical)?.let(::foldExpressTitle))
-                .distinct().take(3)
+            val folded = (original ?: canonical)?.let(::foldExpressTitle)
+            return (if (preferOriginalTitle) listOfNotNull(original, folded, canonical)
+                else listOfNotNull(canonical, original, folded)).distinct().take(3)
         }
         // The proof-bound mapping snapshot must also recognize every searched alias. Reading
         // a separate mutable metadata alias list here can find a file the resolver must reject.
@@ -89,8 +93,12 @@ class ExpressMetadataResolver @Inject constructor(
     private val mal: MalMetadataService,
     private val animeMappings: NativeAnimeEpisodeMappings? = null
 ) : ExpressMetadataSource {
-    private data class Metadata(val title: String, val year: Int?, val originalTitle: String?)
+    private data class TvmazeShow(val id: Int, val title: String, val turkish: Boolean)
+    private data class Metadata(val title: String, val year: Int?, val originalTitle: String?,
+        val turkish: Boolean, val refreshAfterMillis: Long, val tvmaze: TvmazeShow?,
+        val catalogEpisodeNumbers: Map<String, Int>)
     private val cache = ConcurrentHashMap<String, Metadata>()
+    private val broadcastProofs = ConcurrentHashMap<String, TurkishBroadcastEpisode>()
 
     override suspend fun resolve(request: ExpressMediaRequest): ExpressMedia {
         if (request.videoId.startsWith("kitsu:")) {
@@ -159,7 +167,7 @@ class ExpressMetadataResolver @Inject constructor(
         val episode = request.episode ?: idEpisode
         if (type != "movie" && (season == null || episode == null)) throw ExpressException("Verified season and episode metadata is required.")
         val key = "$type:$imdbId"
-        val meta = cache[key] ?: run {
+        val meta = cache[key]?.takeIf { it.refreshAfterMillis > System.currentTimeMillis() } ?: run {
             val document = http.get("https://v3-cinemeta.strem.io/meta/$type/$imdbId.json", 2 * 1024 * 1024)
             val root = parseExpressObject(document.text)
             val value = root.getAsJsonObject("meta") ?: throw ExpressException("Catalog metadata is unavailable.")
@@ -169,22 +177,52 @@ class ExpressMetadataResolver @Inject constructor(
                 ?: throw ExpressException("Catalog did not provide a title.")
             val year = listOfNotNull(value.string("year"), value.string("releaseInfo"))
                 .firstNotNullOfOrNull { Regex("^(\\d{4})(?:\\D|$)").find(it)?.groupValues?.get(1)?.toIntOrNull() }
-            val original = withContext(Dispatchers.IO) {
-                withTimeoutOrNull(2_500L) {
-                    tmdb.findOriginalTitle(imdbId, type, year)
-                        ?: if (type == "series" && year != null) tvmazeOriginalTitle(imdbId, year) else null
+            val turkish = value.isTurkishProduction()
+            val (original, tvmaze) = withContext(Dispatchers.IO) {
+                var tmdbTitle: String? = null
+                val fallback = withTimeoutOrNull(2_500L) {
+                    tmdbTitle = tmdb.findOriginalTitle(imdbId, type, year)
+                    val tvmaze = if (type == "series" && year != null && (tmdbTitle == null || turkish))
+                        tvmazeShow(imdbId, year) else null
+                    val wikidata = if (tmdbTitle == null && type == "movie" && turkish && year != null)
+                        http.wikidataTurkishMovieTitle(imdbId, year) else null
+                    (tvmaze?.title ?: wikidata) to tvmaze
                 }
+                (tmdbTitle ?: fallback?.first) to fallback?.second
             }
-            val metadata = Metadata(title, year, original)
+            val refreshAfter = when {
+                turkish && (original == null || type == "series" && tvmaze == null) -> System.currentTimeMillis() + 300_000L
+                tvmaze?.turkish == true -> System.currentTimeMillis() + 1_800_000L
+                else -> Long.MAX_VALUE
+            }
+            val catalogEpisodeNumbers = if (tvmaze?.turkish == true) value.catalogTurkishEpisodeNumbers(imdbId) else emptyMap()
+            val metadata = Metadata(title, year, original, turkish || tvmaze?.turkish == true, refreshAfter,
+                tvmaze, catalogEpisodeNumbers)
             if (cache.size >= 100) cache.clear()
             cache[key] = metadata
             metadata
         }
+        val broadcast = if (request.type != "anime" && type == "series" && season != null && episode != null)
+            confirmedBroadcast(meta, imdbId, request.videoId, season, episode) else null
         return ExpressMedia(type, meta.title, imdbId, meta.year, season, episode,
-            absoluteNumber = null, anime = request.type == "anime", originalTitle = meta.originalTitle)
+            absoluteNumber = null, anime = request.type == "anime", originalTitle = meta.originalTitle,
+            preferOriginalTitle = meta.turkish && meta.originalTitle != null, turkishBroadcastEpisode = broadcast)
     }
 
-    private suspend fun tvmazeOriginalTitle(imdbId: String, year: Int): String? = try {
+    private suspend fun confirmedBroadcast(meta: Metadata, imdbId: String, videoId: String, season: Int, episode: Int):
+        TurkishBroadcastEpisode? {
+        val show = meta.tvmaze?.takeIf { it.turkish } ?: return null
+        val number = meta.catalogEpisodeNumbers["$imdbId:$season:$episode"] ?: return null
+        val proof = TurkishBroadcastEpisode(videoId.trim(), season, episode, number, show.title, meta.year)
+        val key = "${show.id}:${meta.refreshAfterMillis}:${proof.cacheKey}"
+        broadcastProofs[key]?.let { return it }
+        return withTimeoutOrNull(1_500L) { http.confirmTurkishBroadcastEpisode(show.id, proof) }?.also {
+            if (broadcastProofs.size >= 128) broadcastProofs.clear()
+            broadcastProofs[key] = it
+        }
+    }
+
+    private suspend fun tvmazeShow(imdbId: String, year: Int): TvmazeShow? = try {
         var showId: Int? = null
         fun validate(url: HttpUrl) {
             if (url.scheme != "https" || url.host != "api.tvmaze.com" || url.port != 443)
@@ -203,7 +241,9 @@ class ExpressMetadataResolver @Inject constructor(
         val external = value.get("externals")?.takeIf { it.isJsonObject }?.asJsonObject?.string("imdb")
         if (id == null || (showId != null && showId != id) || external != imdbId ||
             value.string("premiered")?.take(4)?.toIntOrNull() != year) null
-        else value.string("name")?.let(::expressQueryTitle)
+        else value.string("name")?.let(::expressQueryTitle)?.let {
+            TvmazeShow(id, it, value.string("language").equals("Turkish", ignoreCase = true))
+        }
     } catch (error: CancellationException) {
         throw error
     } catch (_: Exception) {
@@ -211,7 +251,7 @@ class ExpressMetadataResolver @Inject constructor(
     }
 }
 
-private fun expressQueryTitle(value: String): String? = Normalizer.normalize(value, Normalizer.Form.NFKC)
+internal fun expressQueryTitle(value: String): String? = Normalizer.normalize(value, Normalizer.Form.NFKC)
     .trim().takeIf { it.isNotEmpty() && it.length <= 256 && it.none(Char::isISOControl) }
 
 private fun foldExpressTitle(value: String): String = Normalizer.normalize(

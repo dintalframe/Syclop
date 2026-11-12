@@ -54,6 +54,7 @@ class AllDebridDirectDebridResolver @Inject constructor(
                     season = season,
                     episode = episode,
                     animeProof = operation?.animeProof,
+                    turkishBroadcastEpisode = operation?.turkishBroadcastEpisode,
                     path = { it.path },
                     isPlayable = { it.path.hasDebridVideoExtension() },
                     size = { it.size ?: 0L }

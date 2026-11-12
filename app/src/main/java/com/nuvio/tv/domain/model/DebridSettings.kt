@@ -244,6 +244,7 @@ enum class DebridStreamLanguage(val code: String, val label: String) {
     KO("ko", "Korean"),
     ZH("zh", "Chinese"),
     HE("he", "Hebrew"),
+    TR("tr", "Turkish"),
     MULTI("multi", "Multi"),
     UNKNOWN("unknown", "Unknown")
 }

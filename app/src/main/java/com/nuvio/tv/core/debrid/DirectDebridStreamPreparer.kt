@@ -42,14 +42,18 @@ class DirectDebridStreamPreparer @Inject constructor(
         if (!settings.canResolvePlayableLinks || limit <= 0) return
 
         val candidates = prioritizeCandidates(
-            streams = streams.filterNot { it.requiresKitsuEpisodeProof(nativeVideoId) },
+            streams = streams.filter { stream ->
+                !stream.requiresKitsuEpisodeProof(nativeVideoId) &&
+                    stream.nativeTurkishBroadcastEpisode?.matchesContext(nativeVideoId, season, episode, null) != false
+            },
             limit = limit,
             playerSettings = playerSettings,
             installedAddonNames = installedAddonNames
         )
         for (stream in candidates) {
             if (!resolver.shouldResolveToPlayableStream(stream)) continue
-            resolver.cachedPlayableStream(stream, season, episode)?.let { cached ->
+            val proofVideoId = nativeVideoId.takeIf { stream.nativeTurkishBroadcastEpisode != null }
+            resolver.cachedPlayableStream(stream, season, episode, proofVideoId)?.let { cached ->
                 onPrepared(stream, cached)
                 continue
             }
@@ -60,7 +64,8 @@ class DirectDebridStreamPreparer @Inject constructor(
             }
 
             try {
-                when (val result = resolver.resolveToPlayableStream(stream, season, episode, allowFallback = false)) {
+                when (val result = resolver.resolveToPlayableStream(stream, season, episode, allowFallback = false,
+                    nativeVideoId = proofVideoId)) {
                     is DirectDebridPlayableResult.Success -> {
                         if (result.stream.getStreamUrl() != null) {
                             onPrepared(stream, result.stream)
@@ -133,7 +138,7 @@ class DirectDebridStreamPreparer @Inject constructor(
         return groups.map { group ->
             var changed = false
             val updatedStreams = group.streams.map { stream ->
-                if (stream.nativeKitsuProofCacheKey == original.nativeKitsuProofCacheKey && stream.preparationKey() == key) {
+                if (stream.nativeSourceProofKey == original.nativeSourceProofKey && stream.preparationKey() == key) {
                     changed = true
                     prepared.copy(
                         addonName = stream.addonName,
@@ -198,7 +203,8 @@ private fun Stream.preparationKey(): String {
         getEffectiveFileIdx()?.toString().orEmpty(),
         getStreamUrl().orEmpty().lowercase(),
         name.orEmpty().lowercase(),
-        title.orEmpty().lowercase()
+        title.orEmpty().lowercase(),
+        nativeTurkishBroadcastEpisode?.cacheKey.orEmpty()
     ).joinToString("|")
 }
 

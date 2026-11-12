@@ -4,6 +4,7 @@ import com.nuvio.tv.core.streams.CompiledStreamBadgeFilter
 import com.nuvio.tv.core.streams.StreamBadgeMatcher
 import com.nuvio.tv.domain.model.DebridSettings
 import com.nuvio.tv.domain.model.DebridStreamEncode
+import com.nuvio.tv.domain.model.DebridStreamLanguage
 import com.nuvio.tv.domain.model.DebridStreamQuality
 import com.nuvio.tv.domain.model.DebridStreamResolution
 import com.nuvio.tv.domain.model.Stream
@@ -29,7 +30,8 @@ class DebridStreamFormatter @Inject constructor(
     ): Stream {
         if (!stream.isManagedDebridForFormatting()) return stream
         val matchedBadges = StreamBadgeMatcher.matchedBadges(stream, compiledBadgeFilters)
-        val values = buildValues(stream, matchedBadges, facts ?: DirectDebridStreamFilter.facts(stream, settings),
+        val sourceFacts = facts ?: DirectDebridStreamFilter.facts(stream, settings)
+        val values = buildValues(stream, matchedBadges, sourceFacts,
             NativeDebridServiceLabels.services(stream, settings, scope, nowMs))
         val formattedName = engine.render(settings.streamNameTemplate, values)
             .lineSequence()
@@ -46,7 +48,8 @@ class DebridStreamFormatter @Inject constructor(
         return stream.copy(
             name = formattedName.ifBlank { stream.name ?: DebridProviders.instantName(stream.clientResolve?.service) },
             description = formattedDescription.ifBlank { stream.description ?: stream.title },
-            badges = matchedBadges
+            badges = matchedBadges,
+            reportedTurkishAudio = DebridStreamLanguage.TR in sourceFacts.languages
         )
     }
 
@@ -69,7 +72,10 @@ class DebridStreamFormatter @Inject constructor(
         }.ifEmpty { facts.visualTags.labelsExcludingUnknown { it.label } }
         val audioTags = parsed?.audio.orEmpty().ifEmpty { facts.audioTags.labelsExcludingUnknown { it.label } }
         val audioChannels = parsed?.channels.orEmpty().ifEmpty { facts.audioChannels.labelsExcludingUnknown { it.label } }
-        val languages = parsed?.languages.orEmpty().ifEmpty { facts.languages.map { it.code }.filterNot { it == "unknown" } }
+        val sourceLanguages = parsed?.languages.orEmpty().ifEmpty { facts.languages.map { it.code }.filterNot { it == "unknown" } }
+        val languages = if (DebridStreamLanguage.TR in facts.languages &&
+            sourceLanguages.none(DirectDebridStreamFilter::isTurkishLanguage)
+        ) sourceLanguages + DebridStreamLanguage.TR.code else sourceLanguages
         val edition = parsed?.edition ?: buildEdition(parsed)
         val matchedBadgeNames = matchedBadges.map { it.name }
 
@@ -169,6 +175,7 @@ class DebridStreamFormatter @Inject constructor(
         map(label).filterNot { it.equals("Unknown", ignoreCase = true) }
 
     private fun languageEmoji(language: String): String {
+        if (DirectDebridStreamFilter.isTurkishLanguage(language)) return "🇹🇷"
         return when (language.lowercase()) {
             "en", "eng", "english" -> "🇬🇧"
             "hi", "hin", "hindi" -> "🇮🇳"
