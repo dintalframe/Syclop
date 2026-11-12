@@ -74,6 +74,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import com.nuvio.tv.ui.components.SyclopBrandAnimation
 import com.nuvio.tv.ui.components.SyclopBrandState
@@ -970,7 +971,7 @@ internal fun RightStreamSection(
                     Column(Modifier.fillMaxWidth()
                         .background(NuvioTheme.colors.BackgroundCard, RoundedCornerShape(NuvioTheme.radii.sm))
                         .padding(NuvioTheme.spacing.sm), verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm)) {
-                        Text(stringResource(sourceResolutionFailure.messageRes), style = MaterialTheme.typography.bodyMedium,
+                        Text(sourceResolutionFailure.localizedMessage(LocalResources.current), style = MaterialTheme.typography.bodyMedium,
                             color = NuvioTheme.colors.TextPrimary)
                         val needsSettings = sourceResolutionFailure.reason == DirectDebridFailureReason.AUTH_EXPIRED
                         androidx.tv.material3.Button(modifier = Modifier.focusRequester(repairFocusRequester), onClick = {

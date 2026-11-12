@@ -27,6 +27,7 @@ import com.nuvio.tv.data.remote.api.RealDebridOAuthApi
 import com.nuvio.tv.data.remote.api.AllDebridAuthApi
 import com.nuvio.tv.core.debrid.RealDebridTokenManager
 import com.nuvio.tv.core.debrid.RealDebridAuthorizationInterceptor
+import com.nuvio.tv.core.network.DebridApiCooldownInterceptor
 import com.nuvio.tv.data.remote.api.AllDebridApi
 import com.nuvio.tv.data.remote.api.SeriesGraphApi
 import com.nuvio.tv.data.remote.api.TmdbApi
@@ -96,6 +97,7 @@ private fun buildAcceptLanguageHeader(): String {
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
+    private val debridApiCooldown = DebridApiCooldownInterceptor()
 
     @Provides
     @Singleton
@@ -195,6 +197,7 @@ object NetworkModule {
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(12, TimeUnit.SECONDS)
+            .addInterceptor(debridApiCooldown)
             .addInterceptor { chain ->
                 val version = BuildConfig.VERSION_NAME.ifBlank { "dev" }
                 val request = chain.request().newBuilder()
@@ -362,6 +365,7 @@ object NetworkModule {
         .connectTimeout(15, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(20, TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false)
+        .addInterceptor(debridApiCooldown)
         .addInterceptor { chain -> chain.proceed(chain.request().newBuilder()
             .header("User-Agent", "Syclop/${BuildConfig.VERSION_NAME}").build()) }
         .build()
@@ -394,7 +398,9 @@ object NetworkModule {
     ): OkHttpClient = client.newBuilder()
         // Blocking REST interceptors must not occupy the OAuth client's per-host queue.
         .dispatcher(okhttp3.Dispatcher())
-        .addInterceptor(RealDebridAuthorizationInterceptor(tokens)).build()
+        // Apply cooldowns to the credential actually sent, including after a 401 refresh.
+        .apply { interceptors().add(0, RealDebridAuthorizationInterceptor(tokens)) }
+        .build()
 
     @Provides
     @Singleton

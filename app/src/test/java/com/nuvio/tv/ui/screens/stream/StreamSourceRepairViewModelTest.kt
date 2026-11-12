@@ -1,9 +1,11 @@
 package com.nuvio.tv.ui.screens.stream
 
 import android.content.Context
+import android.content.res.Resources
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import com.nuvio.tv.MainDispatcherRule
+import com.nuvio.tv.R
 import com.nuvio.tv.core.debrid.DirectDebridFailure
 import com.nuvio.tv.core.debrid.DirectDebridFailureReason
 import com.nuvio.tv.core.debrid.DirectDebridResolveResult
@@ -31,15 +33,41 @@ class StreamSourceRepairViewModelTest {
 
     @Test fun `transient notification acknowledgement cannot erase a typed resolution failure`() {
         for (reason in DirectDebridFailureReason.entries) withFixture { fixture ->
+            val expected = when (reason) {
+                DirectDebridFailureReason.SOURCE_REJECTED -> "Real-Debrid rejected this source"
+                DirectDebridFailureReason.RATE_LIMITED -> "Real-Debrid is limiting requests"
+                else -> EXPLANATION
+            }
             fixture.fail(reason)
-            assertEquals(EXPLANATION, fixture.vm.uiState.value.playbackErrorMessage)
+            assertEquals(expected, fixture.vm.uiState.value.playbackErrorMessage)
 
             fixture.vm.onPlaybackErrorShown()
 
-            assertEquals(reason.name, EXPLANATION, fixture.vm.uiState.value.playbackErrorMessage)
+            assertEquals(reason.name, expected, fixture.vm.uiState.value.playbackErrorMessage)
             assertEquals(reason, fixture.vm.uiState.value.sourceResolutionFailure?.reason)
             assertEquals(listOf(fixture.source), fixture.vm.uiState.value.filteredStreams)
             assertEquals(listOf(fixture.source), fixture.vm.uiState.value.allStreams)
+        }
+    }
+
+    @Test fun `source refusal and rate limits name registered providers`() = withFixture { fixture ->
+        val providerNames = mapOf(
+            "torbox" to "TorBox",
+            "realdebrid" to "Real-Debrid",
+            "alldebrid" to "AllDebrid",
+            "unregistered-provider" to null,
+            null to null
+        )
+        val reasons = mapOf(
+            DirectDebridFailureReason.SOURCE_REJECTED to "rejected this source",
+            DirectDebridFailureReason.RATE_LIMITED to "is limiting requests"
+        )
+        for ((reason, explanation) in reasons) {
+            for ((providerId, providerName) in providerNames) {
+                fixture.fail(DirectDebridResolveResult.Failure(DirectDebridFailure(reason, providerId)))
+                val expected = providerName?.let { "$it $explanation" } ?: EXPLANATION
+                assertEquals(expected, fixture.vm.uiState.value.playbackErrorMessage)
+            }
         }
     }
 
@@ -108,7 +136,19 @@ class StreamSourceRepairViewModelTest {
         val source = Stream(name = "Synthetic source", title = null, description = null, url = null,
             ytId = null, infoHash = "a".repeat(40), fileIdx = null, externalUrl = null,
             behaviorHints = null, addonName = "Fixture", addonLogo = null)
-        private val context = mockk<Context> { every { getString(any()) } returns EXPLANATION }
+        private val testResources = mockk<Resources> {
+            every { getString(any()) } returns EXPLANATION
+            for (provider in listOf("TorBox", "Real-Debrid", "AllDebrid")) {
+                every { getString(R.string.syclop_resolver_source_rejected_by_provider, provider) } returns
+                    "$provider rejected this source"
+                every { getString(R.string.syclop_resolver_rate_limited_by_provider, provider) } returns
+                    "$provider is limiting requests"
+            }
+        }
+        private val context = mockk<Context> {
+            every { getString(any()) } returns EXPLANATION
+            every { resources } returns testResources
+        }
         private val debridStore = mockk<DebridSettingsDataStore>(relaxed = true) {
             every { settings } returns emptyFlow()
             every { activeProfileId } returns MutableStateFlow(1)

@@ -113,6 +113,10 @@ class TorboxCloudLibraryProviderApi @Inject constructor(
     private fun Response<TorboxEnvelopeDto<List<TorboxCloudItemDto>>>.itemsOrThrow(
         type: CloudLibraryItemType
     ): List<CloudLibraryItem> {
+        if (code() == 429) {
+            errorBody()?.close()
+            throw IllegalStateException("TorBox is limiting requests. Wait before refreshing the cloud library.")
+        }
         if (!isSuccessful || body()?.success == false) {
             throw IllegalStateException(body()?.detail ?: body()?.error ?: errorBody()?.string().orEmpty().ifBlank { null })
         }

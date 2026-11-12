@@ -180,10 +180,8 @@ class StreamRepositoryImpl @Inject constructor(
             val raw = streamSearchSessions.peek(buildStreamSearchRequestKey(sourceConfiguration, type, videoId, season, episode))
                 ?: return null
             requireCurrentSourceConfiguration(sourceConfiguration)
-            val annotated = availabilityPermits.withPermit {
-                scopedAvailability {
-                    localDebridAvailabilityService.annotateCachedAvailability(raw, sourceConfiguration.debridSettings)
-                }
+            val annotated = scopedAvailability {
+                localDebridAvailabilityService.annotateFromMemory(raw, sourceConfiguration.debridSettings)
             }
             requireCurrentSourceConfiguration(sourceConfiguration)
             return presentStreams(annotated, sourceConfiguration.debridSettings,

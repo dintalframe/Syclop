@@ -51,15 +51,18 @@ class AllDebridIntegrationTest {
 
     @Test fun `HTTP rate limit retains retry after and emits no server message`() = runTest {
         MockWebServer().use { server ->
-            server.enqueue(json("""{"status":"error","error":{"code":"RATE_LIMIT","message":"$TOKEN"}}""")
-                .setResponseCode(429).setHeader("Retry-After", "120"))
             val store = mockk<DebridSettingsDataStore>()
             every { store.settings } returns flowOf(DebridSettings(allDebridApiKey = TOKEN))
-            val result = AllDebridDirectDebridResolver(store, service(server)).resolve(stream(), 1, 2) as DirectDebridResolveResult.Failure
-            assertEquals(DirectDebridFailureReason.RATE_LIMITED, result.detail.reason)
-            assertEquals(120L, result.detail.retryAfterSeconds)
-            assertFalse(result.toString().contains(TOKEN))
-            assertEquals(1, server.requestCount)
+            val resolver = AllDebridDirectDebridResolver(store, service(server))
+            for (status in listOf(429, 503)) {
+                server.enqueue(json("""{"status":"error","error":{"code":"RATE_LIMIT","message":"$TOKEN"}}""")
+                    .setResponseCode(status).setHeader("Retry-After", "120"))
+                val result = resolver.resolve(stream(), 1, 2) as DirectDebridResolveResult.Failure
+                assertEquals(DirectDebridFailureReason.RATE_LIMITED, result.detail.reason)
+                assertEquals(120L, result.detail.retryAfterSeconds)
+                assertFalse(result.toString().contains(TOKEN))
+            }
+            assertEquals(2, server.requestCount)
         }
     }
 

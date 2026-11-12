@@ -1608,14 +1608,14 @@ class StreamScreenViewModel @Inject constructor(
 
     private fun showDirectDebridResolutionFailure(result: DirectDebridResolveResult) {
         val message = when (result) {
-            is DirectDebridResolveResult.Failure -> result.detail.messageRes
-            DirectDebridResolveResult.MissingApiKey -> R.string.debrid_missing_api_key
-            DirectDebridResolveResult.NotCached -> R.string.syclop_debrid_not_ready
-            DirectDebridResolveResult.Stale -> R.string.debrid_stale_stream
-            DirectDebridResolveResult.Error -> R.string.debrid_resolution_failed
+            is DirectDebridResolveResult.Failure -> result.detail.localizedMessage(context.resources)
+            DirectDebridResolveResult.MissingApiKey -> context.getString(R.string.debrid_missing_api_key)
+            DirectDebridResolveResult.NotCached -> context.getString(R.string.syclop_debrid_not_ready)
+            DirectDebridResolveResult.Stale -> context.getString(R.string.debrid_stale_stream)
+            DirectDebridResolveResult.Error -> context.getString(R.string.debrid_resolution_failed)
             is DirectDebridResolveResult.Success -> return
         }
-        showDirectDebridPlaybackError(context.getString(message), refreshStreams = result == DirectDebridResolveResult.Stale,
+        showDirectDebridPlaybackError(message, refreshStreams = result == DirectDebridResolveResult.Stale,
             failure = (result as? DirectDebridResolveResult.Failure)?.detail)
     }
 

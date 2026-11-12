@@ -8,8 +8,11 @@ import com.nuvio.tv.data.remote.api.RealDebridApi
 import com.nuvio.tv.data.remote.api.TorboxApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
+import okhttp3.ResponseBody.Companion.toResponseBody
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
@@ -17,10 +20,25 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 
 class CloudLibraryProviderDeletionTest {
+    @Test
+    fun `an empty rate limit response is visible when loading either cloud library`() = runTest {
+        val torbox = mockk<TorboxApi>()
+        val premiumize = mockk<PremiumizeApi>()
+        val deletion = mockk<CloudLibraryDeletionTransport>()
+        coEvery { torbox.listCloudTorrents("Bearer $TOKEN") } returns Response.error(429, "".toResponseBody())
+        coEvery { premiumize.listAllItems("Bearer $TOKEN") } returns Response.error(429, "".toResponseBody())
+
+        val torboxFailure = TorboxCloudLibraryProviderApi(torbox, deletion).listItems(TOKEN).exceptionOrNull()
+        val premiumizeFailure = PremiumizeCloudLibraryProviderApi(premiumize, deletion).listItems(TOKEN).exceptionOrNull()
+        assertEquals("TorBox is limiting requests. Wait before refreshing the cloud library.", torboxFailure?.message)
+        assertEquals("Premiumize is limiting requests. Wait before refreshing the cloud library.", premiumizeFailure?.message)
+    }
+
     @Test
     fun `Real Debrid verifies the only raw file before deleting the exact item`() = runTest {
         MockWebServer().use { server ->

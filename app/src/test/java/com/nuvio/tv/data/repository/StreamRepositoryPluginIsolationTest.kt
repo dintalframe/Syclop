@@ -1,6 +1,7 @@
 package com.nuvio.tv.data.repository
 
 import android.content.Context
+import com.nuvio.tv.core.debrid.DebridProviders
 import com.nuvio.tv.core.debrid.DebridStreamPresentation
 import com.nuvio.tv.core.debrid.LocalDebridAvailabilityService
 import com.nuvio.tv.core.debrid.LocalDebridService
@@ -141,32 +142,36 @@ class StreamRepositoryPluginIsolationTest {
     }
 
     @Test
-    fun `cached peek refreshes expired native availability from retained raw candidates`() = runBlocking {
+    fun `cached peek reuses fresh observations without refreshing expired ones`() = runBlocking {
         val h = nativeCacheHarness()
-        coEvery { h.backend.checkCached(any(), any()) } returns emptyMap()
-        h.repository.getStreamsFromAllAddons("movie", "tt1341338").toList()
-        h.now.addAndGet(10_000)
         coEvery { h.backend.checkCached(any(), any()) } returns mapOf(HASH to LocalDebridCachedItem("movie.mkv", 123L))
-        val cached = h.repository.getCachedStreamsFromAllAddons("movie", "tt1341338")
-        assertEquals(1, cached!!.single().streams.size)
-        assertEquals(StreamDebridCacheState.CACHED, cached.single().streams.single().debridCacheStatus?.state)
+        h.repository.getStreamsFromAllAddons("movie", "tt1341338").toList()
+        val fresh = h.repository.getCachedStreamsFromAllAddons("movie", "tt1341338")!!.single().streams.single()
+        assertEquals(StreamDebridCacheState.CACHED, fresh.debridCacheStatus?.state)
+        assertEquals("movie.mkv", fresh.debridCacheStatus?.cachedName)
+
+        h.now.addAndGet(30_000)
+        val expired = h.repository.getCachedStreamsFromAllAddons("movie", "tt1341338")!!.single().streams.single()
+        assertEquals(StreamDebridCacheState.UNKNOWN, expired.debridCacheStatus?.state)
+        assertNull(expired.debridCacheStatus?.cachedName)
         coVerify(exactly = 1) { h.api.getStreams(any()) }
-        coVerify(exactly = 2) { h.backend.checkCached(any(), any()) }
+        coVerify(exactly = 1) { h.backend.checkCached(any(), any()) }
         h.credentialRevision.incrementAndGet()
         assertNull(h.repository.getCachedStreamsFromAllAddons("movie", "tt1341338"))
-        coVerify(exactly = 2) { h.backend.checkCached(any(), any()) }
+        coVerify(exactly = 1) { h.backend.checkCached(any(), any()) }
     }
 
     @Test
     fun `cached peek never returns an observation after its captured account epoch changes`() = runBlocking {
         val h = nativeCacheHarness()
-        coEvery { h.backend.checkCached(any(), any()) } returns emptyMap()
+        coEvery { h.backend.checkCached(any(), any()) } returns mapOf(HASH to LocalDebridCachedItem("old-account.mkv", 123L))
         h.repository.getStreamsFromAllAddons("movie", "tt1341338").toList()
-        h.now.addAndGet(10_000)
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        coEvery { h.backend.checkCached(any(), any()) } coAnswers {
-            entered.complete(Unit); release.await(); mapOf(HASH to LocalDebridCachedItem("old-account.mkv", 123L))
+        coEvery { h.debridSettingsDataStore.credentialForProfile(1, DebridProviders.TORBOX_ID) } coAnswers {
+            entered.complete(Unit)
+            release.await()
+            "synthetic-tb"
         }
         val cached = async { h.repository.getCachedStreamsFromAllAddons("movie", "tt1341338") }
         withTimeout(2_000) { entered.await() }
@@ -174,6 +179,7 @@ class StreamRepositoryPluginIsolationTest {
         release.complete(Unit)
         try { cached.await(); fail("Expected stale cached observation cancellation") }
         catch (_: CancellationException) { }
+        coVerify(exactly = 1) { h.backend.checkCached(any(), any()) }
     }
 
     @Test
@@ -426,7 +432,8 @@ class StreamRepositoryPluginIsolationTest {
             addonRepository = addonRepository,
             pluginManager = pluginManager,
             availability = availability,
-            presentation = presentation, backend = backend, now = now, credentialRevision = credentialRevision
+            presentation = presentation, backend = backend, now = now, credentialRevision = credentialRevision,
+            debridSettingsDataStore = debridSettingsDataStore
         )
     }
 
@@ -496,6 +503,7 @@ class StreamRepositoryPluginIsolationTest {
         val presentation: DebridStreamPresentation,
         val backend: LocalDebridService,
         val now: AtomicLong,
-        val credentialRevision: AtomicLong
+        val credentialRevision: AtomicLong,
+        val debridSettingsDataStore: DebridSettingsDataStore
     )
 }

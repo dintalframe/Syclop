@@ -34,13 +34,17 @@ class LocalDebridAvailabilityService internal constructor(
     private val cache = LinkedHashMap<Key, StreamDebridCacheStatus>()
     private val cooldowns = LinkedHashMap<Pair<StreamAvailabilityScope, String>, Long>()
 
-    suspend fun markChecking(groups: List<AddonStreams>) = markCheckingInternal(groups, null)
+    suspend fun markChecking(groups: List<AddonStreams>) = annotateFromMemory(groups, null, checking = true)
     suspend fun markChecking(groups: List<AddonStreams>, expectedSettings: DebridSettings) =
-        markCheckingInternal(groups, expectedSettings)
+        annotateFromMemory(groups, expectedSettings, checking = true)
 
-    private suspend fun markCheckingInternal(groups: List<AddonStreams>, expected: DebridSettings?): List<AddonStreams> {
+    internal suspend fun annotateFromMemory(groups: List<AddonStreams>, expectedSettings: DebridSettings) =
+        annotateFromMemory(groups, expectedSettings, checking = false)
+
+    private suspend fun annotateFromMemory(groups: List<AddonStreams>, expected: DebridSettings?,
+        checking: Boolean): List<AddonStreams> {
         val snapshot = requiredSnapshot(expected) ?: return groups.clearNativeAvailability()
-        val updated = annotate(groups, snapshot, emptyMap(), checking = true)
+        val updated = annotate(groups, snapshot, emptyMap(), checking)
         if (expected != null && !current(snapshot)) throw CancellationException("The connected service changed.")
         return if (current(snapshot)) updated else groups.clearNativeAvailability()
     }

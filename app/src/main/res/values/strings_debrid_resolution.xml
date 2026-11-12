@@ -4,9 +4,11 @@
     <string name="syclop_resolver_processing">This source is still processing on your connected service. Try another source or return later.</string>
     <string name="syclop_resolver_auth_expired">Your connected service rejected its account authorization. Reconnect the account in Settings.</string>
     <string name="syclop_resolver_rate_limited">Your connected service is limiting requests. Wait before trying it again.</string>
+    <string name="syclop_resolver_rate_limited_by_provider">%1$s is limiting requests. Wait before trying it again.</string>
     <string name="syclop_resolver_timed_out">Source resolution timed out. Try another source.</string>
     <string name="syclop_resolver_wrong_episode">This source does not contain an unambiguous file for your selection. Choose another source.</string>
     <string name="syclop_resolver_network_failure">The connected service could not be reached. Check your connection or try another source.</string>
     <string name="syclop_resolver_unavailable">This source is currently unavailable on your connected services.</string>
     <string name="syclop_resolver_source_rejected">Your connected service rejected this source (HTTP 451). Choose another source.</string>
+    <string name="syclop_resolver_source_rejected_by_provider">%1$s rejected this source (HTTP 451). Choose another source.</string>
 </resources>

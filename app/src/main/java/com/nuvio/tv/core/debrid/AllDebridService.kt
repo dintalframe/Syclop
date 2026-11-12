@@ -1,5 +1,6 @@
 package com.nuvio.tv.core.debrid
 
+import com.nuvio.tv.core.network.shouldApplyBackendCooldown
 import com.nuvio.tv.data.remote.api.AllDebridApi
 import com.nuvio.tv.data.remote.dto.AllDebridEnvelope
 import com.nuvio.tv.data.remote.dto.AllDebridFileNodeDto
@@ -84,21 +85,25 @@ internal fun <T> Response<AllDebridEnvelope<T>>.dataOrThrow(): T {
     val envelope = body()
     if (isSuccessful && envelope?.successful == true) return envelope.data!!
     errorBody()?.close()
+    val retryAfter = headers()["Retry-After"]
+    val rateLimited = shouldApplyBackendCooldown(code(), retryAfter)
     val message = when {
-        code() == 429 -> "AllDebrid is rate limiting requests. Try again shortly."
+        rateLimited -> "AllDebrid is rate limiting requests. Try again shortly."
         envelope?.error?.code in setOf("AUTH_BAD_APIKEY", "AUTH_MISSING_APIKEY") -> "AllDebrid API key is invalid."
         envelope?.error?.code == "AUTH_BLOCKED" -> "AllDebrid blocked this connection. Check the account security settings."
         envelope?.error?.code in setOf("MUST_BE_PREMIUM", "MAGNET_MUST_BE_PREMIUM") -> "An active AllDebrid subscription is required."
         else -> "AllDebrid request failed. Check the service and network connection."
     }
     val reason = when {
-        code() == 429 -> DirectDebridFailureReason.RATE_LIMITED
+        rateLimited -> DirectDebridFailureReason.RATE_LIMITED
+        code() == 451 -> DirectDebridFailureReason.SOURCE_REJECTED
+        code() == 503 -> DirectDebridFailureReason.NETWORK_FAILURE
         code() in setOf(401, 403) || envelope?.error?.code in setOf("AUTH_BAD_APIKEY", "AUTH_MISSING_APIKEY",
             "AUTH_BLOCKED", "MUST_BE_PREMIUM", "MAGNET_MUST_BE_PREMIUM") -> DirectDebridFailureReason.AUTH_EXPIRED
         else -> DirectDebridFailureReason.UNAVAILABLE
     }
     throw AllDebridApiException(message, code().takeIf { it in 100..599 }, reason,
-        if (reason == DirectDebridFailureReason.RATE_LIMITED) parseDebridRetryAfter(headers()["Retry-After"]) ?: 60L else null)
+        if (rateLimited) parseDebridRetryAfter(retryAfter) ?: 60L else null)
 }
 
 internal fun String?.isHttpUrl(): Boolean =

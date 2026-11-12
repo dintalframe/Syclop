@@ -1,5 +1,6 @@
 package com.nuvio.tv.core.debrid
 
+import android.content.res.Resources
 import com.nuvio.tv.R
 import java.io.IOException
 import java.text.ParsePosition
@@ -26,6 +27,17 @@ data class DirectDebridFailure(
         DirectDebridFailureReason.NETWORK_FAILURE -> R.string.syclop_resolver_network_failure
         DirectDebridFailureReason.SOURCE_REJECTED -> R.string.syclop_resolver_source_rejected
         DirectDebridFailureReason.UNAVAILABLE -> R.string.syclop_resolver_unavailable
+    }
+
+    internal fun localizedMessage(resources: Resources): String {
+        val format = when (reason) {
+            DirectDebridFailureReason.RATE_LIMITED -> R.string.syclop_resolver_rate_limited_by_provider
+            DirectDebridFailureReason.SOURCE_REJECTED -> R.string.syclop_resolver_source_rejected_by_provider
+            else -> return resources.getString(messageRes)
+        }
+        val provider = DebridProviders.byId(providerId) ?: return resources.getString(messageRes)
+        val providerName = if (provider.id == DebridProviders.TORBOX_ID) "TorBox" else provider.displayName
+        return resources.getString(format, providerName)
     }
 }
 

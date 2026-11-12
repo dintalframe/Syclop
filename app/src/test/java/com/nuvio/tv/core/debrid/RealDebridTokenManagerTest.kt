@@ -34,6 +34,31 @@ class RealDebridTokenManagerTest {
     private val store = MemoryStore()
     private val manager = RealDebridTokenManager(api, store, { 10_000L })
 
+    @Test fun `REST cooldown survives an expired token being refreshed before dispatch`() = runTest {
+        store.state = old(expired = true)
+        val refreshedToken = "cooldown-refreshed"
+        coEvery { api.token(any(), any(), any(), any()) } returns Response.success(
+            RealDebridOAuthTokenDto(refreshedToken, "rotated", 3600, "Bearer")
+        )
+        var requests = 0
+        val authClient = NetworkModule.provideDebridAuthClient().newBuilder().addInterceptor { chain ->
+            requests++
+            assertEquals("Bearer $refreshedToken", chain.request().header("Authorization"))
+            okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(429).message("Test cooldown").header("Retry-After", "60")
+                .body("".toResponseBody()).build()
+        }.build()
+        val rest = NetworkModule.provideRealDebridRestClient(authClient, manager)
+        val request = Request.Builder().url("https://api.real-debrid.com/rest/1.0/user")
+        rest.newCall(request.header("Authorization", "Bearer old").build()).execute().use {
+            assertEquals(429, it.code)
+        }
+        rest.newCall(request.header("Authorization", "Bearer $refreshedToken").build()).execute().use {
+            assertEquals(429, it.code)
+        }
+        assertEquals(1, requests)
+    }
+
     @Test fun `expired access token refreshes once and rotates every credential atomically`() = runTest {
         store.state = old(expired = true)
         var calls = 0

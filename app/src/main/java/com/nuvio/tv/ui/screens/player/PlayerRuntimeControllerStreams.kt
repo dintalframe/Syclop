@@ -1887,7 +1887,7 @@ internal suspend fun PlayerRuntimeController.resolveDirectDebridStreamIfNeeded(
         is DirectDebridPlayableResult.Failure -> {
             recordLoadingDiagnosticEvent(
                 phase = "resolving_debrid_failed",
-                message = context.getString(result.detail.messageRes),
+                message = result.detail.localizedMessage(context.resources),
                 detail = result.detail.reason.name
             )
             null

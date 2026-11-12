@@ -17,6 +17,10 @@ class PremiumizeCloudLibraryProviderApi @Inject constructor(
     override suspend fun listItems(apiKey: String): Result<List<CloudLibraryItem>> =
         runCatching {
             val response = api.listAllItems("Bearer $apiKey")
+            if (response.code() == 429) {
+                response.errorBody()?.close()
+                throw IllegalStateException("Premiumize is limiting requests. Wait before refreshing the cloud library.")
+            }
             if (!response.isSuccessful || response.body()?.status.equals("error", ignoreCase = true)) {
                 throw IllegalStateException(response.body()?.message ?: response.body()?.code ?: response.errorBody()?.string().orEmpty().ifBlank { null })
             }
