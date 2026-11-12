@@ -3,6 +3,8 @@ package com.nuvio.tv.ui.screens.player
 import com.nuvio.tv.core.debrid.DebridStreamFormatter
 import com.nuvio.tv.core.debrid.DebridStreamPresentation
 import com.nuvio.tv.core.debrid.DebridStreamTemplateEngine
+import com.nuvio.tv.core.debrid.DirectDebridFailure
+import com.nuvio.tv.core.debrid.DirectDebridFailureReason
 import com.nuvio.tv.core.debrid.DirectDebridPlayableResult
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.party.PartyUiState
@@ -39,6 +41,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -64,6 +67,31 @@ class PlayerNextEpisodeSourcePreferenceTest {
         assertEquals(listOf(HASH_B), f.resolved.map { it.getEffectiveInfoHash() })
         assertEquals("tt-fixture:1:1", f.ui.value.currentVideoId)
         assertEquals(3, (f.ui.value.postPlayMode as? PostPlayMode.AutoPlay)?.countdownSec)
+    }
+
+    @Test
+    fun `next episode tries the next ranked source after the first is refused`() = runTest {
+        val f = fixture(rejectedHash = HASH_B)
+        stubPickerFetches(f.controller)
+
+        f.controller.playNextEpisode(userInitiated = true)
+        runCurrent()
+
+        assertEquals(listOf(HASH_B, HASH_A), f.resolved.map { it.getEffectiveInfoHash() })
+        assertEquals(3, (f.ui.value.postPlayMode as? PostPlayMode.AutoPlay)?.countdownSec)
+    }
+
+    @Test
+    fun `credential change during next episode recovery discards the selection`() = runTest {
+        val f = fixture(rejectedHash = HASH_B, changeCredentialOnRejection = true)
+        stubPickerFetches(f.controller)
+
+        f.controller.playNextEpisode(userInitiated = true)
+        runCurrent()
+
+        assertEquals(listOf(HASH_B), f.resolved.map { it.getEffectiveInfoHash() })
+        assertNull(f.ui.value.postPlayMode)
+        assertFalse(f.ui.value.showEpisodeStreams)
     }
 
     @Test
@@ -135,13 +163,14 @@ class PlayerNextEpisodeSourcePreferenceTest {
     }
 
     @Test
-    fun `binge only manual next does not replace a missing release with better quality`() = runTest {
+    fun `binge only manual next opens picker despite a matching filename outside the group`() = runTest {
         val f = fixture(
             playerSettings = nextSettings.copy(streamAutoPlayMode = StreamAutoPlayMode.MANUAL,
                 streamAutoPlayNextEpisodeEnabled = false,
                 streamAutoPlayNextEpisodeFallbackEnabled = false,
                 streamAutoPlayPreferBingeGroupForNextEpisode = true),
-            currentBingeGroup = "missing-release"
+            currentBingeGroup = "missing-release",
+            currentFilename = "Fixture.S01E01.2160p.mp4"
         )
         stubPickerFetches(f.controller)
 
@@ -175,11 +204,16 @@ class PlayerNextEpisodeSourcePreferenceTest {
         currentBingeGroup: String? = null,
         currentFilename: String? = null,
         streamA: Stream = source("A", HASH_A, "2160p"),
-        streamB: Stream = source("B", HASH_B, "1080p")
+        streamB: Stream = source("B", HASH_B, "1080p"),
+        rejectedHash: String? = null,
+        changeCredentialOnRejection: Boolean = false
     ): Fixture {
         val settings = DebridSettings(torboxApiKey = "owned-test-fixture", streamPreferences = preferences)
         val settingsStore = mockk<DebridSettingsDataStore>(relaxed = true)
         every { settingsStore.settings } returns flowOf(settings)
+        every { settingsStore.activeProfileId } returns MutableStateFlow(1)
+        var credentialRevision = 1L
+        every { settingsStore.activeCredentialRevision } answers { credentialRevision }
         val presentation = DebridStreamPresentation(settingsStore,
             mockk<StreamBadgeSettingsDataStore>(relaxed = true),
             DebridStreamFormatter(DebridStreamTemplateEngine()), nativeGrant = { false })
@@ -196,6 +230,7 @@ class PlayerNextEpisodeSourcePreferenceTest {
         val controller = mockk<PlayerRuntimeController>(relaxed = true)
         every { controller._uiState } returns ui
         every { controller.scope } returns backgroundScope
+        every { controller.profileId } returns 1
         every { controller.contentId } returns "tt-fixture"
         every { controller.contentType } returns "series"
         every { controller.currentVideoId } returns "tt-fixture:1:1"
@@ -225,7 +260,10 @@ class PlayerNextEpisodeSourcePreferenceTest {
         coEvery { resolver.resolveToPlayableStream(any(), 1, 2, any(), next.id, any(), "series", any()) } coAnswers {
             val selected = firstArg<Stream>()
             resolved += selected
-            DirectDebridPlayableResult.Success(selected.copy(url = "https://playback.example.invalid/next.mp4"))
+            if (selected.getEffectiveInfoHash() == rejectedHash) {
+                if (changeCredentialOnRejection) credentialRevision++
+                DirectDebridPlayableResult.Failure(DirectDebridFailure(DirectDebridFailureReason.SOURCE_REJECTED))
+            } else DirectDebridPlayableResult.Success(selected.copy(url = "https://playback.example.invalid/next.mp4"))
         }
         return Fixture(controller, ui, resolved, presentation, settings, groups)
     }

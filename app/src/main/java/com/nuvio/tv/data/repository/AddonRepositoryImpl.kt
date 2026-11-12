@@ -409,6 +409,20 @@ class AddonRepositoryImpl(
         triggerRemoteSync()
     }
 
+    internal suspend fun configuredAddonUrls(profileId: Int): List<String> =
+        preferences.installedUrlsForProfiles(listOf(profileId)).map(::canonicalizeUrl).distinct()
+
+    internal suspend fun setExistingAddonOrder(
+        urls: List<String>,
+        expectedUrls: List<String>,
+        profileId: Int,
+        isCurrent: () -> Boolean
+    ): Boolean {
+        if (!preferences.setExistingAddonOrder(urls, expectedUrls, profileId, isCurrent)) return false
+        if (urls != expectedUrls && isCurrent()) triggerRemoteSync()
+        return true
+    }
+
     override suspend fun setAddonEnabled(url: String, enabled: Boolean) {
         val cleanUrl = canonicalizeUrl(url)
         if (!preferences.setAddonEnabled(cleanUrl, enabled)) return

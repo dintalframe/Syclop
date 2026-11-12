@@ -133,6 +133,7 @@ class SearchViewModel @Inject constructor(
                             discoverInitialized = false,
                             discoverLoading = false,
                             discoverLoadingMore = false,
+                            discoverLoadFailed = false,
                             discoverCatalogs = emptyList(),
                             selectedDiscoverType = "movie",
                             selectedDiscoverCatalogKey = null,
@@ -140,7 +141,7 @@ class SearchViewModel @Inject constructor(
                             discoverResults = emptyList(),
                             pendingDiscoverResults = emptyList(),
                             discoverHasMore = true,
-                            discoverPage = 1
+                            discoverNextSkip = 0
                         )
                     }
                 }
@@ -239,7 +240,8 @@ class SearchViewModel @Inject constructor(
             is SearchEvent.LoadMoreCatalog -> loadMoreCatalogItems(
                 catalogId = event.catalogId,
                 addonId = event.addonId,
-                type = event.type
+                type = event.type,
+                rowKey = event.rowKey
             )
             is SearchEvent.SelectDiscoverType -> selectDiscoverType(event.type)
             is SearchEvent.SelectDiscoverCatalog -> selectDiscoverCatalog(event.catalogKey)
@@ -778,10 +780,11 @@ class SearchViewModel @Inject constructor(
      * assignment back into [catalogsMap] is gated on that run still being current, so a late page
      * cannot merge into a different query's rows.
      */
-    private fun loadMoreCatalogItems(catalogId: String, addonId: String, type: String) {
-        val (key, currentRow) = catalogsMap.entries.firstOrNull { (_, row) ->
+    private fun loadMoreCatalogItems(catalogId: String, addonId: String, type: String, rowKey: String?) {
+        val key = rowKey ?: catalogsMap.entries.firstOrNull { (_, row) ->
             row.addonId == addonId && row.apiType == type && row.catalogId == catalogId
-        }?.let { it.key to it.value } ?: return
+        }?.key ?: return
+        val currentRow = catalogsMap[key] ?: return
 
         if (currentRow.isLoading || !currentRow.hasMore) {
             return
@@ -797,8 +800,9 @@ class SearchViewModel @Inject constructor(
         scheduleCatalogRowsUpdate()
 
         val job = viewModelScope.launch {
-            val addon = uiState.value.installedAddons.find { it.id == addonId && it.baseUrl == currentRow.addonBaseUrl }
-                ?: uiState.value.installedAddons.find { it.id == addonId } ?: run {
+            val addon = uiState.value.installedAddons.find {
+                it.id == currentRow.addonId && it.baseUrl == currentRow.addonBaseUrl
+            } ?: run {
                 clearRowLoading(key, generation, query)
                 return@launch
             }
@@ -808,7 +812,7 @@ class SearchViewModel @Inject constructor(
                 addonBaseUrl = addon.baseUrl,
                 addonId = addon.id,
                 addonName = addon.displayName,
-                catalogId = catalogId,
+                catalogId = currentRow.catalogId,
                 catalogName = currentRow.catalogName,
                 type = currentRow.apiType,
                 skip = nextSkip,
@@ -950,10 +954,11 @@ class SearchViewModel @Inject constructor(
                 selectedDiscoverGenre = selectedGenre,
                 discoverInitialized = true,
                 discoverLoading = false,
+                discoverLoadFailed = false,
                 discoverResults = emptyList(),
                 pendingDiscoverResults = emptyList(),
                 discoverHasMore = true,
-                discoverPage = 1
+                discoverNextSkip = 0
             )
         }
         selectedCatalog?.let { catalog ->
@@ -979,7 +984,10 @@ class SearchViewModel @Inject constructor(
                 selectedDiscoverGenre = selectedGenre,
                 discoverResults = emptyList(),
                 pendingDiscoverResults = emptyList(),
-                discoverPage = 1,
+                discoverLoading = false,
+                discoverLoadingMore = false,
+                discoverLoadFailed = false,
+                discoverNextSkip = 0,
                 discoverHasMore = true
             )
         }
@@ -1000,7 +1008,8 @@ class SearchViewModel @Inject constructor(
                 selectedDiscoverGenre = null,
                 discoverResults = emptyList(),
                 pendingDiscoverResults = emptyList(),
-                discoverPage = 1,
+                discoverLoadFailed = false,
+                discoverNextSkip = 0,
                 discoverHasMore = true
             )
         }
@@ -1016,7 +1025,8 @@ class SearchViewModel @Inject constructor(
                 selectedDiscoverGenre = genre,
                 discoverResults = emptyList(),
                 pendingDiscoverResults = emptyList(),
-                discoverPage = 1,
+                discoverLoadFailed = false,
+                discoverNextSkip = 0,
                 discoverHasMore = true
             )
         }
@@ -1024,11 +1034,14 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun loadNextDiscoverResults() {
-        if (_uiState.value.pendingDiscoverResults.isNotEmpty()) {
+        val state = _uiState.value
+        if (state.query.isNotBlank() || state.discoverLoading || state.discoverLoadingMore) return
+        if (state.pendingDiscoverResults.isNotEmpty()) {
             showMoreDiscoverResults()
-        } else {
-            revealBatchAfterNextDiscoverFetch = true
-            loadMoreDiscoverResults()
+        } else if (state.discoverHasMore || state.discoverLoadFailed) {
+            val reset = state.discoverNextSkip == 0
+            revealBatchAfterNextDiscoverFetch = !reset
+            fetchDiscoverContent(reset, retry = state.discoverLoadFailed)
         }
     }
 
@@ -1045,14 +1058,7 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    private fun loadMoreDiscoverResults() {
-        val state = _uiState.value
-        if (state.query.trim().isNotEmpty()) return
-        if (!state.discoverHasMore || state.discoverLoadingMore || state.pendingDiscoverResults.isNotEmpty()) return
-        fetchDiscoverContent(reset = false)
-    }
-
-    private fun fetchDiscoverContent(reset: Boolean) {
+    private fun fetchDiscoverContent(reset: Boolean, retry: Boolean = false) {
         discoverJob?.cancel()
         discoverJob = viewModelScope.launch {
             val state = _uiState.value
@@ -1065,9 +1071,11 @@ class SearchViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         discoverLoading = true,
+                        discoverLoadingMore = false,
+                        discoverLoadFailed = retry,
                         discoverResults = emptyList(),
                         pendingDiscoverResults = emptyList(),
-                        discoverPage = 1,
+                        discoverNextSkip = 0,
                         discoverHasMore = true
                     )
                 }
@@ -1075,8 +1083,7 @@ class SearchViewModel @Inject constructor(
                 _uiState.update { it.copy(discoverLoadingMore = true) }
             }
 
-            val currentPage = if (reset) 1 else state.discoverPage + 1
-            val skip = if (currentPage <= 1) 0 else (currentPage - 1) * selectedCatalog.skipStep
+            val skip = if (reset) 0 else state.discoverNextSkip
             val visibleCountBeforeRequest = state.discoverResults.size
             val extraArgs = buildMap<String, String> {
                 state.selectedDiscoverGenre?.takeIf { it.isNotBlank() }?.let { put("genre", it) }
@@ -1134,10 +1141,11 @@ class SearchViewModel @Inject constructor(
                             it.copy(
                                 discoverLoading = false,
                                 discoverLoadingMore = false,
+                                discoverLoadFailed = false,
                                 discoverResults = visible,
                                 pendingDiscoverResults = pending,
-                                discoverHasMore = if (shouldStopPagination) false else result.data.hasMore,
-                                discoverPage = if (shouldStopPagination) it.discoverPage else currentPage
+                                discoverHasMore = !shouldStopPagination && result.data.hasMore && result.data.nextSkip > skip,
+                                discoverNextSkip = result.data.nextSkip
                             )
                         }
                         revealBatchAfterNextDiscoverFetch = false
@@ -1148,7 +1156,7 @@ class SearchViewModel @Inject constructor(
                             it.copy(
                                 discoverLoading = false,
                                 discoverLoadingMore = false,
-                                discoverHasMore = false
+                                discoverLoadFailed = true
                             )
                         }
                     }

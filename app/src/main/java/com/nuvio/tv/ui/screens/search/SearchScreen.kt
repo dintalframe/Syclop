@@ -139,7 +139,7 @@ private val NAVIGATION_KEYS = setOf(
 fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
     onNavigateToDetail: (String, String, String) -> Unit,
-    onNavigateToSeeAll: (catalogId: String, addonId: String, type: String) -> Unit = { _, _, _ -> },
+    onNavigateToSeeAll: (catalogId: String, addonId: String, type: String, rowKey: String) -> Unit = { _, _, _, _ -> },
     onOpenDiscover: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -827,7 +827,7 @@ fun SearchScreen(
                             val catalogKey = catalogRow.stableKey()
                             val isPlaceholder = catalogRow.isLoading &&
                                 catalogRow.items.firstOrNull()?.id?.startsWith("__placeholder_") == true
-                            val hasEnoughForSeeAll = !isPlaceholder && catalogRow.items.size >= 15
+                            val showSeeAll = !isPlaceholder && catalogRow.canOpenSearchSeeAll()
                             val itemKeys = remember(catalogKey, catalogRow.items) { catalogRow.stableItemKeys() }
                             val rememberedItemIndex = searchRowFocusedItems[catalogKey]?.indexIn(itemKeys) ?: -1
                             val restoreItem = pendingSearchFocus?.item?.takeIf {
@@ -860,7 +860,7 @@ fun SearchScreen(
                             CatalogRowSection(
                                 catalogRow = catalogRow,
                                 posterCardStyle = posterCardStyle,
-                                showSeeAll = hasEnoughForSeeAll,
+                                showSeeAll = showSeeAll,
                                 showPosterLabels = uiState.posterLabelsEnabled,
                                 showAddonName = uiState.catalogAddonNameEnabled,
                                 showCatalogTypeSuffix = uiState.catalogTypeSuffixEnabled,
@@ -927,7 +927,8 @@ fun SearchScreen(
                                     onNavigateToSeeAll(
                                         catalogRow.catalogId,
                                         catalogRow.addonId,
-                                        catalogRow.apiType
+                                        catalogRow.apiType,
+                                        catalogKey
                                     )
                                 }
                             )

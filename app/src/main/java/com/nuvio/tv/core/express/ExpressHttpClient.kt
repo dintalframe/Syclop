@@ -66,7 +66,7 @@ class ExpressHttpClient internal constructor(
     suspend fun get(
         value: String,
         maxBytes: Int = 4 * 1024 * 1024,
-        beforeRedirect: ((HttpUrl) -> Unit)? = null
+        beforeRedirect: (suspend (HttpUrl) -> Unit)? = null
     ): ExpressDocument {
         var target = validatedUrl(value)
         repeat(4) { redirectIndex ->

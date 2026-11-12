@@ -1183,9 +1183,9 @@ private fun PlaybackNavHost(
                         )
                     )
                 },
-                onNavigateToSeeAll = { catalogId, addonId, type ->
+                onNavigateToSeeAll = { catalogId, addonId, type, rowKey ->
                     navController.navigate(
-                        Screen.CatalogSeeAll.createRoute(catalogId, addonId, type, fromSearch = true)
+                        Screen.CatalogSeeAll.createRoute(catalogId, addonId, type, fromSearch = true, searchCatalogKey = rowKey)
                     )
                 },
                 onOpenDiscover = { navController.navigate(Screen.Discover.route) }
@@ -1435,6 +1435,11 @@ private fun PlaybackNavHost(
                 navArgument("fromSearch") {
                     type = NavType.BoolType
                     defaultValue = false
+                },
+                navArgument("searchCatalogKey") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
                 }
             )
         ) { backStackEntry ->
@@ -1473,6 +1478,7 @@ private fun PlaybackNavHost(
                 addonId = addonId,
                 type = type,
                 searchViewModel = searchViewModel,
+                searchCatalogKey = backStackEntry.arguments?.getString("searchCatalogKey"),
                 viewModel = homeViewModel,
                 onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
                     navController.navigate(Screen.Detail.createRoute(itemId, itemType, addonBaseUrl))

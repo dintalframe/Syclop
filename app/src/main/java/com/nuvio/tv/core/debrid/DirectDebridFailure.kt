@@ -16,7 +16,8 @@ enum class DirectDebridFailureReason {
 data class DirectDebridFailure(
     val reason: DirectDebridFailureReason,
     val providerId: String? = null,
-    val retryAfterSeconds: Long? = null
+    val retryAfterSeconds: Long? = null,
+    internal val anotherProviderHadSourceFailure: Boolean = false
 ) {
     val messageRes: Int get() = when (reason) {
         DirectDebridFailureReason.PROCESSING -> R.string.syclop_resolver_processing
@@ -39,6 +40,18 @@ data class DirectDebridFailure(
         val providerName = if (provider.id == DebridProviders.TORBOX_ID) "TorBox" else provider.displayName
         return resources.getString(format, providerName)
     }
+}
+
+internal fun DirectDebridResolveResult?.canTryAnotherSource(): Boolean = when (this) {
+    DirectDebridResolveResult.NotCached -> true
+    is DirectDebridResolveResult.Failure -> detail.anotherProviderHadSourceFailure || when (detail.reason) {
+        DirectDebridFailureReason.PROCESSING,
+        DirectDebridFailureReason.UNAVAILABLE,
+        DirectDebridFailureReason.SOURCE_REJECTED,
+        DirectDebridFailureReason.WRONG_EPISODE -> true
+        else -> false
+    }
+    else -> false
 }
 
 internal class DirectDebridHttpException(val status: Int, val retryAfterSeconds: Long?) :

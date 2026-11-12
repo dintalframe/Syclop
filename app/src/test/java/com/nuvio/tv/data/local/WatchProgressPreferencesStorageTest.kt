@@ -20,12 +20,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -95,6 +97,47 @@ class WatchProgressPreferencesStorageTest {
                 assertEquals(emptyPreferences(), replacement.data.first())
                 replacement.edit { it[key] = "new owner" }
                 assertEquals("new owner", replacement.data.first()[key])
+            }
+        } finally {
+            withContext(NonCancellable) { withTimeout(10_000L) { factory.clearProfile(profileId) } }
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `existing progress observer follows a recreated profile`() = runBlocking {
+        val directory = Files.createTempDirectory("watch-progress-profile-recreation").toFile()
+        val context = mockk<Context>(relaxed = true) {
+            every { applicationContext } returns this
+            every { filesDir } returns directory
+        }
+        val factory = ProfileDataStoreFactory(context)
+        val profileId = 2
+        val profileManager = mockk<ProfileManager> {
+            every { activeProfileId } returns MutableStateFlow(profileId)
+        }
+        val preferences = WatchProgressPreferences(factory, profileManager)
+        val progress = preferences.observeAllProgress(profileId)
+        val original = progress("old-viewer", lastWatched = 1L)
+        val replacement = progress("new-viewer", lastWatched = 2L)
+        try {
+            withTimeout(10_000L) {
+                preferences.saveProgress(original, profileId)
+                assertEquals(listOf(original), progress.first { it.isNotEmpty() })
+                factory.clearProfile(profileId)
+                assertEquals(emptyList<WatchProgress>(), progress.first())
+                File(directory, "datastore").listFiles().orEmpty()
+                    .filter { it.name.endsWith("_p2.preferences_pb") || it.name.endsWith("_p2.preferences_pb.bak") }
+                    .forEach { assertTrue(it.delete()) }
+                factory.markProfileCreated(profileId)
+
+                preferences.saveProgress(replacement, profileId)
+                assertEquals(WATCH_PROGRESS_STORAGE_VERSION,
+                    factory.get(profileId, WATCH_PROGRESS_METADATA_FEATURE).data.first()[watchProgressStorageVersionKey])
+                assertEquals(replacement, preferences.getAllRawEntries(profileId)["new-viewer"])
+                assertEquals(listOf(replacement), withTimeoutOrNull(1_000L) {
+                    progress.first { entries -> entries.any { it.contentId == replacement.contentId } }
+                })
             }
         } finally {
             withContext(NonCancellable) { withTimeout(10_000L) { factory.clearProfile(profileId) } }
@@ -545,6 +588,8 @@ class WatchProgressPreferencesStorageTest {
             WATCH_PROGRESS_ARCHIVE_FEATURE to archive
         )
         val factory = mockk<ProfileDataStoreFactory>()
+        every { factory.profileStorageLifetime(any()) } returns ProfileStorageLifetime()
+        every { factory.observeProfileStorageLifetime(any()) } returns flowOf(ProfileStorageLifetime())
         every { factory.get(any(), any()) } answers {
             stores.getValue(secondArg<String>())
         }
@@ -564,6 +609,8 @@ class WatchProgressPreferencesStorageTest {
         val activeProfile = MutableStateFlow(1)
         val stores = mutableMapOf<Pair<Int, String>, TestPreferencesDataStore>()
         val factory = mockk<ProfileDataStoreFactory>()
+        every { factory.profileStorageLifetime(any()) } returns ProfileStorageLifetime()
+        every { factory.observeProfileStorageLifetime(any()) } returns flowOf(ProfileStorageLifetime())
         every { factory.get(any(), any()) } answers {
             stores.getOrPut(firstArg<Int>() to secondArg<String>()) {
                 TestPreferencesDataStore()

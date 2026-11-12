@@ -22,6 +22,9 @@ internal data class HomeBrowseState(val section: HomeBrowseSection = HomeBrowseS
     val moreCatalogs: Boolean = false, val originRevision: Long = -1L, val failed: Boolean = false,
     val requestRevision: Long = 0L)
 
+internal fun HomeBrowseState.emptyPaginatableRows(): List<HomeBrowseRow> =
+    rows.filter { row -> row.data?.let { it.items.isEmpty() && it.hasMore } == true }
+
 /** Read-only category browsing. It never edits Home catalog order/visibility, Library or accounts. */
 @HiltViewModel
 class HomeBrowseViewModel @Inject constructor(

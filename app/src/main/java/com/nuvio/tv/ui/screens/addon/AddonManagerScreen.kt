@@ -174,15 +174,15 @@ fun AddonManagerScreen(
             addon.enabled && addon.catalogs.any { catalog -> !catalog.isSearchOnlyCatalog() }
         }
     }
-    val manageFromPhoneSubtitle = if (webConfigMode == com.nuvio.tv.core.server.AddonWebConfigMode.COLLECTIONS_ONLY) {
-        stringResource(R.string.addon_manage_collections_from_phone_subtitle)
-    } else {
-        stringResource(R.string.addon_manage_from_phone_subtitle)
+    val manageFromPhoneSubtitle = when (webConfigMode) {
+        com.nuvio.tv.core.server.AddonWebConfigMode.COLLECTIONS_ONLY -> stringResource(R.string.addon_manage_collections_from_phone_subtitle)
+        com.nuvio.tv.core.server.AddonWebConfigMode.ADDONS_ONLY -> stringResource(R.string.addon_qr_reorder_scan_instruction)
+        else -> stringResource(R.string.addon_manage_from_phone_subtitle)
     }
-    val qrInstruction = if (webConfigMode == com.nuvio.tv.core.server.AddonWebConfigMode.COLLECTIONS_ONLY) {
-        stringResource(R.string.addon_qr_collections_scan_instruction)
-    } else {
-        stringResource(R.string.addon_qr_scan_instruction)
+    val qrInstruction = when (webConfigMode) {
+        com.nuvio.tv.core.server.AddonWebConfigMode.COLLECTIONS_ONLY -> stringResource(R.string.addon_qr_collections_scan_instruction)
+        com.nuvio.tv.core.server.AddonWebConfigMode.ADDONS_ONLY -> manageFromPhoneSubtitle
+        else -> stringResource(R.string.addon_qr_scan_instruction)
     }
 
     BackHandler { onBackPress() }
@@ -1129,29 +1129,6 @@ internal fun ConfirmAddonChangesDialog(
                             .padding(NuvioTheme.spacing.md)
                             .verticalScroll(scrollState)
                     ) {
-                        if (pendingChange.addedUrls.isNotEmpty()) {
-                            Text(
-                                text = stringResource(R.string.addon_confirm_added),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = NuvioTheme.colors.Success,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = NuvioTheme.spacing.xs)
-                            )
-                            pendingChange.addedUrls.forEach { url ->
-                                val displayName = pendingChange.addedNames[url] ?: url
-                                Text(
-                                    text = "+ $displayName",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = NuvioTheme.colors.Success,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(start = NuvioTheme.spacing.sm, bottom = NuvioTheme.spacing.xxs)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(NuvioTheme.spacing.sm))
-                        }
-
                         if (pendingChange.removedUrls.isNotEmpty()) {
                             Text(
                                 text = stringResource(R.string.addon_confirm_removed),
@@ -1173,6 +1150,15 @@ internal fun ConfirmAddonChangesDialog(
                                 )
                             }
                             Spacer(modifier = Modifier.height(NuvioTheme.spacing.sm))
+                        }
+
+                        if (pendingChange.addonsReordered) {
+                            Text(
+                                text = stringResource(R.string.addon_confirm_order_changed),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = NuvioTheme.colors.TextPrimary,
+                                modifier = Modifier.padding(bottom = NuvioTheme.spacing.sm)
+                            )
                         }
 
                         if (pendingChange.catalogsReordered) {
@@ -1251,8 +1237,8 @@ internal fun ConfirmAddonChangesDialog(
                         }
 
                         if (
-                            pendingChange.addedUrls.isEmpty() &&
                             pendingChange.removedUrls.isEmpty() &&
+                            !pendingChange.addonsReordered &&
                             !pendingChange.catalogsReordered &&
                             pendingChange.disabledCatalogNames.isEmpty() &&
                             pendingChange.enabledCatalogNames.isEmpty() &&

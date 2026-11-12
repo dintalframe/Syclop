@@ -1,14 +1,52 @@
 package com.nuvio.tv.core.server
 
+import com.google.gson.JsonParser
 import fi.iki.elonen.NanoHTTPD
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AddonConfigServerTest {
+
+    @Test
+    fun `paired webpage submits installed ids and directs add-on installation to the TV`() {
+        val context = mockk<android.content.Context>(relaxed = true)
+        every { context.getSharedPreferences("app_locale", 0).getString("locale_tag", null) } returns null
+        val html = AddonWebPage.getHtml(context)
+        assertTrue(html.contains("addonIds: addonIds"))
+        assertFalse(html.contains("id=\"addonUrl\""))
+        assertFalse(html.contains("function addAddon("))
+    }
+
+    @Test
+    fun `a retired viewer session cannot read state or submit a change`() {
+        var current = true
+        var stateReads = 0
+        val server = AddonConfigServer(
+            context = mockk(relaxed = true),
+            webConfigMode = AddonWebConfigMode.FULL,
+            currentPageStateProvider = {
+                stateReads++
+                PageState(addons = emptyList(), catalogs = emptyList())
+            },
+            onChangeProposed = { error("Retired session proposed a change") },
+            isCurrent = { current }
+        )
+        val authorization = "Bearer " + server.pairingUrl("192.0.2.1").substringAfter('#')
+        val read = request(NanoHTTPD.Method.GET, "/api/state", authorization)
+        server.serve(read).use { assertEquals(NanoHTTPD.Response.Status.OK, it.status) }
+        current = false
+
+        server.serve(read).use { assertEquals(NanoHTTPD.Response.Status.FORBIDDEN, it.status) }
+        val write = request(NanoHTTPD.Method.POST, "/api/addons", authorization)
+        withBody(write, """{"addonIds":[]}""")
+        server.serve(write).use { assertEquals(NanoHTTPD.Response.Status.FORBIDDEN, it.status) }
+        assertEquals(1, stateReads)
+    }
 
     @Test
     fun `unpaired LAN requests cannot read settings or submit changes`() {
@@ -39,9 +77,13 @@ class AddonConfigServerTest {
 
     @Test
     fun `pairing allows access and confirmation only in the current session`() {
+        val privateUrl = "https://example.test/credential-value?key=private-query"
         val state = PageState(
-            addons = listOf(AddonInfo("https://example.test/fixture", "Test add-on", null)),
-            catalogs = emptyList()
+            addons = listOf(
+                AddonInfo(privateUrl, "credential-value", "Description contains $privateUrl"),
+                AddonInfo("https://second.example/manifest", "Second add-on", null)
+            ),
+            catalogs = listOf(CatalogInfo("featured", "featured", "Featured", privateUrl, "movie", false))
         )
         val changes = mutableListOf<PendingAddonChange>()
         fun newServer() = AddonConfigServer(
@@ -54,25 +96,43 @@ class AddonConfigServerTest {
         val token = server.pairingUrl("192.0.2.1").substringAfter('#', "")
         val authorization = "Bearer $token"
         val read = request(NanoHTTPD.Method.GET, "/api/state", authorization)
-        val write = request(NanoHTTPD.Method.POST, "/api/addons", authorization)
-        withProposedUrl(write)
-
-        server.serve(read).use { response ->
+        val addons = server.serve(read).use { response ->
             assertEquals(NanoHTTPD.Response.Status.OK, response.status)
             assertEquals("no-store", response.getHeader("Cache-Control"))
             assertEquals("no-referrer", response.getHeader("Referrer-Policy"))
-            assertTrue(response.data.bufferedReader().readText().contains("https://example.test/fixture"))
+            val body = response.data.bufferedReader().readText()
+            assertFalse(body.contains("credential-value"))
+            assertFalse(body.contains("private-query"))
+            JsonParser.parseString(body).asJsonObject.getAsJsonArray("addons")
         }
+        server.serve(request(NanoHTTPD.Method.GET, "/api/addons", authorization)).use { response ->
+            assertEquals(addons, JsonParser.parseReader(response.data.reader()))
+        }
+        val ids = addons.map { it.asJsonObject.get("id").asString }
+        assertEquals(2, ids.distinct().size)
+        assertEquals("Second add-on", addons[1].asJsonObject.get("name").asString)
+        val write = request(NanoHTTPD.Method.POST, "/api/addons", authorization)
+        withBody(write, """{"addonIds":["${ids[1]}","${ids[0]}"]}""")
         server.serve(write).use { response ->
             assertEquals(NanoHTTPD.Response.Status.OK, response.status)
             assertTrue(response.data.bufferedReader().readText().contains("pending_confirmation"))
         }
-        assertEquals(listOf("https://example.test"), changes.single().proposedUrls)
+        assertEquals(listOf("https://second.example/manifest", privateUrl), changes.single().proposedUrls)
+        for (body in listOf("""{"addonIds":["stale-id"]}""", """{"urls":["https://other.example"]}""", "{}")) {
+            val invalid = request(NanoHTTPD.Method.POST, "/api/addons", authorization)
+            withBody(invalid, body)
+            server.serve(invalid).use { assertEquals(NanoHTTPD.Response.Status.BAD_REQUEST, it.status) }
+        }
+        assertEquals(1, changes.size)
         newServer().serve(read).use { assertEquals(NanoHTTPD.Response.Status.FORBIDDEN, it.status) }
     }
 
     private fun withProposedUrl(request: NanoHTTPD.IHTTPSession) {
-        val bytes = """{"urls":["https://example.test"]}""".toByteArray()
+        withBody(request, """{"urls":["https://example.test"]}""")
+    }
+
+    private fun withBody(request: NanoHTTPD.IHTTPSession, body: String) {
+        val bytes = body.toByteArray()
         val headers = request.headers + ("content-length" to bytes.size.toString())
         every { request.headers } returns headers
         every { request.inputStream } answers { java.io.ByteArrayInputStream(bytes) }

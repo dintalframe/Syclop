@@ -11,6 +11,9 @@
     <string name="web_manage_addons_title">Eklentileri Yönet</string>
     <string name="web_manage_addons_subtitle">Eklentileri ve ana sayfa kataloglarını yönetin</string>
     <string name="web_manage_addons_only_subtitle">Eklenti yükle veya kaldır</string>
+    <string name="web_install_addons_on_tv">Yeni eklentileri TV’nizde Syclop üzerinden yükleyin.</string>
+    <string name="addon_qr_reorder_scan_instruction">Yüklü eklentileri yeniden sıralamak veya kaldırmak için telefonunuzla tarayın.</string>
+    <string name="addon_confirm_order_changed">Eklenti sırası değiştirildi</string>
     <string name="web_add_addon_url">URL ile eklenti ekle</string>
     <string name="web_placeholder_url">https://example.com/manifest.json</string>
     <string name="web_btn_add">Ekle</string>

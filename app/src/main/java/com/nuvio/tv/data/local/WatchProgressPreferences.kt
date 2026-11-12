@@ -13,6 +13,7 @@ import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import com.nuvio.tv.data.mediaserver.ServerItemRef
 import com.nuvio.tv.domain.model.WatchProgress
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
@@ -49,6 +51,8 @@ class WatchProgressPreferences @Inject constructor(
         val archive: Map<String, WatchProgress>
     )
 
+    private data class ScopedProgressSnapshot(val lifetime: ProfileStorageLifetime, val data: ProgressSnapshot)
+
     private data class ProgressMapCache(
         val profileId: Int,
         val json: String,
@@ -69,20 +73,27 @@ class WatchProgressPreferences @Inject constructor(
     private val deltaCursorKey = longPreferencesKey("watch_progress_delta_cursor")
     private val deltaInitializedKey = booleanPreferencesKey("watch_progress_delta_initialized")
     private val storageMutex = Mutex()
-    private val initializedProfiles = mutableSetOf<Int>()
+    private val initializedProfiles = mutableMapOf<Int, DataStore<Preferences>>()
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
 
     @Volatile private var recentMapCache: ProgressMapCache? = null
     @Volatile private var archiveMapCache: ProgressMapCache? = null
 
     private val hotProgressSnapshots =
-        ConcurrentHashMap<Int, kotlinx.coroutines.flow.StateFlow<ProgressSnapshot?>>()
+        ConcurrentHashMap<Int, kotlinx.coroutines.flow.StateFlow<ScopedProgressSnapshot?>>()
 
     private fun progressSnapshots(profileId: Int): Flow<ProgressSnapshot> {
         return hotProgressSnapshots.computeIfAbsent(profileId) {
-            progressSnapshotsCold(profileId)
+            factory.observeProfileStorageLifetime(profileId)
+                .flatMapLatest { lifetime ->
+                    val snapshots = if (lifetime.deleted) flowOf(ProgressSnapshot("{}", "{}", emptyMap(), emptyMap()))
+                        else progressSnapshotsCold(profileId)
+                    snapshots.map { ScopedProgressSnapshot(lifetime, it) }
+                }
                 .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
-        }.mapNotNull { it }
+        }.mapNotNull { snapshot ->
+            snapshot?.takeIf { it.lifetime == factory.profileStorageLifetime(profileId) }?.data
+        }
     }
 
     /** Persisted timestamp of the last successful push to remote. */
@@ -684,25 +695,32 @@ class WatchProgressPreferences @Inject constructor(
     }
 
     private suspend fun ensureStorageLocked(profileId: Int) {
-        if (profileId in initializedProfiles) return
-        val metadata = metadataStore(profileId).data.first()
+        val lifetime = factory.profileStorageLifetime(profileId)
+        val store = metadataStore(profileId)
+        if (initializedProfiles[profileId] === store) return
+        val recent = recentStore(profileId)
+        val archive = archiveStore(profileId)
+        if (factory.profileStorageLifetime(profileId) != lifetime) {
+            throw CancellationException("Profile storage changed")
+        }
+        val metadata = store.data.first()
         if ((metadata[watchProgressStorageVersionKey] ?: 0) < WATCH_PROGRESS_STORAGE_VERSION) {
             val legacy = parseProgressMap(metadata[watchProgressEntriesKey] ?: "{}")
             if (legacy.isNotEmpty()) {
                 val buckets = splitWatchProgressEntries(legacy)
-                writeBucketLocked(archiveStore(profileId), buckets.archive)
-                writeBucketLocked(recentStore(profileId), buckets.recent)
+                writeBucketLocked(archive, buckets.archive)
+                writeBucketLocked(recent, buckets.recent)
                 Log.d(
                     TAG,
                     "Migrated profile=$profileId recent=${buckets.recent.size} archive=${buckets.archive.size}"
                 )
             }
-            metadataStore(profileId).edit { preferences ->
+            store.edit { preferences ->
                 preferences.remove(watchProgressEntriesKey)
                 preferences[watchProgressStorageVersionKey] = WATCH_PROGRESS_STORAGE_VERSION
             }
         }
-        initializedProfiles += profileId
+        initializedProfiles[profileId] = store
     }
 
     private suspend fun readBucketsLocked(profileId: Int): WatchProgressBuckets {

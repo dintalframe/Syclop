@@ -49,7 +49,6 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.R
-import com.nuvio.tv.core.server.AddonWebConfigMode
 import com.nuvio.tv.ui.theme.NuvioTheme
 import com.nuvio.tv.ui.screens.settings.DebridSettingsViewModel
 import com.nuvio.tv.ui.screens.settings.DebridSettingsContent
@@ -63,14 +62,13 @@ fun EssentialAddonSetupScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
-    val phoneFocus = remember { FocusRequester() }
     val enterOnTvFocus = remember { FocusRequester() }
     val linkFocus = remember { FocusRequester() }
     val servicesFocus = remember { FocusRequester() }
     val servicesBackFocus = remember { FocusRequester() }
     val readiness by debridViewModel.firstWatch.snapshot.collectAsState()
     val checkingAccounts by debridViewModel.checkingAccounts.collectAsState()
-    var optionsFocus by remember { mutableStateOf(phoneFocus) }
+    var optionsFocus by remember { mutableStateOf(enterOnTvFocus) }
     var showManualEntry by rememberSaveable { mutableStateOf(false) }
     var linkFocused by remember { mutableStateOf(false) }
     var showServices by rememberSaveable { mutableStateOf(false) }
@@ -88,8 +86,8 @@ fun EssentialAddonSetupScreen(
 
     BackHandler(enabled = showManualEntry && !showProviderOptions, onBack = closeManualEntry)
 
-    LaunchedEffect(showManualEntry, uiState.isQrModeActive, showProviderOptions, showServices) {
-        if (!uiState.isQrModeActive && !showProviderOptions && !showServices) {
+    LaunchedEffect(showManualEntry, showProviderOptions, showServices) {
+        if (!showProviderOptions && !showServices) {
             withFrameNanos { }
             val requester = if (showManualEntry) linkFocus else optionsFocus
             requester.requestFocus()
@@ -97,7 +95,7 @@ fun EssentialAddonSetupScreen(
     }
 
     DisposableEffect(Unit) {
-        onDispose { viewModel.stopQrMode(); debridViewModel.cancelAccountCheck() }
+        onDispose { debridViewModel.cancelAccountCheck() }
     }
 
     Box(
@@ -198,15 +196,6 @@ fun EssentialAddonSetupScreen(
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
-                    onClick = {
-                        optionsFocus = phoneFocus
-                        viewModel.startQrMode(AddonWebConfigMode.ADDONS_ONLY)
-                    },
-                    modifier = Modifier.fillMaxWidth().focusRequester(phoneFocus)
-                ) {
-                    Text(stringResource(R.string.essential_addon_show_qr))
-                }
-                Button(
                     onClick = { showManualEntry = true },
                     modifier = Modifier.fillMaxWidth().focusRequester(enterOnTvFocus)
                 ) {
@@ -241,34 +230,6 @@ fun EssentialAddonSetupScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = NuvioTheme.colors.Error,
                     textAlign = TextAlign.Center
-                )
-            }
-        }
-
-        if (uiState.isQrModeActive) {
-            Popup(
-                onDismissRequest = viewModel::stopQrMode,
-                properties = PopupProperties(focusable = true, dismissOnClickOutside = false)
-            ) {
-                QrCodeOverlay(
-                    qrBitmap = uiState.qrCodeBitmap,
-                    serverUrl = uiState.serverUrl,
-                    instruction = stringResource(R.string.addon_qr_addons_only_scan_instruction),
-                    onClose = viewModel::stopQrMode,
-                    hasPendingChange = uiState.pendingChange != null
-                )
-            }
-        }
-
-        uiState.pendingChange?.let { pending ->
-            Popup(
-                onDismissRequest = viewModel::rejectPendingChange,
-                properties = PopupProperties(focusable = true, dismissOnClickOutside = false)
-            ) {
-                ConfirmAddonChangesDialog(
-                    pendingChange = pending,
-                    onConfirm = viewModel::confirmPendingChange,
-                    onReject = viewModel::rejectPendingChange
                 )
             }
         }

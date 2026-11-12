@@ -4,7 +4,9 @@ package com.nuvio.tv.ui.screens.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.*
@@ -14,17 +16,22 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.LocaleCache
+import com.nuvio.tv.LocalSidebarExpanded
+import com.nuvio.tv.R
 import com.nuvio.tv.domain.model.CatalogRow
 import com.nuvio.tv.domain.model.HomeLayout
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.components.SyclopBrandAnimation
 import com.nuvio.tv.ui.components.SyclopBrandState
 import com.nuvio.tv.ui.components.PosterCardStyle
+import com.nuvio.tv.ui.theme.NuvioTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -124,6 +131,16 @@ private fun HomeCategoryModernContent(
         isCurrent = viewModel::isCurrent,
         consumeReturn = { viewModel.consumeCategoryReturn(section, revision) }
     )
+    val emptyPageRows by rememberUpdatedState(state.emptyPaginatableRows())
+    var focusedPageAction by remember { mutableStateOf<String?>(null) }
+    val sidebarExpanded = LocalSidebarExpanded.current
+    LaunchedEffect(focusedPageAction, emptyPageRows) {
+        val key = focusedPageAction ?: return@LaunchedEffect
+        if (emptyPageRows.none { it.key == key }) {
+            focusedPageAction = null
+            if (entry.canEnterContent() && !sidebarExpanded && viewModel.isCurrent()) entry.enter()
+        }
+    }
     // A last-row focus opts into the next small batch. Empty later batches do not strand the
     // user, and all existing ViewModel concurrency, catalog and card limits still apply.
     LaunchedEffect(lastFocusedRow, state.rows, state.moreCatalogs, presentation) {
@@ -193,13 +210,54 @@ private fun HomeCategoryModernContent(
                         focusedItemIndex = ii, hasSavedFocus = true
                     ))
                 },
-                onRowItemFocusedCallback = { key, _, _ -> lastFocusedRow = key }
+                onRowItemFocusedCallback = { key, _, _ ->
+                    focusedPageAction = null
+                    lastFocusedRow = key
+                },
+                catalogFooter = if (emptyPageRows.isEmpty()) null else {
+                    {
+                        HomeCategoryEmptyCatalogFooter(emptyPageRows, viewModel::loadMore) { key, focused ->
+                            if (focused) focusedPageAction = key
+                            else if (focusedPageAction == key && emptyPageRows.any { it.key == key }) {
+                                focusedPageAction = null
+                            }
+                        }
+                    }
+                }
             )
         }
         if (state.rows.any { it.failed }) {
             Text("Some catalogs could not load. Select ${section.label} again to retry.",
                 style = MaterialTheme.typography.bodySmall, color = Color.White,
                 modifier = Modifier.align(Alignment.BottomEnd).background(Color.Black.copy(alpha = 0.8f)).padding(8.dp))
+        }
+    }
+}
+
+@Composable
+internal fun HomeCategoryEmptyCatalogFooter(
+    rows: List<HomeBrowseRow>,
+    onLoadMore: (String) -> Unit,
+    onActionFocusChanged: (String, Boolean) -> Unit = { _, _ -> }
+) {
+    Column(
+        modifier = Modifier.padding(start = 52.dp),
+        verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm)
+    ) {
+        rows.forEach { row ->
+            key(row.key) {
+                Button(
+                    onClick = { onLoadMore(row.key) },
+                    modifier = Modifier.onFocusChanged { onActionFocusChanged(row.key, it.isFocused) }
+                ) {
+                    val action = stringResource(when {
+                        row.loading -> R.string.discover_loading
+                        row.failed -> R.string.action_retry
+                        else -> R.string.discover_load_more
+                    })
+                    Text("${row.title} · $action")
+                }
+            }
         }
     }
 }

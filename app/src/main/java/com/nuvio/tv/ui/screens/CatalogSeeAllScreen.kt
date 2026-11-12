@@ -78,6 +78,7 @@ fun CatalogSeeAllScreen(
     addonId: String,
     type: String,
     searchViewModel: SearchViewModel? = null,
+    searchCatalogKey: String? = null,
     serverCatalog: ServerCatalogViewModel? = null,
     viewModel: HomeViewModel = hiltViewModel(),
     posterOptionsViewModel: com.nuvio.tv.ui.components.posteroptions.PosterOptionsViewModel = hiltViewModel(),
@@ -107,7 +108,7 @@ fun CatalogSeeAllScreen(
     val searchWatchedMovieIds = searchViewModel?.watchedMovieIds?.collectAsState()
     val searchWatchedSeriesIds = searchViewModel?.watchedSeriesIds?.collectAsState()
     val searchCatalogRow = searchUiState?.value?.catalogRows?.find {
-        it.legacyKey() == catalogKey
+        if (searchCatalogKey != null) it.stableKey() == searchCatalogKey else it.legacyKey() == catalogKey
     }
     val homeCatalogRow = fullCatalogRows.find {
         it.legacyKey() == catalogKey
@@ -130,8 +131,8 @@ fun CatalogSeeAllScreen(
     val restoreFocusRequester = remember { FocusRequester() }
     // Persist the focused catalog item by stable id (not grid index) so return-from-Details
     // can re-focus the same poster even if the row reloads or the first cell steals focus.
-    var focusedItemKey by rememberSaveable(catalogKey) { mutableStateOf<String?>(null) }
-    var shouldRestoreFocus by rememberSaveable(catalogKey) { mutableStateOf(true) }
+    var focusedItemKey by rememberSaveable(searchCatalogKey ?: catalogKey) { mutableStateOf<String?>(null) }
+    var shouldRestoreFocus by rememberSaveable(searchCatalogKey ?: catalogKey) { mutableStateOf(true) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val focusedItemIndex = remember(catalogRow?.items, focusedItemKey) {
@@ -143,7 +144,7 @@ fun CatalogSeeAllScreen(
     }
 
     // Load more when scrolling near the bottom
-    LaunchedEffect(gridState, catalogRow?.items?.size) {
+    LaunchedEffect(gridState, searchCatalogKey ?: catalogKey, catalogRow?.items?.size, catalogRow?.nextSkip) {
         snapshotFlow {
             val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val total = gridState.layoutInfo.totalItemsCount
@@ -158,7 +159,7 @@ fun CatalogSeeAllScreen(
                             serverCatalog.loadMore()
                         } else if (isSearchMode) {
                             searchViewModel.onEvent(
-                                SearchEvent.LoadMoreCatalog(row.catalogId, row.addonId, row.apiType)
+                                SearchEvent.LoadMoreCatalog(row.catalogId, row.addonId, row.apiType, row.stableKey())
                             )
                         } else {
                             viewModel.onEvent(

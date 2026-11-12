@@ -48,7 +48,6 @@ import com.nuvio.tv.domain.model.enabledAddons
 import com.nuvio.tv.domain.repository.AddonRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,9 +55,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 @HiltViewModel
@@ -95,6 +92,27 @@ class AddonManagerViewModel @Inject constructor(
     }
 
     private var server: AddonConfigServer? = null
+    private data class QrProfileScope(val profileId: Int, val selectionRevision: Long, val addonOwner: Int)
+    @Volatile private var qrProfileScope: QrProfileScope? = null
+
+    private fun isCurrentQrProfile(scope: QrProfileScope): Boolean =
+        qrProfileScope === scope && profileManager.activeProfileId.value == scope.profileId &&
+            profileManager.activeProfileSelectionRevision == scope.selectionRevision &&
+            qrAddonOwner(scope.profileId) == scope.addonOwner
+
+    private fun qrAddonOwner(profileId: Int): Int =
+        if (profileManager.activeProfile?.usesPrimaryAddons == true) 1 else profileId
+
+    private fun List<Addon>.qrCatalogAddons(configuredUrls: List<String>): List<Addon> {
+        val configured = configuredUrls.toSet()
+        return filter { addon ->
+            addon.baseUrl in configured ||
+                com.nuvio.tv.data.mal.MalCatalog.isNativeAddon(addon.baseUrl) ||
+                com.nuvio.tv.data.simkl.catalog.SimklPublicCatalog.isNativeAddon(addon.baseUrl) ||
+                com.nuvio.tv.data.catalog.RatedKidsCatalog.isNativeAddon(addon.baseUrl)
+        }
+    }
+
     private var logoBytes: ByteArray? = null
     private var homeCatalogOrderKeys: List<String> = emptyList()
     private var disabledHomeCatalogKeys: Set<String> = emptySet()
@@ -261,6 +279,7 @@ class AddonManagerViewModel @Inject constructor(
     }
 
     fun startQrMode(webConfigMode: AddonWebConfigMode = this.webConfigMode) {
+        val repository = addonRepository as? com.nuvio.tv.data.repository.AddonRepositoryImpl ?: return
         val ip = DeviceIpAddress.get(context)
         if (ip == null) {
             _uiState.update { it.copy(error = context.getString(R.string.error_network_required)) }
@@ -268,14 +287,20 @@ class AddonManagerViewModel @Inject constructor(
         }
 
         stopServerInternal()
+        val profileId = profileManager.activeProfileId.value
+        val scope = QrProfileScope(profileId, profileManager.activeProfileSelectionRevision, qrAddonOwner(profileId))
+        qrProfileScope = scope
 
         server = AddonConfigServer.startOnAvailablePort(
             context = context,
             webConfigMode = webConfigMode,
+            isCurrent = { isCurrentQrProfile(scope) },
             currentPageStateProvider = {
-                val addons = _uiState.value.installedAddons
+                val configuredUrls = runBlocking { repository.configuredAddonUrls(scope.addonOwner) }
+                val installed = _uiState.value.installedAddons
+                val addonsByUrl = installed.associateBy { it.baseUrl }
                 val orderedCatalogs = buildOrderedCatalogEntries(
-                    addons = addons.enabledAddons(),
+                    addons = installed.qrCatalogAddons(configuredUrls).enabledAddons(),
                     savedOrderKeys = homeCatalogOrderKeys,
                     disabledKeys = disabledHomeCatalogKeys
                 )
@@ -349,11 +374,14 @@ class AddonManagerViewModel @Inject constructor(
                 }
 
                 PageState(
-                    addons = addons.map { addon ->
+                    addons = configuredUrls.map { url ->
+                        val addon = addonsByUrl[url]
                         AddonInfo(
-                            url = addon.baseUrl,
-                            name = addon.displayName.ifBlank { addon.baseUrl },
-                            description = addon.description
+                            url = url,
+                            name = addon?.let {
+                                it.displayName.takeUnless { _ -> it.version.isBlank() && it.id == it.baseUrl }
+                            }.orEmpty(),
+                            description = null
                         )
                     },
                     catalogs = unifiedCatalogs,
@@ -363,7 +391,9 @@ class AddonManagerViewModel @Inject constructor(
                     followAddonsOrder = followAddonsOrderEnabled
                 )
             },
-            onChangeProposed = { change -> handleChangeProposed(change) },
+            onChangeProposed = { change ->
+                if (isCurrentQrProfile(scope)) handleChangeProposed(change)
+            },
             tmdbMetadataProvider = { request -> fetchTmdbSourceMetadata(request) },
             tmdbSearchProvider = { request -> searchTmdbSources(request) },
             traktMetadataProvider = { request -> fetchTraktSourceMetadata(request) },
@@ -373,6 +403,7 @@ class AddonManagerViewModel @Inject constructor(
 
         val activeServer = server
         if (activeServer == null) {
+            qrProfileScope = null
             _uiState.update { it.copy(error = context.getString(R.string.error_server_ports_unavailable)) }
             return
         }
@@ -402,28 +433,8 @@ class AddonManagerViewModel @Inject constructor(
         }
     }
 
-    private suspend fun fetchAddonInfo(url: String): AddonInfo? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val result = withTimeoutOrNull(15_000L) {
-                    addonRepository.fetchAddon(url)
-                } ?: return@withContext null
-
-                when (result) {
-                    is NetworkResult.Success -> AddonInfo(
-                        url = result.data.baseUrl,
-                        name = result.data.name.ifBlank { url },
-                        description = result.data.description
-                    )
-                    else -> null
-                }
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
-
     private fun stopServerInternal() {
+        qrProfileScope = null
         server?.stop()
         server = null
     }
@@ -507,10 +518,10 @@ class AddonManagerViewModel @Inject constructor(
     }
 
     private fun handleChangeProposed(change: PendingAddonChange) {
-        val currentUrls = _uiState.value.installedAddons.map { normalizeUrlForComparison(it.baseUrl) }.toSet()
-        val proposedNormalized = change.proposedUrls.map { normalizeUrlForComparison(it) }.toSet()
+        val proposed = change.proposedUrls.toSet()
+        val currentUrls = change.expectedAddonUrls ?: change.proposedUrls
         val currentCatalogEntries = buildOrderedCatalogEntries(
-            addons = _uiState.value.installedAddons.enabledAddons(),
+            addons = _uiState.value.installedAddons.qrCatalogAddons(currentUrls).enabledAddons(),
             savedOrderKeys = homeCatalogOrderKeys,
             disabledKeys = disabledHomeCatalogKeys
         )
@@ -521,10 +532,8 @@ class AddonManagerViewModel @Inject constructor(
             entry.disableKey to "${entry.catalogName} • ${entry.addonName}"
         }
 
-        val added = change.proposedUrls.filter { normalizeUrlForComparison(it) !in currentUrls }
-        val removed = _uiState.value.installedAddons
-            .map { it.baseUrl }
-            .filter { normalizeUrlForComparison(it) !in proposedNormalized }
+        val removed = currentUrls.filterNot { it in proposed }
+        val addonsReordered = currentUrls.filter { it in proposed } != change.proposedUrls
         val resolvedProposedCatalogOrderKeys = if (change.proposedCatalogOrderKeys.isEmpty()) {
             currentCatalogEntries.map { it.key }
         } else {
@@ -555,9 +564,9 @@ class AddonManagerViewModel @Inject constructor(
         val catalogsReordered = resolvedProposedCatalogOrderKeys != currentCatalogEntries.map { it.key }
 
         val removedNameMap = _uiState.value.installedAddons
-            .associateBy({ normalizeUrlForComparison(it.baseUrl) }, { it.displayName })
+            .associateBy({ it.baseUrl }, { it.displayName })
         val removedNames = removed.associateWith { url ->
-            removedNameMap[normalizeUrlForComparison(url)] ?: url
+            removedNameMap[url] ?: url
         }
 
         val proposedCollectionsJson = change.proposedCollectionsJson
@@ -572,10 +581,11 @@ class AddonManagerViewModel @Inject constructor(
                 pendingChange = PendingChangeInfo(
                     changeId = change.id,
                     proposedUrls = change.proposedUrls,
+                    expectedAddonUrls = change.expectedAddonUrls,
                     proposedCatalogOrderKeys = resolvedProposedCatalogOrderKeys,
                     proposedDisabledCatalogKeys = resolvedProposedDisabledCatalogKeys,
-                    addedUrls = added,
                     removedUrls = removed,
+                    addonsReordered = addonsReordered,
                     catalogsReordered = catalogsReordered,
                     disabledCatalogNames = newlyDisabledCatalogs,
                     enabledCatalogNames = newlyEnabledCatalogs,
@@ -588,36 +598,36 @@ class AddonManagerViewModel @Inject constructor(
                 )
             )
         }
-
-        if (added.isNotEmpty()) {
-            viewModelScope.launch {
-                val addedNames = withContext(Dispatchers.IO) {
-                    added.associateWith { url ->
-                        fetchAddonInfo(url)?.name ?: url
-                    }
-                }
-                _uiState.update { state ->
-                    val pending = state.pendingChange
-                    if (pending == null || pending.changeId != change.id) {
-                        state
-                    } else {
-                        state.copy(
-                            pendingChange = pending.copy(addedNames = addedNames)
-                        )
-                    }
-                }
-            }
-        }
     }
 
     fun confirmPendingChange() {
         val pending = _uiState.value.pendingChange ?: return
+        if (pending.isApplying) return
+        val scope = qrProfileScope ?: return
+        val activeServer = server ?: return
+        val isCurrent = { isCurrentQrProfile(scope) }
+        if (!isCurrent()) {
+            rejectPendingChange()
+            return
+        }
 
         _uiState.update { it.copy(pendingChange = pending.copy(isApplying = true)) }
 
         viewModelScope.launch {
-            addonRepository.setAddonOrder(pending.proposedUrls)
-            applyCatalogPreferencesFromPending(pending, pending.proposedUrls)
+            val expected = pending.expectedAddonUrls
+            if (expected != null &&
+                (addonRepository as? com.nuvio.tv.data.repository.AddonRepositoryImpl)?.setExistingAddonOrder(
+                    pending.proposedUrls, expected, scope.profileId, isCurrent
+                ) != true) {
+                activeServer.rejectChange(pending.changeId)
+                _uiState.update { state ->
+                    if (state.pendingChange?.changeId == pending.changeId) state.copy(pendingChange = null) else state
+                }
+                return@launch
+            }
+            if (!isCurrent()) return@launch
+            applyCatalogPreferencesFromPending(pending, pending.proposedUrls, isCurrent)
+            if (!isCurrent()) return@launch
             if (pending.collectionsChanged && pending.proposedCollectionsJson != null) {
                 try {
                     val newCollections = parseCollectionsFromJson(pending.proposedCollectionsJson)
@@ -625,6 +635,7 @@ class AddonManagerViewModel @Inject constructor(
                     collectionSyncService.triggerPush()
                 } catch (_: Exception) { }
             }
+            if (!isCurrent()) return@launch
             // Apply disabled collection key changes
             if (pending.proposedDisabledCollectionKeys.isNotEmpty() || disabledHomeCatalogKeys.any { it.startsWith("collection_") }) {
                 val nonCollectionDisabledKeys = disabledHomeCatalogKeys.filter { !it.startsWith("collection_") }
@@ -632,24 +643,19 @@ class AddonManagerViewModel @Inject constructor(
                 layoutPreferenceDataStore.setDisabledHomeCatalogKeys(mergedDisabledKeys)
                 homeCatalogSettingsSyncService.triggerPush()
             }
+            if (!isCurrent()) return@launch
             // Apply follow addons order change
             if (pending.proposedFollowAddonsOrder != null) {
                 layoutPreferenceDataStore.setFollowAddonsOrder(pending.proposedFollowAddonsOrder)
             }
-            server?.confirmChange(pending.changeId)
+            if (!isCurrent()) return@launch
+            activeServer.confirmChange(pending.changeId)
 
             _uiState.update { it.copy(pendingChange = null) }
 
             delay(2500)
 
-            stopServerInternal()
-            _uiState.update {
-                it.copy(
-                    isQrModeActive = false,
-                    qrCodeBitmap = null,
-                    serverUrl = null
-                )
-            }
+            if (isCurrent()) stopQrMode()
         }
     }
 
@@ -661,12 +667,10 @@ class AddonManagerViewModel @Inject constructor(
 
     private suspend fun applyCatalogPreferencesFromPending(
         pending: PendingChangeInfo,
-        validUrls: List<String>
+        validUrls: List<String>,
+        isCurrent: () -> Boolean
     ) {
-        val validUrlSet = validUrls.map { normalizeUrlForComparison(it) }.toSet()
-        val targetAddons = _uiState.value.installedAddons.filter { addon ->
-            addon.enabled && normalizeUrlForComparison(addon.baseUrl) in validUrlSet
-        }
+        val targetAddons = _uiState.value.installedAddons.qrCatalogAddons(validUrls).enabledAddons()
         val availableCatalogEntries = buildOrderedCatalogEntries(
             addons = targetAddons,
             savedOrderKeys = homeCatalogOrderKeys,
@@ -689,7 +693,9 @@ class AddonManagerViewModel @Inject constructor(
             .distinct()
             .toList()
 
+        if (!isCurrent()) return
         layoutPreferenceDataStore.setHomeCatalogOrderKeys(validCatalogOrder)
+        if (!isCurrent()) return
         layoutPreferenceDataStore.setDisabledHomeCatalogKeys(validDisabledCatalogs)
         homeCatalogSettingsSyncService.triggerPush()
     }

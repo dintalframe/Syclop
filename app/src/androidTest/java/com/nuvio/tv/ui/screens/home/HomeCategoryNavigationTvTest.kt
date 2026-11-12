@@ -187,6 +187,29 @@ class HomeCategoryNavigationTvTest {
     }
 
     @Test
+    fun filteredCatalogMoreActionIsReachableBelowPopulatedCategory() {
+        val ready = row("kids", card("kids-family", "Safe family card", rating = "TV-Y"))
+        val filtered = row("filtered").copy(supportsSkip = true, hasMore = true, nextSkip = 10)
+        val fixture = Fixture(HomeBrowseSection.KIDS, mapOf(HomeBrowseSection.KIDS to listOf(ready)))
+        fixture.pageRows.value = listOf(HomeBrowseRow("filtered", filtered.catalogName, filtered, loading = false))
+        show(fixture)
+        waitForRows(fixture, HomeBrowseSection.KIDS, listOf(groupedRow("kids", KidsBrowseGroup.SHOWS)))
+        focusHeader(HomeBrowseSection.KIDS)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertCardFocused("Safe family card")
+
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        val more = instrumentation.targetContext.getString(R.string.discover_load_more)
+        assertCardFocused("${filtered.catalogName} · $more")
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertEquals("filtered", fixture.pagedCatalog.get())
+
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        assertCardFocused("Safe family card")
+        fixture.assertNoNavigationOrPlaybackRequests()
+    }
+
+    @Test
     fun changingCategoriesKeepsHeaderFocusAndUsesNewCategoryRows() {
         val fixture = Fixture(HomeBrowseSection.MOVIES, mapOf(
             HomeBrowseSection.MOVIES to listOf(row("movies", card("movie", "Movie fixture card", type = ContentType.MOVIE))),
@@ -302,6 +325,8 @@ class HomeCategoryNavigationTvTest {
     private class Fixture(initialSection: HomeBrowseSection, initialRows: Map<HomeBrowseSection, List<CatalogRow>>) {
         val section = mutableStateOf(initialSection)
         val rows = mutableStateOf(initialRows)
+        val pageRows = mutableStateOf(emptyList<HomeBrowseRow>())
+        val pagedCatalog = AtomicReference<String?>(null)
         val requestRevision = mutableLongStateOf(1L)
         val prepared = AtomicReference<PreparedRows?>(null)
         val navigationRequests = AtomicInteger()
@@ -360,7 +385,10 @@ class HomeCategoryNavigationTvTest {
                 onRequestTrailerPreview = { _, _, _, _ -> fixture.trailerRequests.incrementAndGet() },
                 onLoadMoreCatalog = { _, _, _ -> fixture.navigationRequests.incrementAndGet() },
                 onRemoveContinueWatching = { _, _, _, _ -> fixture.navigationRequests.incrementAndGet() },
-                onSaveFocusState = { _, _, _, _, _, _, _, _ -> }
+                onSaveFocusState = { _, _, _, _, _, _, _, _ -> },
+                catalogFooter = if (fixture.pageRows.value.isEmpty()) null else {
+                    { HomeCategoryEmptyCatalogFooter(fixture.pageRows.value, fixture.pagedCatalog::set) }
+                }
             )
         }
     }

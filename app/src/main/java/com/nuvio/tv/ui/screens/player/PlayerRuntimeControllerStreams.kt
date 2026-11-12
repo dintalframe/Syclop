@@ -6,8 +6,10 @@ import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
 import com.nuvio.tv.core.debrid.DirectDebridPlayableResult
+import com.nuvio.tv.core.debrid.DirectDebridResolveResult
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.player.StreamAutoPlaySelector
+import com.nuvio.tv.core.streams.ServicePlaybackOrigin
 import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.data.local.PlayerSettings
 import com.nuvio.tv.data.local.StreamAutoPlayMode
@@ -20,6 +22,8 @@ import com.nuvio.tv.domain.model.Video
 import com.nuvio.tv.domain.model.enabledAddons
 import com.nuvio.tv.ui.components.SourceChipItem
 import com.nuvio.tv.ui.components.SourceChipStatus
+import com.nuvio.tv.ui.screens.stream.AutomaticStreamAttempt
+import com.nuvio.tv.ui.screens.stream.resolveAutomaticStreamFallback
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
@@ -27,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -1872,7 +1877,14 @@ internal suspend fun PlayerRuntimeController.resolveDirectDebridStreamIfNeeded(
     season: Int?,
     episode: Int?,
     nativeVideoId: String? = currentVideoId
-): Stream? {
+): Stream? = resolveDirectDebridStreamAttempt(stream, season, episode, nativeVideoId).playback
+
+private suspend fun PlayerRuntimeController.resolveDirectDebridStreamAttempt(
+    stream: Stream,
+    season: Int?,
+    episode: Int?,
+    nativeVideoId: String?
+): AutomaticStreamAttempt<Stream> {
     recordLoadingDiagnosticEvent(
         phase = "resolving_debrid",
         message = context.getString(com.nuvio.tv.R.string.player_loading_preparing),
@@ -1890,7 +1902,7 @@ internal suspend fun PlayerRuntimeController.resolveDirectDebridStreamIfNeeded(
                 message = result.detail.localizedMessage(context.resources),
                 detail = result.detail.reason.name
             )
-            null
+            AutomaticStreamAttempt(failure = DirectDebridResolveResult.Failure(result.detail))
         }
         is DirectDebridPlayableResult.Success -> {
             recordLoadingDiagnosticEvent(
@@ -1898,7 +1910,7 @@ internal suspend fun PlayerRuntimeController.resolveDirectDebridStreamIfNeeded(
                 message = context.getString(com.nuvio.tv.R.string.player_loading_preparing),
                 detail = stream.addonName
             )
-            result.stream
+            AutomaticStreamAttempt(playback = result.stream)
         }
         DirectDebridPlayableResult.NotCached -> {
             recordLoadingDiagnosticEvent(
@@ -1906,7 +1918,7 @@ internal suspend fun PlayerRuntimeController.resolveDirectDebridStreamIfNeeded(
                 message = context.getString(com.nuvio.tv.R.string.syclop_debrid_not_ready),
                 detail = "NotReady"
             )
-            null
+            AutomaticStreamAttempt(failure = DirectDebridResolveResult.NotCached)
         }
         DirectDebridPlayableResult.MissingApiKey,
         DirectDebridPlayableResult.Stale,
@@ -1916,7 +1928,7 @@ internal suspend fun PlayerRuntimeController.resolveDirectDebridStreamIfNeeded(
                 message = context.getString(com.nuvio.tv.R.string.player_loading_preparing),
                 detail = result.javaClass.simpleName
             )
-            null
+            AutomaticStreamAttempt()
         }
     }
 }
@@ -1992,9 +2004,20 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
 
     nextEpisodeAutoPlayJob?.cancel()
     nextEpisodeAutoPlayJob = scope.launch {
+        val startingVideoId = currentVideoId
+        fun accountOrigin() = debridSettingsDataStore?.let {
+            ServicePlaybackOrigin(it.activeProfileId.value, it.activeProfileSelectionRevision, it.activeCredentialRevision)
+        }
+        val account = accountOrigin()
+        fun isCurrent() = isActive && currentVideoId == startingVideoId && nextEpisodeVideo?.id == nextVideo.id &&
+            accountOrigin() == account && (account == null || account.profileId == profileId && account.accountRevision >= 0L)
         try {
             streamRepository.setLocalPluginSearchPaused(false)
             val playerSettings = playerSettingsDataStore.playerSettings.first()
+            if (!isCurrent()) {
+                _uiState.update { it.copy(postPlayMode = null) }
+                return@launch
+            }
             val shouldAutoSelectInManualMode =
                 playerSettings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL &&
                     (
@@ -2061,11 +2084,13 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
             // finishes, so the waiting code below resumes without polling.
             val searchSettled = CompletableDeferred<Unit>()
 
-            fun trySelectStream(data: List<AddonStreams>): Stream? {
-                val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
-                val allStreams = rankCandidates(orderedStreams.flatMap { it.streams })
-                return StreamAutoPlaySelector.selectAutoPlayStream(
-                    streams = allStreams,
+            fun orderedSources(data: List<AddonStreams>): List<Stream> =
+                StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
+                    .flatMap { it.streams }
+
+            fun selectStream(streams: List<Stream>, bingeGroupOnly: Boolean = bingeGroupOnlyManualMode): Stream? =
+                StreamAutoPlaySelector.selectAutoPlayStream(
+                    streams = streams,
                     mode = effectiveMode,
                     regexPattern = effectiveRegex,
                     source = effectiveSource,
@@ -2078,14 +2103,14 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                         null
                     },
                     preferBingeGroupInSelection = playerSettings.streamAutoPlayPreferBingeGroupForNextEpisode,
-                    bingeGroupOnly = bingeGroupOnlyManualMode
+                    bingeGroupOnly = bingeGroupOnly
                 )
-            }
+
+            fun trySelectStream(data: List<AddonStreams>): Stream? = selectStream(rankCandidates(orderedSources(data)))
 
             fun tryBingeGroupOnly(data: List<AddonStreams>): Stream? {
                 if (currentStreamBingeGroup == null || !playerSettings.streamAutoPlayPreferBingeGroupForNextEpisode) return null
-                val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
-                val allStreams = orderedStreams.flatMap { it.streams }
+                val allStreams = orderedSources(data)
                 // Early: binge group + filename match (most precise)
                 val nextFilename = com.nuvio.tv.core.player.FilenameEpisodeMatcher.buildNextFilename(
                     filename = currentFilename.orEmpty(),
@@ -2105,21 +2130,11 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                     if (bingeAndFilename != null) return bingeAndFilename
                 }
                 // Early fallback: binge group alone
-                return StreamAutoPlaySelector.selectAutoPlayStream(
-                    streams = rankCandidates(allStreams),
-                    mode = effectiveMode,
-                    regexPattern = effectiveRegex,
-                    source = effectiveSource,
-                    installedAddonNames = installedAddonOrder.toSet(),
-                    selectedAddons = effectiveSelectedAddons,
-                    selectedPlugins = effectiveSelectedPlugins,
-                    preferredBingeGroup = currentStreamBingeGroup,
-                    preferBingeGroupInSelection = true,
-                    bingeGroupOnly = true
-                )
+                return selectStream(rankCandidates(allStreams), bingeGroupOnly = true)
             }
 
             fun tryFilenameOnly(data: List<AddonStreams>): Stream? {
+                if (bingeGroupOnlyManualMode) return null
                 val nextFilename = com.nuvio.tv.core.player.FilenameEpisodeMatcher.buildNextFilename(
                     filename = currentFilename.orEmpty(),
                     currentSeason = _uiState.value.currentSeason,
@@ -2128,8 +2143,7 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                     nextEpisode = nextVideo.episode ?: 0
                 ) ?: currentFilename?.takeIf { it.isNotBlank() }
                     ?: return null
-                val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
-                return rankCandidates(orderedStreams.flatMap { it.streams }.filter { stream ->
+                return rankCandidates(orderedSources(data).filter { stream ->
                     !stream.isExternal() &&
                         com.nuvio.tv.core.player.FilenameEpisodeMatcher.matches(
                             stream.behaviorHints?.filename, nextFilename
@@ -2223,11 +2237,20 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
             }
 
             val streamToPlay = selectedStream?.let {
-                resolveDirectDebridStreamIfNeeded(it, nextVideo.season, nextVideo.episode, nextVideo.id)
+                resolveAutomaticStreamFallback(
+                    initial = it,
+                    ranked = rankCandidates(lastSuccessData?.let(::orderedSources).orEmpty()),
+                    eligible = { candidate -> !candidate.isExternal() },
+                    selectNext = { remaining -> selectStream(remaining) },
+                    isCurrent = ::isCurrent
+                ) { candidate ->
+                    resolveDirectDebridStreamAttempt(candidate, nextVideo.season, nextVideo.episode, nextVideo.id)
+                }.playback
             }
-            if (streamToPlay != null) {
+            if (streamToPlay != null && isCurrent()) {
                 val sourceName = (streamToPlay.name?.takeIf { it.isNotBlank() } ?: streamToPlay.addonName).trim()
                 for (remaining in 3 downTo 1) {
+                    if (!isCurrent()) break
                     _uiState.update { current ->
                         val episodeForMode = current.nextEpisode ?: nextInfo
                         current.copy(
@@ -2248,11 +2271,13 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                         playbackEnded = false,
                     )
                 }
-                switchToEpisodeStream(
-                    stream = streamToPlay,
-                    forcedTargetVideo = nextVideo,
-                    isAutoPlay = !userInitiated
-                )
+                if (isCurrent()) {
+                    switchToEpisodeStream(
+                        stream = streamToPlay,
+                        forcedTargetVideo = nextVideo,
+                        isAutoPlay = !userInitiated
+                    )
+                }
             } else {
                 _uiState.update {
                     it.copy(
@@ -2260,12 +2285,12 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                         postPlayDismissedForCurrentEpisode = true,
                     )
                 }
-                showEpisodeStreamPicker(
-                    video = nextVideo,
-                    forceRefresh = lastError != null || selectedStream != null
-                )
+                if (isCurrent()) {
+                    showEpisodeStreamPicker(video = nextVideo, forceRefresh = lastError != null || selectedStream != null)
+                }
             }
         } catch (e: CancellationException) {
+            if (isActive && !isCurrent()) _uiState.update { it.copy(postPlayMode = null) }
             throw e
         } catch (e: Exception) {
             _uiState.update {
@@ -2274,7 +2299,7 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                     postPlayDismissedForCurrentEpisode = true,
                 )
             }
-            showEpisodeStreamPicker(video = nextVideo, forceRefresh = false)
+            if (isCurrent()) showEpisodeStreamPicker(video = nextVideo, forceRefresh = false)
         }
     }
 }

@@ -10,12 +10,16 @@ import com.nuvio.tv.domain.model.CatalogDescriptor
 import com.nuvio.tv.domain.model.CatalogExtra
 import com.nuvio.tv.domain.model.CatalogRow
 import com.nuvio.tv.domain.model.ContentType
+import com.nuvio.tv.domain.model.DiscoverLocation
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.PosterShape
+import com.nuvio.tv.domain.model.stableKey
 import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.domain.repository.CatalogRepository
 import com.nuvio.tv.domain.repository.WatchProgressRepository
 import com.nuvio.tv.ui.components.posteroptions.PosterOptionsController
+import com.nuvio.tv.ui.navigation.Screen
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -113,11 +117,82 @@ class SearchViewModelPaginationTest {
         )
     }
 
+    @Test
+    fun `short searchable rows page the selected configured source`() = runTest {
+        val firstUrl = "https://example.test/first"
+        val selectedUrl = "https://example.test/private-key"
+        val repository = RecordingCatalogRepository()
+        val viewModel = newViewModel(repository, configuredUrls = listOf(firstUrl, selectedUrl))
+
+        viewModel.onEvent(SearchEvent.QueryChanged("wolf"))
+        advanceUntilIdle()
+        val selected = viewModel.uiState.value.catalogRows.single { it.addonBaseUrl == selectedUrl }
+        assertEquals(1, selected.items.size)
+        assertTrue(selected.canOpenSearchSeeAll())
+        assertFalse(selected.copy(hasMore = false).canOpenSearchSeeAll())
+        val route = Screen.CatalogSeeAll.createRoute(CATALOG_ID, ADDON_ID, "movie", true, selected.stableKey())
+        assertTrue(route.endsWith("&searchCatalogKey=${selected.stableKey()}"))
+        assertFalse(route.contains("private-key"))
+        assertEquals("catalog_see_all/top/addon/movie?fromSearch=false",
+            Screen.CatalogSeeAll.createRoute(CATALOG_ID, ADDON_ID, "movie"))
+        repository.requests.clear()
+
+        viewModel.onEvent(SearchEvent.LoadMoreCatalog(CATALOG_ID, ADDON_ID, "movie", selected.stableKey()))
+        advanceUntilIdle()
+
+        assertEquals(listOf(selectedUrl to 10), repository.requests)
+        val rows = viewModel.uiState.value.catalogRows.associateBy { it.addonBaseUrl }
+        assertEquals(1, rows.getValue(firstUrl).items.size)
+        assertEquals(2, rows.getValue(selectedUrl).items.size)
+    }
+
+    @Test
+    fun `discover retries the first page after a catalog failure`() = runTest {
+        val repository = RecordingCatalogRepository().apply { failuresRemaining = 1 }
+        val viewModel = newViewModel(repository, DiscoverLocation.IN_SEARCH)
+
+        advanceUntilIdle()
+        viewModel.ensureDiscoverLoaded()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.discoverResults.isEmpty())
+
+        viewModel.onEvent(SearchEvent.LoadNextDiscoverResults)
+        advanceUntilIdle()
+
+        assertEquals(listOf(0, 0), repository.requests.map { it.second })
+        assertEquals(1, viewModel.uiState.value.discoverResults.size)
+    }
+
+    @Test
+    fun `discover retries the exact next cursor while keeping the current posters`() = runTest {
+        val repository = RecordingCatalogRepository()
+        val viewModel = newViewModel(repository, DiscoverLocation.IN_SEARCH)
+
+        advanceUntilIdle()
+        viewModel.ensureDiscoverLoaded()
+        advanceUntilIdle()
+        val firstPage = viewModel.uiState.value.discoverResults
+        repository.failuresRemaining = 1
+
+        viewModel.onEvent(SearchEvent.LoadNextDiscoverResults)
+        advanceUntilIdle()
+        assertEquals(firstPage, viewModel.uiState.value.discoverResults)
+
+        viewModel.onEvent(SearchEvent.LoadNextDiscoverResults)
+        advanceUntilIdle()
+
+        assertEquals(listOf(0, 10, 10), repository.requests.map { it.second })
+        assertEquals(firstPage, viewModel.uiState.value.discoverResults.take(1))
+        assertEquals(2, viewModel.uiState.value.discoverResults.size)
+    }
+
     /** Answers every query, recording what it was asked for and paging indefinitely. */
     private class RecordingCatalogRepository(
         private val pageDelayMs: Long = 0L
     ) : CatalogRepository {
         val queries = mutableListOf<String>()
+        val requests = mutableListOf<Pair<String, Int>>()
+        var failuresRemaining = 0
 
         override fun getCatalog(
             addonBaseUrl: String,
@@ -134,17 +209,23 @@ class SearchViewModelPaginationTest {
         ): Flow<NetworkResult<CatalogRow>> = flow {
             val query = extraArgs["search"].orEmpty()
             emit(NetworkResult.Loading)
+            requests += addonBaseUrl to skip
+            if (failuresRemaining > 0) {
+                failuresRemaining--
+                emit(NetworkResult.Error("unavailable"))
+                return@flow
+            }
             if (skip > 0) {
                 queries.add(query)
                 if (pageDelayMs > 0) delay(pageDelayMs)
             }
-            emit(NetworkResult.Success(row(catalogId, query, skip)))
+            emit(NetworkResult.Success(row(addonBaseUrl, catalogId, query, skip)))
         }
 
-        private fun row(catalogId: String, query: String, skip: Int): CatalogRow = CatalogRow(
+        private fun row(addonBaseUrl: String, catalogId: String, query: String, skip: Int): CatalogRow = CatalogRow(
             addonId = ADDON_ID,
             addonName = "Addon",
-            addonBaseUrl = "https://example.test",
+            addonBaseUrl = addonBaseUrl,
             catalogId = catalogId,
             catalogName = catalogId,
             type = ContentType.MOVIE,
@@ -164,13 +245,13 @@ class SearchViewModelPaginationTest {
                 )
             ),
             hasMore = true,
-            nextSkip = skip + 100,
+            nextSkip = skip + 10,
             supportsSkip = true
         )
     }
 
-    private class SingleAddonRepository(private val addon: Addon) : AddonRepository {
-        override fun getInstalledAddons(): Flow<List<Addon>> = flowOf(listOf(addon))
+    private class InstalledAddonRepository(private val addons: List<Addon>) : AddonRepository {
+        override fun getInstalledAddons(): Flow<List<Addon>> = flowOf(addons)
         override suspend fun fetchAddon(baseUrl: String): NetworkResult<Addon> = error("unused")
         override suspend fun addAddon(url: String) = error("unused")
         override suspend fun removeAddon(url: String) = error("unused")
@@ -178,7 +259,11 @@ class SearchViewModelPaginationTest {
         override suspend fun setAddonEnabled(url: String, enabled: Boolean) = error("unused")
     }
 
-    private fun newViewModel(repository: CatalogRepository): SearchViewModel {
+    private fun newViewModel(
+        repository: CatalogRepository,
+        discoverLocation: DiscoverLocation = DiscoverLocation.OFF,
+        configuredUrls: List<String> = listOf("https://example.test")
+    ): SearchViewModel {
         val addon = Addon(
             id = ADDON_ID,
             name = "Addon",
@@ -191,7 +276,7 @@ class SearchViewModelPaginationTest {
                     type = ContentType.MOVIE,
                     id = CATALOG_ID,
                     name = CATALOG_ID,
-                    extra = listOf(CatalogExtra(name = "search"))
+                    extra = listOf(CatalogExtra(name = "search"), CatalogExtra(name = "skip"))
                 )
             ),
             types = listOf(ContentType.MOVIE),
@@ -199,7 +284,7 @@ class SearchViewModelPaginationTest {
         )
 
         val layoutPreferences = mockk<LayoutPreferenceDataStore>()
-        every { layoutPreferences.discoverLocation } returns flowOf(com.nuvio.tv.domain.model.DiscoverLocation.OFF)
+        every { layoutPreferences.discoverLocation } returns flowOf(discoverLocation)
         every { layoutPreferences.posterCardWidthDp } returns flowOf(126)
         every { layoutPreferences.posterLabelsEnabled } returns flowOf(true)
         every { layoutPreferences.catalogAddonNameEnabled } returns flowOf(true)
@@ -218,10 +303,12 @@ class SearchViewModelPaginationTest {
         every { watchedSeries.fullyWatchedSeriesIds } returns MutableStateFlow(emptySet())
 
         return SearchViewModel(
-            addonRepository = SingleAddonRepository(addon),
+            addonRepository = InstalledAddonRepository(configuredUrls.map { addon.copy(baseUrl = it) }),
             catalogRepository = repository,
             metaRepository = mockk(relaxed = true),
-            discoverSelectionDataStore = mockk(relaxed = true),
+            discoverSelectionDataStore = mockk(relaxed = true) {
+                coEvery { getSelectedCatalogKey() } returns null
+            },
             layoutPreferenceDataStore = layoutPreferences,
             searchHistoryDataStore = history,
             watchProgressRepository = watchProgress,

@@ -18,8 +18,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -39,6 +42,8 @@ private object DeletedProfileDataStore : DataStore<Preferences> {
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
         throw CancellationException("Profile was removed")
 }
+
+internal data class ProfileStorageLifetime(val generation: Long = 0, val deleted: Boolean = false)
 
 internal val discoverLocationMigration = object : DataMigration<Preferences> {
     override suspend fun shouldMigrate(currentData: Preferences): Boolean =
@@ -70,7 +75,7 @@ class ProfileDataStoreFactory @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val cache = ConcurrentHashMap<String, ScopedDataStore>()
-    private val deletedProfileIds = ConcurrentHashMap.newKeySet<Int>()
+    private val profileLifetimes = MutableStateFlow<Map<Int, ProfileStorageLifetime>>(emptyMap())
     private val lock = Any()
     private val retainedStandaloneDataStoreNames = setOf(
         "app_onboarding",
@@ -90,7 +95,7 @@ class ProfileDataStoreFactory @Inject constructor(
     fun get(profileId: Int, featureName: String): DataStore<Preferences> {
         val fileName = if (profileId == 1) featureName else "${featureName}_p$profileId"
         synchronized(lock) {
-            if (profileId in deletedProfileIds) return DeletedProfileDataStore
+            if (isProfileDeleted(profileId)) return DeletedProfileDataStore
             cache[fileName]?.let { return it.store }
             return createAndCache(fileName).store
         }
@@ -100,7 +105,7 @@ class ProfileDataStoreFactory @Inject constructor(
         if (profileId == 1) return
         val suffix = "_p$profileId"
         val keysToRemove = synchronized(lock) {
-            deletedProfileIds.add(profileId)
+            setProfileDeleted(profileId, deleted = true)
             cache.keys.filter { it.endsWith(suffix) }
         }
         for (key in keysToRemove) {
@@ -119,23 +124,40 @@ class ProfileDataStoreFactory @Inject constructor(
         cachedStores.values.forEach { scoped ->
             runCatching { scoped.store.edit { it.clear() } }
         }
-        deletedProfileIds.clear()
         corruptedFileNames.clear()
 
         val cachedFileNames = cachedStores.keys.mapTo(mutableSetOf()) { "$it.preferences_pb" }
         val dataStoreDir = File(context.filesDir, "datastore")
-        if (!dataStoreDir.exists()) return@withContext
         dataStoreDir.listFiles()?.forEach { file ->
             if (file.name !in cachedFileNames && isProfileScopedDataStoreFile(file.name)) {
                 file.delete()
             }
         }
+        synchronized(lock) {
+            profileLifetimes.value = profileLifetimes.value.mapValues { (_, lifetime) ->
+                if (lifetime.deleted) ProfileStorageLifetime(lifetime.generation + 1) else lifetime
+            }
+        }
     }
 
-    fun isProfileDeleted(profileId: Int): Boolean = profileId in deletedProfileIds
+    internal fun profileStorageLifetime(profileId: Int): ProfileStorageLifetime =
+        profileLifetimes.value[profileId] ?: ProfileStorageLifetime()
+
+    internal fun observeProfileStorageLifetime(profileId: Int) = profileLifetimes
+        .map { it[profileId] ?: ProfileStorageLifetime() }
+        .distinctUntilChanged()
+
+    fun isProfileDeleted(profileId: Int): Boolean = profileStorageLifetime(profileId).deleted
 
     fun markProfileCreated(profileId: Int) {
-        deletedProfileIds.remove(profileId)
+        synchronized(lock) { setProfileDeleted(profileId, deleted = false) }
+    }
+
+    private fun setProfileDeleted(profileId: Int, deleted: Boolean) {
+        val lifetime = profileStorageLifetime(profileId)
+        if (lifetime.deleted != deleted) {
+            profileLifetimes.value += profileId to ProfileStorageLifetime(lifetime.generation + 1, deleted)
+        }
     }
 
     private fun isProfileScopedDataStoreFile(fileName: String): Boolean {

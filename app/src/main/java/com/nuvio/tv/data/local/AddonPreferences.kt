@@ -1,6 +1,7 @@
 package com.nuvio.tv.data.local
 
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -176,15 +177,39 @@ class AddonPreferences @Inject constructor(
             val orderedUrls = urls.map(::canonicalizeUrl)
             val currentUrls = getCurrentList(preferences).map(::canonicalizeUrl)
             if (orderedUrls == currentUrls) return@edit
-            preferences[orderedUrlsKey] = gson.toJson(orderedUrls)
-            val currentStates = getCurrentEnabledStates(preferences)
-            preferences[addonEnabledStatesKey] = gson.toJson(
-                orderedUrls.associateWith { url -> currentStates[url] ?: true }
-            )
-            invalidateFirstWatchSource(preferences)
+            writeAddonOrder(preferences, orderedUrls)
             changed = true
         }
         return changed
+    }
+
+    internal suspend fun setExistingAddonOrder(
+        urls: List<String>,
+        expectedUrls: List<String>,
+        profileId: Int,
+        isCurrent: () -> Boolean
+    ): Boolean {
+        if (!isCurrent() || effectiveProfileId() != profileId) return false
+        val orderedUrls = urls.map(::canonicalizeUrl)
+        val expected = expectedUrls.map(::canonicalizeUrl).distinct()
+        var accepted = false
+        store(profileId).edit { preferences ->
+            if (!isCurrent() || effectiveProfileId() != profileId) return@edit
+            val installed = getCurrentList(preferences).map(::canonicalizeUrl).distinct()
+            if (installed != expected || orderedUrls.any { it !in installed }) return@edit
+            if (orderedUrls != installed) writeAddonOrder(preferences, orderedUrls)
+            accepted = true
+        }
+        return accepted
+    }
+
+    private fun writeAddonOrder(preferences: MutablePreferences, orderedUrls: List<String>) {
+        val currentStates = getCurrentEnabledStates(preferences)
+        preferences[orderedUrlsKey] = gson.toJson(orderedUrls)
+        preferences[addonEnabledStatesKey] = gson.toJson(
+            orderedUrls.associateWith { url -> currentStates[url] ?: true }
+        )
+        invalidateFirstWatchSource(preferences)
     }
 
     suspend fun setAddonEnabled(url: String, enabled: Boolean): Boolean {

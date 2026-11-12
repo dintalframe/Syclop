@@ -41,6 +41,28 @@ class HomeBrowseViewModelTest {
         f.vm.loadMoreCatalogs(); advanceUntilIdle()
         assertEquals(listOf("tt5"), f.vm.state.value.rows.flatMap { it.data?.items.orEmpty() }.map { it.id })
     }
+    @Test fun `filtered catalog keeps its page action beside a populated catalog`() = runTest {
+        val f = fixture(catalogs = listOf(descriptor("ready", ContentType.MOVIE), descriptor("filtered", ContentType.MOVIE)))
+        every { f.catalogs.getCatalog(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } answers {
+            val id = arg<String>(3)
+            val skip = arg<Int>(6)
+            f.calls += Triple(arg(0), id, skip)
+            val card = item("tt$id$skip", ContentType.MOVIE).copy(ageRating = if (id == "filtered" && skip == 0) null else "G")
+            flowOf(NetworkResult.Success(row(id, listOf(card)).copy(
+                hasMore = id == "filtered" && skip == 0, supportsSkip = true, nextSkip = 10
+            )))
+        }
+        f.vm.select(HomeBrowseSection.KIDS); advanceUntilIdle()
+        assertTrue(f.vm.state.value.rows.any { it.data?.items?.isNotEmpty() == true })
+        val action = f.vm.state.value.emptyPaginatableRows().single()
+        assertEquals("filtered", action.data?.catalogId)
+
+        f.vm.loadMore(action.key); advanceUntilIdle()
+
+        assertEquals(listOf(0, 10), f.calls.filter { it.second == "filtered" }.map { it.third })
+        assertEquals(listOf("ttfiltered10"), f.vm.state.value.rows.single { it.key == action.key }.data?.items?.map { it.id })
+        assertTrue(f.vm.state.value.emptyPaginatableRows().isEmpty())
+    }
     @Test fun `profile B never requests the replayed private catalog snapshot from profile A`() = runTest {
         val f = fixture()
         f.vm.select(HomeBrowseSection.MOVIES); advanceUntilIdle()

@@ -7,6 +7,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -32,6 +34,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
@@ -147,6 +150,7 @@ internal fun ModernHomeRowsList(
     onExpansionInteractionNonceChange: (Int) -> Unit,
     blockLeftOnFirstExpandedItem: Boolean = false,
     contentFocusEnabled: Boolean = true,
+    catalogFooter: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     // Unwrap StableRef wrappers for internal use (not passed to child composables)
@@ -156,6 +160,7 @@ internal fun ModernHomeRowsList(
 
     val latestOnActiveRowKeyChange = rememberUpdatedState(onActiveRowKeyChange)
     val latestOnActiveItemIndexChange = rememberUpdatedState(onActiveItemIndexChange)
+    var footerHasFocus by remember(catalogFooter != null) { mutableStateOf(false) }
 
     val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val stableItemFocusRequestersByRow = remember { mutableMapOf<String, StableRef<MutableMap<Int, FocusRequester>>>() }
@@ -298,12 +303,14 @@ internal fun ModernHomeRowsList(
                     val lastRowKey = carouselRows.list.lastOrNull()?.key
                     if (event.type == KeyEventType.KeyDown &&
                         event.key == Key.DirectionUp &&
+                        !footerHasFocus &&
                         effectiveExpandEnabled &&
                         expandedCatalogFocusKey.value != null &&
                         activeRowKey.value == firstRowKey
                     ) return@onPreviewKeyEvent true
                     if (event.type == KeyEventType.KeyDown &&
                         event.key == Key.DirectionUp &&
+                        !footerHasFocus &&
                         firstRowKey != null && activeRowKey.value == firstRowKey &&
                         browseTabFocusRequester != null
                     ) {
@@ -312,6 +319,7 @@ internal fun ModernHomeRowsList(
                     }
                     if (event.type == KeyEventType.KeyDown &&
                         event.key == Key.DirectionDown &&
+                        catalogFooter == null &&
                         effectiveExpandEnabled &&
                         expandedCatalogFocusKey.value != null &&
                         activeRowKey.value == lastRowKey
@@ -334,8 +342,8 @@ internal fun ModernHomeRowsList(
                         val info = verticalRowListState.layoutInfo
                         val lastIdx = carouselRows.list.size - 1
                         val lastVisible = info.visibleItemsInfo.lastOrNull { it.index == lastIdx }
-                        lastIdx >= 0 && lastVisible != null &&
-                            lastVisible.offset + lastVisible.size <= info.viewportEndOffset
+                        footerHasFocus || (lastIdx >= 0 && lastVisible != null &&
+                            lastVisible.offset + lastVisible.size <= info.viewportEndOffset)
                     },
                     resolveVerticalLanding = { sign ->
                         val layoutInfo = verticalRowListState.layoutInfo
@@ -490,6 +498,13 @@ internal fun ModernHomeRowsList(
                         StableRef(mutableMapOf())
                     }
                 )
+            }
+            if (catalogFooter != null) {
+                item(key = "catalog_footer") {
+                    Box(Modifier.fillMaxWidth().onFocusChanged { footerHasFocus = it.hasFocus }.focusGroup()) {
+                        catalogFooter()
+                    }
+                }
             }
         }
     }

@@ -5,6 +5,8 @@ import com.nuvio.tv.core.streams.ServicePlaybackOrigin
 import com.nuvio.tv.data.local.DebridSettingsDataStore
 import com.nuvio.tv.domain.model.DebridSettings
 import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.ui.screens.stream.AutomaticStreamAttempt
+import com.nuvio.tv.ui.screens.stream.resolveAutomaticStreamFallback
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -131,6 +133,35 @@ class DirectDebridResolutionBudgetTest {
         runCurrent()
         h.resolver.resolve(source("d"), null, null)
         coVerify(exactly = 3) { h.ad.resolve(any(), any(), any(), any()) }
+    }
+
+    @Test fun `source recovery advances past a rejection when another provider is cooling down`() = runTest {
+        val h = Harness(this)
+        val rejected = source("a")
+        val playable = source("b")
+        coEvery { h.rd.resolve(any(), any(), any(), any()) } returns
+            directDebridHttpFailure(429, DebridProviders.REAL_DEBRID_ID, retryAfterSeconds = 60L)
+        coEvery { h.ad.resolve(any(), any(), any(), any()) } coAnswers {
+            if (firstArg<Stream>().getEffectiveInfoHash() == rejected.infoHash) {
+                directDebridHttpFailure(451, DebridProviders.ALL_DEBRID_ID)
+            } else h.success
+        }
+        val result = resolveAutomaticStreamFallback(initial = rejected, ranked = listOf(rejected, playable),
+            eligible = { true }, selectNext = { it.firstOrNull() }, isCurrent = { true }) { stream ->
+            when (val resolved = h.resolver.resolve(stream, null, null)) {
+                is DirectDebridResolveResult.Success -> AutomaticStreamAttempt(playback = resolved)
+                is DirectDebridResolveResult.Failure -> {
+                    assertEquals(DirectDebridFailureReason.RATE_LIMITED, resolved.detail.reason)
+                    assertEquals(DebridProviders.REAL_DEBRID_ID, resolved.detail.providerId)
+                    assertEquals(60L, resolved.detail.retryAfterSeconds)
+                    AutomaticStreamAttempt(failure = resolved)
+                }
+                else -> error("Unexpected resolver outcome: $resolved")
+            }
+        }
+        assertEquals(h.success.copy(providerId = DebridProviders.ALL_DEBRID_ID), result.playback)
+        assertTrue(h.resolver.isPlaybackAuthorized(h.success.url))
+        coVerify(exactly = 1) { h.rd.resolve(any(), any(), any(), any()) }
     }
 
     @Test fun `first wrong episode response cancels pending service dispatch without a playback grant`() = runTest {

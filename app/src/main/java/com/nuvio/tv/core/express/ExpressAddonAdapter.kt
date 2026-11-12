@@ -23,14 +23,18 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
 import java.util.ArrayDeque
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 
@@ -143,7 +147,9 @@ class ExpressAddonAdapter internal constructor(
                 }
             }
             data class Task(val url: String, val row: ExpressRow? = null)
+            fun HttpUrl.origin() = "$scheme://$host:$port"
             class Provider(val id: String, val definition: JsonObject, urls: List<String>) {
+                val origin = http.validatedUrl(urls.first()).origin()
                 val queries = ArrayDeque(urls.map { Task(it) })
                 val subpages = ArrayDeque<Task>()
                 var requests = 0
@@ -151,12 +157,6 @@ class ExpressAddonAdapter internal constructor(
                 var finalized = false
                 fun next(): Task? = subpages.peekFirst() ?: queries.peekFirst()
                 fun removeNext(): Task = if (subpages.isNotEmpty()) subpages.removeFirst() else queries.removeFirst()
-                fun finish() {
-                    if (!finalized && next() == null) {
-                        finalized = true
-                        if (succeeded) completed.incrementAndGet() else failed.incrementAndGet()
-                    }
-                }
             }
             val providers = all.mapNotNull { (id, definition) ->
                 try {
@@ -176,99 +176,130 @@ class ExpressAddonAdapter internal constructor(
             var requests = 0
             val hostRequests = mutableMapOf<String, Int>()
             val budgetLock = Any()
-            fun reserve(provider: Provider, url: okhttp3.HttpUrl): Boolean = synchronized(budgetLock) {
-                val host = "${url.scheme}://${url.host}:${url.port}"
-                if (requests >= MAX_REQUESTS || provider.requests >= MAX_REQUESTS_PER_PROVIDER ||
-                    hostRequests.getOrDefault(host, 0) >= MAX_REQUESTS_PER_HOST) false
-                else {
-                    requests++; provider.requests++
-                    hostRequests[host] = hostRequests.getOrDefault(host, 0) + 1
-                    true
+            val budgetVersion = MutableStateFlow(0)
+            fun finish(provider: Provider) = synchronized(budgetLock) {
+                if (!provider.finalized && provider.next() == null) {
+                    provider.finalized = true
+                    if (provider.succeeded) completed.incrementAndGet() else failed.incrementAndGet()
+                    budgetVersion.value++
                 }
             }
-            val finished = withTimeoutOrNull(searchTimeoutMs) {
-                while (providers.any { it.next() != null }) {
-                    // One request per provider per round, interleaved by origin. Every eligible
-                    // provider gets its first turn before another consumes an alias/subpage turn.
-                    val byHost = providers.filter { it.next() != null }.groupBy {
-                        http.validatedUrl(it.next()!!.url).let { url -> "${url.scheme}://${url.host}:${url.port}" }
-                    }.values.map { ArrayDeque(it) }
-                    val round = buildList {
-                        while (byHost.any { it.isNotEmpty() }) byHost.forEach { queue ->
-                            if (queue.isNotEmpty()) add(queue.removeFirst())
+            suspend fun reserve(provider: Provider, url: HttpUrl): Boolean {
+                val origin = url.origin()
+                while (true) {
+                    val observed = budgetVersion.value
+                    synchronized(budgetLock) {
+                        val hostUsed = hostRequests.getOrDefault(origin, 0)
+                        if (requests >= MAX_REQUESTS || provider.requests >= MAX_REQUESTS_PER_PROVIDER ||
+                            hostUsed >= MAX_REQUESTS_PER_HOST) return false
+                        // Leave enough budget for active peers to reach the turns this provider already received.
+                        val peers = providers.filter { !it.finalized && it.requests < provider.requests }
+                        val earlierTurns = peers.sumOf { provider.requests - it.requests }
+                        val earlierOriginTurns = peers.filter { it.origin == origin }.sumOf { provider.requests - it.requests }
+                        if (MAX_REQUESTS - requests > earlierTurns && MAX_REQUESTS_PER_HOST - hostUsed > earlierOriginTurns) {
+                            requests++
+                            provider.requests++
+                            hostRequests[origin] = hostUsed + 1
+                            budgetVersion.value++
+                            return true
                         }
                     }
-                    val scheduled = round.mapNotNull { provider ->
-                        val task = provider.next() ?: return@mapNotNull null
-                        if (!reserve(provider, http.validatedUrl(task.url))) {
-                            count(SourceSearchReason.REQUEST_BUDGET)
-                            provider.queries.clear(); provider.subpages.clear(); provider.finish()
-                            null
-                        } else {
-                            provider to provider.removeNext()
+                    budgetVersion.first { it != observed }
+                }
+            }
+            suspend fun schedule(provider: Provider): Task? {
+                val task = provider.next() ?: return null
+                if (reserve(provider, http.validatedUrl(task.url))) return provider.removeNext()
+                count(SourceSearchReason.REQUEST_BUDGET)
+                provider.queries.clear(); provider.subpages.clear(); finish(provider)
+                return null
+            }
+            suspend fun runTurn(provider: Provider, task: Task) {
+                try {
+                    val document = http.get(task.url, beforeRedirect = { destination ->
+                        if (!reserve(provider, destination)) throw ExpressBudgetExceeded()
+                    })
+                    if (task.row != null) {
+                        val magnets = Jsoup.parse(document.text).select("a[href]")
+                            .map { it.attr("href") }.filter { it.startsWith("magnet:", true) }
+                            .distinctBy { it.substringAfter("urn:btih:", "").substringBefore('&').lowercase() }
+                        if (magnets.size == 1) admit(task.row.copy(url = magnets.single()), provider.definition.string("name") ?: provider.id)
+                        else count(SourceSearchReason.INVALID_HASH)
+                    } else {
+                        val rows = try { ExpressParser.parse(provider.definition, document.text) }
+                        catch (error: Exception) {
+                            if (error is CancellationException) throw error
+                            count(SourceSearchReason.PARSER_ERROR)
+                            throw ExpressParserFailure()
                         }
-                    }
-                    coroutineScope {
-                        scheduled.map { (provider, task) -> async {
-                            try {
-                                val document = http.get(task.url, beforeRedirect = { destination ->
-                                    if (!reserve(provider, destination)) throw ExpressBudgetExceeded()
-                                })
-                                if (task.row != null) {
-                                    val magnets = Jsoup.parse(document.text).select("a[href]")
-                                        .map { it.attr("href") }.filter { it.startsWith("magnet:", true) }
-                                        .distinctBy { it.substringAfter("urn:btih:", "").substringBefore('&').lowercase() }
-                                    if (magnets.size == 1) admit(task.row.copy(url = magnets.single()), provider.definition.string("name") ?: provider.id)
-                                    else count(SourceSearchReason.INVALID_HASH)
-                                } else {
-                                    val rows = try { ExpressParser.parse(provider.definition, document.text) }
-                                    catch (error: Exception) {
-                                        if (error is CancellationException) throw error
-                                        count(SourceSearchReason.PARSER_ERROR)
-                                        throw ExpressParserFailure()
-                                    }
-                                    var admittedRows = 0
-                                    for (row in rows) {
-                                        if (!media.acceptsNativeAnimeRow(row)) { count(SourceSearchReason.TITLE_MISMATCH); continue }
-                                        if (!media.acceptsInternationalYearHints(row)) { count(SourceSearchReason.TITLE_MISMATCH); continue }
-                                        if (episodeRequest && EpisodeSourcePolicy.hasReportedPackText(row.title, row.filename,
-                                                turkishBroadcastEpisode = media.turkishBroadcastEpisode)) {
-                                            count(SourceSearchReason.SEASON_PACK_HIDDEN); continue
-                                        }
-                                        if (admittedRows++ >= MAX_ROWS) break
-                                        if (row.hash == null && row.url?.startsWith("magnet:", true) != true &&
-                                            provider.definition.get("source_is_in_sub_page")?.asBoolean == true) {
-                                            val link = row.url?.let { document.url.toHttpUrl().resolve(it)?.toString() }
-                                            if (link == null) count(SourceSearchReason.INVALID_HASH)
-                                            else provider.subpages.addLast(Task(http.validatedUrl(link).toString(), row))
-                                        } else admit(row, provider.definition.string("name") ?: provider.id)
-                                    }
-                                }
-                                provider.succeeded = true
-                            } catch (error: Exception) {
-                                if (error is CancellationException) throw error
-                                when {
-                                    error is ExpressBudgetExceeded -> {
-                                        count(SourceSearchReason.REQUEST_BUDGET)
-                                        provider.queries.clear(); provider.subpages.clear()
-                                    }
-                                    error is ExpressParserFailure -> Unit // Already counted at the parser boundary.
-                                    error is ExpressHttpException && error.failure == ExpressHttpFailure.RATE_LIMITED -> {
-                                        count(SourceSearchReason.RATE_LIMITED)
-                                        // The host cooldown persists in HTTP; don't repeatedly spend
-                                        // this search's budget on aliases known to be blocked.
-                                        provider.queries.clear(); provider.subpages.clear()
-                                    }
-                                    error is ExpressHttpException && error.failure == ExpressHttpFailure.TIMEOUT -> count(SourceSearchReason.TIMEOUT)
-                                    else -> count(SourceSearchReason.REQUEST_FAILED)
-                                }
-                            } finally {
-                                provider.finish()
+                        var admittedRows = 0
+                        for (row in rows) {
+                            if (!media.acceptsNativeAnimeRow(row) || !media.acceptsMovieReleaseTitles(row) ||
+                                !media.acceptsInternationalYearHints(row)) {
+                                count(SourceSearchReason.TITLE_MISMATCH); continue
                             }
-                            publish()
-                        } }.awaitAll()
+                            if (episodeRequest && EpisodeSourcePolicy.hasReportedPackText(row.title, row.filename,
+                                    turkishBroadcastEpisode = media.turkishBroadcastEpisode)) {
+                                count(SourceSearchReason.SEASON_PACK_HIDDEN); continue
+                            }
+                            if (admittedRows >= MAX_ROWS) break
+                            if (row.hash == null && row.url?.startsWith("magnet:", true) != true &&
+                                provider.definition.get("source_is_in_sub_page")?.asBoolean == true) {
+                                val link = row.url?.let { document.url.toHttpUrl().resolve(it) }
+                                val validated = try { link?.let { http.validatedUrl(it.toString()) } }
+                                    catch (_: ExpressException) { null }
+                                if (validated == null) { count(SourceSearchReason.INVALID_HASH); continue }
+                                provider.subpages.addLast(Task(validated.toString(), row))
+                            } else admit(row, provider.definition.string("name") ?: provider.id)
+                            admittedRows++
+                        }
+                    }
+                    provider.succeeded = true
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    when {
+                        error is ExpressBudgetExceeded -> {
+                            count(SourceSearchReason.REQUEST_BUDGET)
+                            provider.queries.clear(); provider.subpages.clear()
+                        }
+                        error is ExpressParserFailure -> Unit // Already counted at the parser boundary.
+                        error is ExpressHttpException && error.failure == ExpressHttpFailure.RATE_LIMITED -> {
+                            count(SourceSearchReason.RATE_LIMITED)
+                            // The host cooldown persists in HTTP; don't repeatedly spend
+                            // this search's budget on aliases known to be blocked.
+                            provider.queries.clear(); provider.subpages.clear()
+                        }
+                        error is ExpressHttpException && error.failure == ExpressHttpFailure.TIMEOUT -> count(SourceSearchReason.TIMEOUT)
+                        else -> count(SourceSearchReason.REQUEST_FAILED)
                     }
                 }
+                finish(provider)
+                publish()
+            }
+            val finished = withTimeoutOrNull(searchTimeoutMs) {
+                // Reserve every eligible provider's first turn before allowing any aliases or details.
+                val pendingByOrigin = providers.groupBy { it.origin }.values.map { ArrayDeque(it) }
+                val firstRound = buildList {
+                    while (pendingByOrigin.any { it.isNotEmpty() }) pendingByOrigin.forEach { queue ->
+                        if (queue.isNotEmpty()) {
+                            val provider = queue.removeFirst()
+                            schedule(provider)?.let { add(provider to it) }
+                        }
+                    }
+                }
+                val firstTurnsStarted = CompletableDeferred<Unit>()
+                val workers = firstRound.map { (provider, firstTurn) ->
+                    async(start = CoroutineStart.UNDISPATCHED) {
+                        runTurn(provider, firstTurn)
+                        firstTurnsStarted.await()
+                        while (true) {
+                            val task = schedule(provider) ?: break
+                            runTurn(provider, task)
+                        }
+                    }
+                }
+                firstTurnsStarted.complete(Unit)
+                workers.awaitAll()
                 true
             } ?: false
             if (!finished) count(SourceSearchReason.TIMEOUT, providers.count { !it.finalized }.coerceAtLeast(1))

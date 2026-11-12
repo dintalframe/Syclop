@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import okhttp3.EventListener
 import okhttp3.OkHttpClient
@@ -45,6 +46,72 @@ class ExpressProgressiveSearchTest {
             assertEquals("Show.S01E04.mkv", first.streams.single().title)
             assertFalse(first.report.complete)
             assertTrue(cancellations.get() >= 1)
+        }
+    }
+
+    @Test fun `localized followup query returns sources while a same-origin provider still waits for its first response`() = runBlocking {
+        MockWebServer().use { server ->
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse = when {
+                    request.path == "/config" -> json(config(server, listOf("slow", "healthy")))
+                    request.path!!.startsWith("/slow/") -> MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)
+                    request.requestUrl?.queryParameter("q")?.contains("Bölüm") == true -> json(rows("Show.S01E04.mkv"))
+                    else -> json("""{"streams":[]}""")
+                }
+            }
+            val adapter = adapter(metadata = ExpressMetadataSource {
+                media().copy(originalTitle = "Türkçe Başlık", preferOriginalTitle = true)
+            })
+            val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
+            val update = withTimeoutOrNull(3_000) {
+                adapter.searchProgressively(addon, request()).first { it.streams.isNotEmpty() }
+            }
+            assertEquals("Show.S01E04.mkv", update?.streams?.singleOrNull()?.title)
+            assertFalse(update!!.report.complete)
+        }
+    }
+
+    @Test fun `invalid subpage URL leaves a later valid source available`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(json(config(server, listOf("example"), subpages = true)))
+            server.enqueue(json("""{"streams":[
+                {"title":"Show.S01E04.720p","url":"http://user@example.org/detail"},
+                {"title":"Show.S01E04.mkv","infoHash":"$HASH"}]}"""))
+            val adapter = adapter()
+            val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
+            val update = adapter.searchProgressively(addon, request()).toList().last()
+
+            assertEquals(listOf("Show.S01E04.mkv"), update.streams.map { it.title })
+            assertEquals(1, update.report.completed)
+            assertEquals(1, update.report.reasons[SourceSearchReason.INVALID_HASH])
+            assertNull(update.report.reasons[SourceSearchReason.REQUEST_FAILED])
+        }
+    }
+
+    @Test fun `movie search rejects explicit unrelated release labels and retains aliases and sparse rows`() = runBlocking {
+        MockWebServer().use { server ->
+            val providerConfig = parseExpressObject(config(server, listOf("example"))).apply {
+                getAsJsonObject("example").add("movie", parseExpressObject(
+                    """{"query":"/search?q={query}","keywords":"{imdbId}"}"""))
+            }
+            server.enqueue(json(providerConfig.toString()))
+            server.enqueue(json("""{"streams":[
+                {"title":"Other.Film.2020.2160p.mkv\nSeeds: 100","infoHash":"${"1".repeat(40)}"},
+                {"title":"Selected Film","behaviorHints":{"filename":"Other.Film.2020.2160p.mkv"},"infoHash":"${"2".repeat(40)}"},
+                {"title":"[Group] Seçilen.Film.2020.IMAX.2160p.mkv","infoHash":"${"3".repeat(40)}"},
+                {"title":"Alternate.Film.2020.2160p.mkv","infoHash":"${"4".repeat(40)}"},
+                {"title":"High Quality 2160p HDR","infoHash":"${"5".repeat(40)}"},
+                {"behaviorHints":{"filename":"Downloads/2160p.mkv"},"infoHash":"${"6".repeat(40)}"},
+                {"title":"Selected.Film.2.2020.2160p.mkv","infoHash":"${"7".repeat(40)}"}]}"""))
+            val adapter = adapter(metadata = ExpressMetadataSource {
+                ExpressMedia("movie", "Selected Film", "tt1", 2020, null, null,
+                    originalTitle = "Seçilen Film", titleAliases = listOf("Alternate Film"))
+            })
+            val addon = (adapter.discover(server.url("/config").toString()) as NetworkResult.Success).data
+            val update = adapter.searchProgressively(addon, ExpressMediaRequest("movie", "tt1")).toList().last()
+
+            assertEquals(listOf('3', '4', '5', '6').map { it.toString().repeat(40) }, update.streams.map { it.infoHash })
+            assertEquals(3, update.report.reasons[SourceSearchReason.TITLE_MISMATCH])
         }
     }
 
@@ -202,7 +269,9 @@ class ExpressProgressiveSearchTest {
             assertEquals(1, updates.last().streams.size)
             assertTrue(updates.last().report.timedOut)
             assertTrue(updates.last().report.complete)
-            assertTrue(updates.last().report.reasons.getValue(SourceSearchReason.TIMEOUT) > 0)
+            assertEquals(1, updates.last().report.reasons[SourceSearchReason.TIMEOUT])
+            assertEquals(1, updates.last().report.completed)
+            assertEquals(0, updates.last().report.failed)
             assertNull(updates.last().error)
         }
     }

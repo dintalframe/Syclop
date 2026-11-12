@@ -5,6 +5,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import fi.iki.elonen.NanoHTTPD
 import java.io.ByteArrayInputStream
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 class AddonConfigServer(
@@ -17,12 +18,16 @@ class AddonConfigServer(
     private val traktMetadataProvider: ((TraktSourceMetadataRequest) -> TraktSourceMetadataInfo?)? = null,
     private val traktSearchProvider: ((TraktSourceSearchRequest) -> List<TraktSourceSearchResultInfo>)? = null,
     private val logoProvider: (() -> ByteArray?)? = null,
+    private val isCurrent: () -> Boolean = { true },
     port: Int = 8080
 ) : NanoHTTPD(port) {
 
     private val gson = Gson()
     private val pendingChanges = ConcurrentHashMap<String, PendingAddonChange>()
+    private val addonIdsByUrl = ConcurrentHashMap<String, String>()
     private val pairing = LocalConfigSession()
+
+    private data class BrowserAddon(val id: String, val name: String)
 
     fun pairingUrl(ipAddress: String): String = pairing.pairingUrl(ipAddress, listeningPort)
 
@@ -35,6 +40,7 @@ class AddonConfigServer(
     }
 
     override fun serve(session: IHTTPSession): Response = pairing.respond(session) {
+        if (!isCurrent()) throw InvalidConfigRequest(Response.Status.FORBIDDEN, "Pairing required")
         val uri = session.uri
         val method = session.method
 
@@ -77,21 +83,45 @@ class AddonConfigServer(
     }
 
     private fun serveCollections(): Response {
-        val collections = currentPageStateProvider().collections
+        val collections = currentPageState().collections
         val json = gson.toJson(collections)
         return newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", json)
     }
 
     private fun serveAddonList(): Response {
-        val addons = currentPageStateProvider().addons
-        val json = gson.toJson(addons)
+        val json = gson.toJson(browserAddons(currentPageState()))
         return newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", json)
     }
 
     private fun servePageState(): Response {
-        val state = currentPageStateProvider()
-        val json = gson.toJson(state)
+        val state = currentPageState()
+        val catalogs = state.catalogs.map { catalog ->
+            catalog.copy(addonName = browserName(catalog.addonName, state.addons))
+        }
+        val publicState = gson.toJsonTree(state.copy(addons = emptyList(), catalogs = catalogs)).asJsonObject
+        publicState.add("addons", gson.toJsonTree(browserAddons(state)))
+        val json = gson.toJson(publicState)
         return newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", json)
+    }
+
+    private fun addonId(addon: AddonInfo): String =
+        addonIdsByUrl.computeIfAbsent(addon.url) { UUID.randomUUID().toString() }
+
+    private fun browserAddons(state: PageState): List<BrowserAddon> = state.addons.map { addon ->
+        BrowserAddon(addonId(addon), browserName(addon.name, state.addons))
+    }
+
+    private fun browserName(name: String, addons: List<AddonInfo>): String =
+        name.takeIf {
+            it.isNotBlank() && addons.none { addon ->
+                val urlLabel = addon.url.substringBefore('?').substringBefore('#').trimEnd('/').substringAfterLast('/')
+                it == urlLabel || it.contains(addon.url)
+            }
+        }
+            ?: context.getString(com.nuvio.tv.R.string.stream_info_subtitle_source_addon)
+
+    private fun currentPageState(): PageState = currentPageStateProvider().also {
+        if (!isCurrent()) throw InvalidConfigRequest(Response.Status.FORBIDDEN, "Pairing required")
     }
 
     private fun serveTmdbMetadata(session: IHTTPSession): Response {
@@ -161,7 +191,14 @@ class AddonConfigServer(
 
         val change: PendingAddonChange = try {
             val parsed = gson.fromJson<Map<String, Any>>(body, object : TypeToken<Map<String, Any>>() {}.type)
-            val urls = parseStringList(parsed["urls"])
+            require("urls" !in parsed)
+            val currentState = currentPageState()
+            val urls = if (webConfigMode.allowAddonManagement) {
+                val addons = currentState.addons.associateBy(::addonId)
+                val ids = requireNotNull(parsed["addonIds"] as? List<*>)
+                require(ids.size == ids.distinct().size)
+                ids.map { id -> requireNotNull(addons[id as? String]).url }
+            } else currentState.addons.map { it.url }
             val catalogOrderKeys = parseStringList(parsed["catalogOrderKeys"])
             val disabledCatalogKeys = parseStringList(parsed["disabledCatalogKeys"])
             val collectionsRaw = parsed["collections"]
@@ -176,11 +213,14 @@ class AddonConfigServer(
                     proposedDisabledCatalogKeys = disabledCatalogKeys,
                     proposedCollectionsJson = collectionsJson,
                     proposedDisabledCollectionKeys = disabledCollectionKeys,
-                    proposedFollowAddonsOrder = followAddonsOrder
+                    proposedFollowAddonsOrder = followAddonsOrder,
+                    expectedAddonUrls = currentState.addons.map { it.url }.takeIf { webConfigMode.allowAddonManagement }
                 ),
-                currentState = currentPageStateProvider()
+                currentState = currentState
             )
-        } catch (e: Exception) {
+        } catch (error: InvalidConfigRequest) {
+            throw error
+        } catch (_: Exception) {
             val error = mapOf("error" to context.getString(com.nuvio.tv.R.string.web_error_invalid_request_body))
             return newFixedLengthResponse(
                 Response.Status.BAD_REQUEST,
@@ -227,6 +267,7 @@ class AddonConfigServer(
             traktMetadataProvider: ((TraktSourceMetadataRequest) -> TraktSourceMetadataInfo?)? = null,
             traktSearchProvider: ((TraktSourceSearchRequest) -> List<TraktSourceSearchResultInfo>)? = null,
             logoProvider: (() -> ByteArray?)? = null,
+            isCurrent: () -> Boolean = { true },
             startPort: Int = 8080,
             maxAttempts: Int = 10
         ): AddonConfigServer? {
@@ -242,6 +283,7 @@ class AddonConfigServer(
                         traktMetadataProvider = traktMetadataProvider,
                         traktSearchProvider = traktSearchProvider,
                         logoProvider = logoProvider,
+                        isCurrent = isCurrent,
                         port = port
                     )
                     server.start(SOCKET_READ_TIMEOUT, false)

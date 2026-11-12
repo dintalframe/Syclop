@@ -90,7 +90,8 @@ internal object NativeDebridFallbackRouter {
         }
         val remaining = jobs.toMutableList()
         var last = NativeDebridRoute(null, DirectDebridResolveResult.MissingApiKey)
-        var serviceFailed = false
+        var notCachedRoute: NativeDebridRoute? = null
+        var hadSourceFailure = false
         var classifiedFailure: NativeDebridRoute? = null
         try {
             while (remaining.isNotEmpty()) {
@@ -101,6 +102,7 @@ internal object NativeDebridFallbackRouter {
                 currentCoroutineContext().ensureActive()
                 checkCurrent()
                 last = route
+                hadSourceFailure = hadSourceFailure || route.result.canTryAnotherSource()
                 when (val result = route.result) {
                     is DirectDebridResolveResult.Success -> return@supervisorScope route
                     is DirectDebridResolveResult.Failure -> {
@@ -110,12 +112,16 @@ internal object NativeDebridFallbackRouter {
                         val previous = (classifiedFailure?.result as? DirectDebridResolveResult.Failure)?.detail?.reason
                         if (previous == null || failurePriority(result.detail.reason) > failurePriority(previous)) classifiedFailure = route
                     }
-                    DirectDebridResolveResult.NotCached -> Unit
-                    DirectDebridResolveResult.Error -> serviceFailed = true
+                    DirectDebridResolveResult.NotCached -> notCachedRoute = route
+                    DirectDebridResolveResult.Error -> Unit
                     DirectDebridResolveResult.MissingApiKey, DirectDebridResolveResult.Stale -> return@supervisorScope route
                 }
             }
-            classifiedFailure ?: if (serviceFailed) last.copy(result = DirectDebridResolveResult.Error) else last
+            val bestRoute = classifiedFailure ?: return@supervisorScope (notCachedRoute ?: last)
+            val failure = bestRoute.result as DirectDebridResolveResult.Failure
+            if (hadSourceFailure && !failure.canTryAnotherSource()) {
+                bestRoute.copy(result = failure.copy(detail = failure.detail.copy(anotherProviderHadSourceFailure = true)))
+            } else bestRoute
         } finally {
             // Shared resolver jobs track their own waiters. Cancel only this operation's
             // waits; do not delete a remote torrent or another caller's shared request.

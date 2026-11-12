@@ -10,6 +10,7 @@
     <string name="web_manage_addons_title">Manage Addons</string>
     <string name="web_manage_addons_subtitle">Manage addons, catalogs, and collections</string>
     <string name="web_manage_addons_only_subtitle">Install or remove add-ons</string>
+    <string name="web_install_addons_on_tv">Install new add-ons in Syclop on your TV.</string>
     <string name="web_add_addon_url">Add addon by URL</string>
     <string name="web_placeholder_url">https://example.com/manifest.json</string>
     <string name="web_btn_add">Add</string>
@@ -1742,12 +1743,14 @@
     <string name="addon_reorder_subtitle">Controls catalog and collection row order on Home (Classic + Modern + Grid)</string>
     <string name="addon_qr_scan_instruction">Scan with your phone to manage addons, catalogs, and collections</string>
     <string name="addon_qr_addons_only_scan_instruction">Scan with your phone to install or remove add-ons</string>
+    <string name="addon_qr_reorder_scan_instruction">Scan with your phone to reorder or remove installed add-ons.</string>
     <string name="addon_qr_collections_scan_instruction">Scan with your phone to manage collections</string>
     <string name="addon_qr_close">Close</string>
     <string name="addon_confirm_title">Confirm addon &amp; catalog changes</string>
     <string name="addon_confirm_subtitle">The following changes were made from your phone:</string>
     <string name="addon_confirm_added">Added:</string>
     <string name="addon_confirm_removed">Removed:</string>
+    <string name="addon_confirm_order_changed">Add-on order was changed</string>
     <string name="addon_confirm_catalog_reordered">Catalog order was changed</string>
     <string name="addon_confirm_catalogs_disabled">Catalogs disabled on Home:</string>
     <string name="addon_confirm_catalogs_enabled">Catalogs enabled on Home:</string>

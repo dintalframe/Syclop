@@ -58,6 +58,15 @@ class NativeDebridFallbackRouterTest {
         val result = NativeDebridFallbackRouter.resolve(accounts(), { true }, {}) { NativeDebridAttempt(DirectDebridResolveResult.NotCached) }
         assertEquals(DirectDebridResolveResult.NotCached, result.result)
     }
+    @Test fun `a generic error preserves another provider's not cached route`() = runTest {
+        repeat(2) {
+            val result = NativeDebridFallbackRouter.resolve(accounts().take(2), { true }, {}) { account ->
+                NativeDebridAttempt(if (account.provider.id == "alldebrid") DirectDebridResolveResult.Error
+                    else DirectDebridResolveResult.NotCached)
+            }
+            assertEquals(NativeDebridRoute("realdebrid", DirectDebridResolveResult.NotCached), result)
+        }
+    }
     @Test fun `stale ambiguous selection and missing captured credential abort globally`() = runTest {
         for (terminal in listOf(DirectDebridResolveResult.Stale, DirectDebridResolveResult.MissingApiKey)) {
             val visited = mutableListOf<String>()

@@ -11,7 +11,8 @@ sealed interface SearchEvent {
     data class LoadMoreCatalog(
         val catalogId: String,
         val addonId: String,
-        val type: String
+        val type: String,
+        val rowKey: String? = null
     ) : SearchEvent
 
     data class SelectDiscoverType(val type: String) : SearchEvent

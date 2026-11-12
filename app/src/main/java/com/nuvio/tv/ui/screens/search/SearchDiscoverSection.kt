@@ -232,7 +232,7 @@ internal fun DiscoverSection(
         }
 
         when {
-            uiState.discoverLoading && uiState.discoverResults.isEmpty() -> {
+            uiState.discoverLoading && uiState.discoverResults.isEmpty() && !uiState.discoverLoadFailed -> {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -243,7 +243,16 @@ internal fun DiscoverSection(
                 }
             }
 
-            uiState.discoverResults.isNotEmpty() -> {
+            uiState.discoverResults.isNotEmpty() || uiState.discoverLoadFailed -> {
+                if (uiState.discoverLoadFailed && uiState.discoverResults.isEmpty() &&
+                    !uiState.discoverLoading && !uiState.discoverLoadingMore
+                ) {
+                    Text(
+                        text = stringResource(R.string.error_generic),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = NuvioTheme.colors.TextSecondary
+                    )
+                }
                 Box(modifier = Modifier.onFocusChanged { gridHasFocus = it.hasFocus }) {
                 DiscoverGrid(
                     items = uiState.discoverResults,
@@ -259,7 +268,8 @@ internal fun DiscoverSection(
                     onItemFocused = onDiscoverItemFocused,
                     pendingCount = uiState.pendingDiscoverResults.size,
                     canLoadMore = uiState.discoverHasMore,
-                    isLoadingMore = uiState.discoverLoadingMore,
+                    isLoadingMore = uiState.discoverLoading || uiState.discoverLoadingMore,
+                    retryRequired = uiState.discoverLoadFailed,
                     onLoadMore = onLoadMore,
                     onItemClick = { _, item ->
                         HeroBackdropState.update(item.backdropUrl)
@@ -505,6 +515,7 @@ internal fun DiscoverGrid(
     pendingCount: Int,
     canLoadMore: Boolean,
     isLoadingMore: Boolean,
+    retryRequired: Boolean,
     onLoadMore: () -> Unit,
     onItemClick: (Int, MetaPreview) -> Unit,
     onItemLongPress: (MetaPreview) -> Unit = {},
@@ -536,6 +547,8 @@ internal fun DiscoverGrid(
     val effectiveShouldRestoreFocusedItem = shouldRestoreFocusedItem || localShouldRestoreFocusedItem
     val actionType = when {
         pendingCount > 0 -> DiscoverGridAction.ShowMore
+        retryRequired && isLoadingMore -> DiscoverGridAction.Retrying
+        retryRequired -> DiscoverGridAction.Retry
         isLoadingMore -> DiscoverGridAction.Loading
         canLoadMore -> DiscoverGridAction.LoadMore
         else -> DiscoverGridAction.None
@@ -575,16 +588,18 @@ internal fun DiscoverGrid(
         }
     }
 
-    LaunchedEffect(items.size, pendingFocusOnNewItemIndex) {
+    LaunchedEffect(items.size, pendingFocusOnNewItemIndex, actionType) {
         val targetIndex = pendingFocusOnNewItemIndex ?: return@LaunchedEffect
-        if (items.size <= targetIndex) return@LaunchedEffect
+        if (items.size <= targetIndex && actionType != DiscoverGridAction.None) return@LaunchedEffect
         pendingFocusOnNewItemIndex = null
-        localRestoreFocusedItemIndex = targetIndex
-        localShouldRestoreFocusedItem = true
+        if (items.isNotEmpty()) {
+            localRestoreFocusedItemIndex = targetIndex.coerceAtMost(items.lastIndex)
+            localShouldRestoreFocusedItem = true
+        }
     }
 
     // Infinite scroll: auto-load more when the user scrolls near the end.
-    val shouldAutoLoad = canLoadMore && !isLoadingMore && items.isNotEmpty()
+    val shouldAutoLoad = canLoadMore && !isLoadingMore && !retryRequired && items.isNotEmpty()
     LaunchedEffect(gridState.firstVisibleItemIndex, items.size, shouldAutoLoad) {
         if (!shouldAutoLoad) return@LaunchedEffect
         val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return@LaunchedEffect
@@ -720,14 +735,11 @@ internal fun DiscoverGrid(
                     onFocused = { onItemFocused(actionIndex) },
                     onClick = {
                         when (actionType) {
-                            DiscoverGridAction.ShowMore -> {
+                            DiscoverGridAction.ShowMore, DiscoverGridAction.LoadMore, DiscoverGridAction.Retry -> {
                                 pendingFocusOnNewItemIndex = items.size
                                 onLoadMore()
                             }
-                            DiscoverGridAction.LoadMore -> {
-                                pendingFocusOnNewItemIndex = items.size
-                                onLoadMore()
-                            }
+                            DiscoverGridAction.Retrying -> Unit
                             DiscoverGridAction.Loading -> Unit
                             DiscoverGridAction.None -> Unit
                         }
@@ -745,6 +757,8 @@ private sealed class DiscoverGridAction {
     object ShowMore : DiscoverGridAction()
     object LoadMore : DiscoverGridAction()
     object Loading : DiscoverGridAction()
+    object Retry : DiscoverGridAction()
+    object Retrying : DiscoverGridAction()
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -761,7 +775,8 @@ private fun DiscoverActionCard(
     val title = when (actionType) {
         DiscoverGridAction.ShowMore -> stringResource(R.string.discover_load_more)
         DiscoverGridAction.LoadMore -> stringResource(R.string.discover_load_more)
-        DiscoverGridAction.Loading -> stringResource(R.string.discover_loading)
+        DiscoverGridAction.Loading, DiscoverGridAction.Retrying -> stringResource(R.string.discover_loading)
+        DiscoverGridAction.Retry -> stringResource(R.string.action_retry)
         DiscoverGridAction.None -> ""
     }
     val cardDepthStyle = LocalCardDepthStyle.current
@@ -812,7 +827,7 @@ private fun DiscoverActionCard(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (actionType == DiscoverGridAction.Loading) {
+                if (actionType == DiscoverGridAction.Loading || actionType == DiscoverGridAction.Retrying) {
                     LoadingIndicator()
                 } else {
                     Text(

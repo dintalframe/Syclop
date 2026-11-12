@@ -148,7 +148,8 @@ fun ModernHomeContent(
     // Defaults preserve the original Home entry behavior.
     autoFocusOnEntry: Boolean = true,
     contentEntryRequest: Int = 0,
-    inheritPreviousHeroBackdrop: Boolean = true
+    inheritPreviousHeroBackdrop: Boolean = true,
+    catalogFooter: (@Composable () -> Unit)? = null
 ) {
     val onRowItemFocusedPassedDown = rememberUpdatedState(onRowItemFocusedCallback)
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
@@ -1282,6 +1283,7 @@ fun ModernHomeContent(
                 onExpansionInteractionNonceChange = onExpansionInteractionNonceChangeLambda,
                 blockLeftOnFirstExpandedItem = blockLeftOnFirstExpandedItem,
                 contentFocusEnabled = autoFocusOnEntry || contentEntryRequest > 0,
+                catalogFooter = catalogFooter,
                 isVerticalRowsScrollingState = isVerticalRowsScrollingState,
                 modifier = Modifier
                     .align(Alignment.BottomStart)

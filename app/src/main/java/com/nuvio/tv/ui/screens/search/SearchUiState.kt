@@ -8,6 +8,8 @@ import com.nuvio.tv.domain.model.MetaPreview
 
 internal const val MIN_SEARCH_QUERY_LENGTH = 2
 
+internal fun CatalogRow.canOpenSearchSeeAll(): Boolean = hasMore || items.size >= 15
+
 internal fun submittedSearchQuery(rawQuery: String): String =
     rawQuery.trim().takeIf { it.length >= MIN_SEARCH_QUERY_LENGTH }.orEmpty()
 
@@ -32,6 +34,7 @@ data class SearchUiState(
     val discoverInitialized: Boolean = false,
     val discoverLoading: Boolean = false,
     val discoverLoadingMore: Boolean = false,
+    val discoverLoadFailed: Boolean = false,
     val discoverCatalogs: List<DiscoverCatalog> = emptyList(),
     val selectedDiscoverType: String = "movie",
     val selectedDiscoverCatalogKey: String? = null,
@@ -39,7 +42,7 @@ data class SearchUiState(
     val discoverResults: List<MetaPreview> = emptyList(),
     val pendingDiscoverResults: List<MetaPreview> = emptyList(),
     val discoverHasMore: Boolean = true,
-    val discoverPage: Int = 1,
+    val discoverNextSkip: Int = 0,
     val posterLabelsEnabled: Boolean = true,
     val catalogAddonNameEnabled: Boolean = true,
     val catalogTypeSuffixEnabled: Boolean = true,

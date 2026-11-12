@@ -31,7 +31,7 @@ object AddonWebPage {
         val pageSubtitle = when {
             isCollectionsOnly -> context.getString(R.string.web_manage_collections_subtitle)
             webConfigMode == AddonWebConfigMode.ADDONS_ONLY -> {
-                context.getString(R.string.web_manage_addons_only_subtitle)
+                context.getString(R.string.web_install_addons_on_tv)
             }
             else -> context.getString(R.string.web_manage_addons_subtitle)
         }
@@ -79,15 +79,7 @@ ${tabButtons}
         val addonsTabHtml = if (allowAddonManagement) {
             """
   <div class="tab-content active" id="tab-addons">
-    <div class="add-section">
-      <label>${context.getString(R.string.web_add_addon_url)}</label>
-      <div class="add-row">
-        <input type="url" id="addonUrl" placeholder="${context.getString(R.string.web_placeholder_url)}" autocomplete="off" autocapitalize="off" spellcheck="false">
-        <button class="btn" id="addBtn" onclick="addAddon()">${context.getString(R.string.web_btn_add)}</button>
-      </div>
-      <div class="add-error" id="addError"></div>
-    </div>
-
+    ${if (webConfigMode == AddonWebConfigMode.FULL) """<p class="add-section">${context.getString(R.string.web_install_addons_on_tv)}</p>""" else ""}
     <div class="section-label">${context.getString(R.string.web_installed_addons)}</div>
     <ul class="addon-list" id="addonList"></ul>
     <div class="empty-state" id="emptyState">${context.getString(R.string.web_no_addons)}</div>
@@ -196,44 +188,6 @@ ${LocalConfigSession.browserScript("syclop-addon-pairing", context.getString(R.s
   }
   .add-section {
     margin-bottom: 2.5rem;
-  }
-  .add-section label {
-    display: block;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.3);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    margin-bottom: 0.75rem;
-  }
-  .add-row {
-    display: flex;
-    gap: 0.75rem;
-  }
-  .add-row input {
-    flex: 1;
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 100px;
-    padding: 0.875rem 1.25rem;
-    color: #fff;
-    font-family: inherit;
-    font-size: 0.9rem;
-    font-weight: 400;
-    transition: border-color 0.3s ease;
-  }
-  .add-row input:focus {
-    border-color: rgba(255, 255, 255, 0.4);
-  }
-  .add-row input::placeholder {
-    color: rgba(255, 255, 255, 0.2);
-  }
-  .add-error {
-    color: rgba(207, 102, 121, 0.9);
-    font-size: 0.8rem;
-    margin-top: 0.75rem;
-    display: none;
-    padding-left: 1.25rem;
   }
   .btn {
     display: inline-flex;
@@ -370,40 +324,11 @@ ${LocalConfigSession.browserScript("syclop-addon-pairing", context.getString(R.s
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .addon-url {
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.25);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-top: 0.15rem;
-  }
-  .addon-desc {
-    font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.4);
-    margin-top: 0.15rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   .addon-actions {
     flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-  }
-  .badge-new {
-    display: inline-block;
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: #000;
-    background: #fff;
-    padding: 0.15rem 0.4rem;
-    border-radius: 100px;
-    margin-left: 0.5rem;
-    vertical-align: middle;
   }
   .empty-state {
     text-align: center;
@@ -1670,11 +1595,7 @@ function renderAddons() {
         '</button>' +
       '</div>' +
       '<div class="addon-info">' +
-        '<div class="addon-name">' + escapeHtml(addon.name || addon.url) +
-          (addon.isNew ? '<span class="badge-new">${context.getString(R.string.web_badge_new).replace("'", "\\'")}</span>' : '') +
-        '</div>' +
-        (addon.description ? '<div class="addon-desc">' + escapeHtml(addon.description) + '</div>' : '') +
-        '<div class="addon-url">' + escapeHtml(addon.url) + '</div>' +
+        '<div class="addon-name">' + escapeHtml(addon.name) + '</div>' +
       '</div>' +
       '<div class="addon-actions">' +
         '<button class="btn btn-remove" onclick="removeAddon(' + i + ')">${context.getString(R.string.web_btn_remove).replace("'", "\\'")}</button>' +
@@ -1906,37 +1827,6 @@ function disableAllCollections() {
   renderCollections();
 }
 
-async function addAddon() {
-  if (!allowAddonManagement) return;
-  const input = document.getElementById('addonUrl');
-  const errorEl = document.getElementById('addError');
-  let url = input.value.trim();
-  if (!url) return;
-
-  if (url.startsWith('stremio://')) {
-    url = url.replace(/^stremio:\/\//, 'https://');
-  }
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    url = 'https://' + url;
-  }
-  if (url.endsWith('/manifest.json')) {
-    url = url.replace(/\/manifest\.json$/, '');
-  }
-  url = url.replace(/\/+$/, '');
-
-  if (addons.some(function(a) { return a.url === url; })) {
-    errorEl.textContent = '${context.getString(R.string.web_error_addon_exists).replace("'", "\\'")}';
-    errorEl.style.display = 'block';
-    setTimeout(function() { errorEl.style.display = 'none'; }, 3000);
-    return;
-  }
-
-  errorEl.style.display = 'none';
-  addons.push({ url: url, name: url, description: null, isNew: true });
-  input.value = '';
-  renderAddons();
-}
-
 function removeAddon(index) {
   if (!allowAddonManagement) return;
   addons.splice(index, 1);
@@ -1947,7 +1837,7 @@ async function saveChanges() {
   var saveBtn = document.getElementById('saveBtn');
   saveBtn.disabled = true;
 
-  var urls = addons.map(function(a) { return a.url; });
+  var addonIds = addons.map(function(addon) { return addon.id; });
   var catalogOrderKeys = catalogs.map(function(c) { return c.key; });
   var disabledCatalogKeys = catalogs
     .filter(function(c) { return c.isDisabled; })
@@ -1957,7 +1847,7 @@ async function saveChanges() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({
-        urls: urls,
+        addonIds: addonIds,
         catalogOrderKeys: catalogOrderKeys,
         disabledCatalogKeys: disabledCatalogKeys,
         collections: collections,
@@ -3327,13 +3217,6 @@ async function doImport() {
 	    errEl.textContent = i18n.invalidJson + ': ' + e.message;
     errEl.style.display = 'block';
   }
-}
-
-var addonUrlInput = document.getElementById('addonUrl');
-if (addonUrlInput) {
-  addonUrlInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') addAddon();
-  });
 }
 
 loadState();

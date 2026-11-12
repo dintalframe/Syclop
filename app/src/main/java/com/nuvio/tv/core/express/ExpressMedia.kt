@@ -6,6 +6,7 @@ import com.google.gson.JsonParser
 import com.nuvio.tv.core.anime.NativeAnimeEpisodeMappings
 import com.nuvio.tv.core.anime.NativeAnimeEpisodeProof
 import com.nuvio.tv.core.debrid.TurkishBroadcastEpisode
+import com.nuvio.tv.core.debrid.hasDebridVideoExtension
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.core.plugin.absoluteAnimeEpisodeNumber
 import com.nuvio.tv.data.mal.MalMetadataService
@@ -257,6 +258,50 @@ internal fun expressQueryTitle(value: String): String? = Normalizer.normalize(va
 private fun foldExpressTitle(value: String): String = Normalizer.normalize(
     Normalizer.normalize(value, Normalizer.Form.NFD).replace(Regex("(?<=\\p{IsLatin})\\p{M}+"), "")
         .replace('ı', 'i'), Normalizer.Form.NFC)
+
+private val releaseGroupPrefix = Regex("^(?:\\s*\\[[^\\[\\]]+])+")
+private val movieReleaseMarker = Regex(
+    "(?:^| )(?:[0-9]{3,4}p|4k|uhd|web ?(?:dl|rip)|blu ?ray|[bh]d ?rip|[hx] ?26[45]|hevc|av1)(?= |$)"
+)
+private val movieReleaseYear = Regex(" (?:18|19|20|21)\\d{2}(?= |$)")
+private val movieEditionSuffix = Regex(" (?:extended(?: cut)?|directors cut|theatrical cut|remastered|unrated)$")
+private val genericMovieLabel = Regex("(?:^| )(?:movie|film|video|release|file|download|hd|hdr|sdr|dolby vision|dual audio|multi|dubbed|english|turkish|turkce)(?= |$)")
+private val releaseWords = Regex("[^\\p{L}\\p{N}]+")
+private val releaseApostrophes = Regex("['’ʼ]")
+
+/** Compare explicit movie release titles while retaining rows with sparse or display-only metadata. */
+internal fun ExpressMedia.acceptsMovieReleaseTitles(row: ExpressRow): Boolean {
+    if (type != "movie" || anime) return true
+    fun normalized(value: String) = foldExpressTitle(Normalizer.normalize(value, Normalizer.Form.NFKC))
+        .lowercase(Locale.ROOT).replace(releaseApostrophes, "").replace("&", " and ")
+        .replace(releaseWords, " ").trim()
+    val known = (listOfNotNull(title, originalTitle) + titleAliases).mapNotNull(::expressQueryTitle)
+        .map(::normalized).filter(String::isNotEmpty).toSet()
+    if (known.isEmpty()) return true
+    fun releaseTitle(value: String): String? {
+        val label = value.trim().replace(releaseGroupPrefix, "")
+        val videoFile = label.hasDebridVideoExtension()
+        val release = normalized(if (videoFile) label.substringBeforeLast('.') else label)
+        val marker = movieReleaseMarker.find(release)
+        val prefix = release.substring(0, marker?.range?.first ?: release.length)
+        if (prefix in known) return prefix
+        val year = movieReleaseYear.findAll(prefix).lastOrNull()
+        if (marker == null && !(videoFile && year?.range?.last == prefix.lastIndex)) return null
+        if (!videoFile && year == null) return null
+        val title = prefix.substring(0, year?.range?.first ?: prefix.length).replace(movieEditionSuffix, "")
+        return title.takeIf { it in known || genericMovieLabel.replace(it, "").any(Char::isLetter) }
+    }
+    fun compatible(field: String, allowTitlePunctuation: Boolean): Boolean {
+        val name = field.lineSequence().firstOrNull { it.isNotBlank() } ?: return true
+        if (name.length > 4_096) return true
+        val basename = name.replace('\\', '/').substringAfterLast('/')
+        val candidate = releaseTitle(basename) ?: return true
+        return candidate in known || (allowTitlePunctuation && name != basename &&
+            releaseTitle(name)?.let(known::contains) == true)
+    }
+    return row.title?.let { compatible(it, allowTitlePunctuation = true) } != false &&
+        row.filename?.let { compatible(it, allowTitlePunctuation = false) } != false
+}
 
 /** Only an explicit year immediately after a known title is evidence of another edition. */
 internal fun ExpressMedia.acceptsInternationalYearHints(row: ExpressRow): Boolean {

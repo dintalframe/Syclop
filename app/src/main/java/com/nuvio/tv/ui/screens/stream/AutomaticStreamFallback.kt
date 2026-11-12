@@ -3,6 +3,7 @@ package com.nuvio.tv.ui.screens.stream
 import com.nuvio.tv.core.debrid.DirectDebridFailure
 import com.nuvio.tv.core.debrid.DirectDebridFailureReason
 import com.nuvio.tv.core.debrid.DirectDebridResolveResult
+import com.nuvio.tv.core.debrid.canTryAnotherSource
 import com.nuvio.tv.core.debrid.canonicalAvailabilityHash
 import com.nuvio.tv.domain.model.Stream
 import kotlinx.coroutines.ensureActive
@@ -48,7 +49,7 @@ internal suspend fun <T> resolveAutomaticStreamFallback(
                 DirectDebridFailure(DirectDebridFailureReason.TIMED_OUT)))
         coroutineContext.ensureActive()
         if (!isCurrent()) return AutomaticStreamAttempt()
-        if (last.playback != null || !last.failure.canAdvanceAutomaticSource()) return last
+        if (last.playback != null || !last.failure.canTryAnotherSource()) return last
     }
     return last
 }
@@ -59,11 +60,3 @@ private fun Stream.automaticSourceIdentity(): String {
         ?: stableKey(0)
     return nativeTurkishBroadcastEpisode?.let { "$identity:${it.cacheKey}" } ?: identity
 }
-
-private fun DirectDebridResolveResult?.canAdvanceAutomaticSource(): Boolean =
-    this == DirectDebridResolveResult.NotCached || this is DirectDebridResolveResult.Failure && detail.reason in setOf(
-        DirectDebridFailureReason.PROCESSING,
-        DirectDebridFailureReason.UNAVAILABLE,
-        DirectDebridFailureReason.SOURCE_REJECTED,
-        DirectDebridFailureReason.WRONG_EPISODE
-    )
